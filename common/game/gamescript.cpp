@@ -917,6 +917,7 @@ std::vector<GameScript::DlgChoice> GameScript::dialogChoices(std::shared_ptr<zen
       ch.scriptFn = uint32_t(info.information);
       ch.handle   = i;
       ch.isTrade  = info.trade!=0;
+      ch.known    = npcKnowsInfo;
       ch.sort     = info.nr;
       choice.emplace_back(std::move(ch));
       }

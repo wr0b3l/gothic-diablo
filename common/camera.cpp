@@ -150,6 +150,7 @@ void Camera::setViewport(uint32_t w, uint32_t h) {
   vpWidth   = w;
   vpHeight  = h;
   depthNear = 0;
+  fovNow    = fov;
   }
 
 float Camera::zNear() const {
@@ -708,6 +709,13 @@ void Camera::tick(uint64_t dt) {
 
   const float dtF = float(dt)/1000.f;
 
+  if(camMod!=Dialog) {
+    // gothic-diablo: the next talk starts with the way down again
+    arpgDlg.t        = 0;
+    arpgDlg.cutDone  = false;
+    arpgDlg.keepView = false;
+    }
+
   {
     const auto& def = cameraDef();
     state.range = def.min_range + (def.max_range-def.min_range)*userRange;
@@ -752,6 +760,16 @@ void Camera::tick(uint64_t dt) {
     }
 
   updateArpgView(dtF);
+  arpgDlg.on = false;
+
+  {
+    // gothic-diablo: the dialog shots are filmed with a narrower lens
+    const float fov = isArpgDialogShot() ? 45.f : Gothic::options().cameraFov;
+    if(fov!=fovNow && vpWidth>0 && vpHeight>0) {
+      proj.perspective(fov, float(vpWidth)/float(vpHeight), zNear(), zFar());
+      fovNow = fov;
+      }
+  }
 
   if(auto w = Gothic::inst().world()) {
     Vec3 sh;
@@ -799,6 +817,10 @@ void Camera::tickFirstPerson(float /*dtF*/) {
 void Camera::tickThirdPerson(float dtF) {
   if(isArpgActive()) {
     tickArpg(dtF);
+    return;
+    }
+  if(camMod==Dialog && isArpgEnabled() && camMarvinMod==M_Normal) {
+    tickArpgDialog(dtF);
     return;
     }
 
@@ -1151,9 +1173,53 @@ void Camera::tickArpg(float dtF) {
   angles = calcLookAtAngles(origin, target, Vec3(0), spin);
   }
 
+void Camera::tickArpgDialog(float dtF) {
+  auto        world = Gothic::inst().world();
+  const auto& in    = arpgDlg.in;
+  const bool  talk  = arpgDlg.on && world!=nullptr && in.pl!=nullptr && in.other!=nullptr && in.pl!=in.other;
+  if(!talk) {
+    // workbench menus and the like (the hero alone): the ARPG view stays
+    arpgDlg.keepView = true;
+    tickArpg(dtF);
+    return;
+    }
+
+  if(arpgDlg.t==0.f)
+    arpgDlg.viewFrom = origin;
+  if(dtF>0.f)
+    arpgDlg.t += dtF;
+
+  static constexpr float ZoomTime = 0.45f;
+  if(!arpgDlg.cutDone && arpgDlg.t<ZoomTime) {
+    // the ARPG camera comes down towards the two heads ...
+    arpgDlg.keepView = true;
+    tickArpg(dtF);
+    const float s    = std::clamp(arpgDlg.t/ZoomTime, 0.f, 1.f);
+    const float k    = s*s*(3.f-2.f*s);
+    const Vec3  mid  = (in.pl->mapHeadBone()+in.other->mapHeadBone())*0.5f;
+    const Vec3  look = inter.target + (mid-inter.target)*k;
+    origin = origin + (mid-origin)*(0.55f*k);
+    angles = calcLookAtAngles(origin, look, Vec3(0), state.spin);
+    return;
+    }
+
+  // ... and cuts to the shots of the director
+  if(!arpgDlg.cutDone) {
+    arpgDlg.cutDone = true;
+    arpgDir.reset();
+    }
+  arpgDlg.keepView = false;
+  ArpgDialogCam::Input din = in;
+  din.viewFrom = arpgDlg.viewFrom;
+  const auto shot = arpgDir.tick(std::max(0.f, dtF), din, *world);
+  origin = shot.origin;
+  angles = calcLookAtAngles(origin, shot.target, Vec3(0), state.spin);
+  }
+
 void Camera::updateArpgView(float dtF) {
   arpgV = ArpgView();
-  if(!isArpgActive()) {
+  const bool dlgView = (camMod==Dialog && isArpgEnabled() && camMarvinMod==M_Normal && arpgDlg.keepView);
+  if(!isArpgActive() && !dlgView) {
     arpg.indoor      = false;
     arpg.indoorHold  = 0;
     arpg.indoorBlend = 0;

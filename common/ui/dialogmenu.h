@@ -28,6 +28,11 @@ class DialogMenu : public Tempest::Widget {
     bool isMobsiDialog() const;
     void dialogCamera(Camera& camera);
 
+    // gothic-diablo: cinematic dialogs in the ARPG mode: a talk between two is filmed by the camera's director
+    // (letterbox, subtitles and the answers in the lower bar, nothing else over the picture)
+    bool                 isArpgCinema() const;
+    ArpgDialogCam::Input arpgDialogInput() const;
+
     void openPipe(Npc &player, Npc& npc, AiOuputPipe*& out);
     bool isNpcInDialog(const Npc* npc) const;
 
@@ -46,6 +51,7 @@ class DialogMenu : public Tempest::Widget {
     void paintChoice(Tempest::PaintEvent& e);
 
     void mouseDownEvent (Tempest::MouseEvent& event) override;
+    void mouseMoveEvent (Tempest::MouseEvent& event) override;
     void mouseWheelEvent(Tempest::MouseEvent& event) override;
 
     void onSelect();
@@ -118,6 +124,11 @@ class DialogMenu : public Tempest::Widget {
     void startTrade();
     void skipPhrase();
 
+    // gothic-diablo: cinematic look (ARPG mode)
+    void paintArpg(Tempest::Painter& p);
+    void paintScreenMessages(Tempest::Painter& p);
+    bool arpgChoiceReady() const;
+
     InventoryMenu&                      trade;
     Pipe                                pipe;
 
@@ -146,4 +157,8 @@ class DialogMenu : public Tempest::Widget {
     bool                                showSubtitles       = true;
     bool                                showSubtitlesPlayer = true;
     uint64_t                            choiceAnimTime      = 0;
+
+    uint32_t                            lineId              = 0; // gothic-diablo: counts the lines (cuts of the camera)
+    float                               barsK               = 0; // gothic-diablo: 0..1 letterbox
+    std::vector<Tempest::Rect>          choiceRects;             // gothic-diablo: the answers on the screen (mouse)
   };

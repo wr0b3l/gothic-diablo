@@ -52,6 +52,7 @@ class GameScript final {
       int32_t          sort     = 0;
       uint32_t         scriptFn = 0;
       bool             isTrade  = false;
+      bool             known    = false;   // gothic-diablo: a permanent line already asked (shown dimmer)
       zenkit::IInfo*   handle   = nullptr;
       };
 

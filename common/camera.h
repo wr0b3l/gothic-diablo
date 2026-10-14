@@ -8,6 +8,8 @@
 
 #include <zenkit/addon/daedalus.hh>
 
+#include "arpgdialogcam.h"
+
 class World;
 class Npc;
 class DbgPainter;
@@ -150,6 +152,9 @@ class Camera final {
     // gothic-diablo: creatures that glow a little (enemy under the cursor, current target): xyz = center, w = radius
     void               arpgSetHighlight(size_t i, const Tempest::Vec4& v) { if(i<arpgHi.size()) arpgHi[i] = v; }
     const std::array<Tempest::Vec4,2>& arpgHighlight() const { return arpgHi; }
+    // gothic-diablo: cinematic dialogs: the dialog menu tells the camera who talks (every frame, before tick)
+    void               setArpgDialog(const ArpgDialogCam::Input& in) { arpgDlg.in = in; arpgDlg.on = true; }
+    bool               isArpgDialogShot() const { return camMod==Dialog && arpgDlg.cutDone; }
 
   private:
     struct Arpg {
@@ -177,6 +182,20 @@ class Camera final {
 
     void                  tickArpg(float dtF);
     void                  updateArpgView(float dtF);
+
+    // gothic-diablo: cinematic dialogs: a short way down from the ARPG view, then the cut to the director's shots
+    struct ArpgDlg {
+      bool                 on       = false; // input given for this frame
+      ArpgDialogCam::Input in;
+      float                t        = 0;     // seconds in the talk
+      bool                 cutDone  = false;
+      bool                 keepView = false; // the ARPG view (cut-away, fog of war) stays: on the way down, workbench menus
+      Tempest::Vec3        viewFrom = {};
+      };
+    ArpgDlg               arpgDlg;
+    ArpgDialogCam         arpgDir;
+    float                 fovNow = 0;
+    void                  tickArpgDialog(float dtF);
 
     struct Pin {
       Tempest::Vec3       origin = {};

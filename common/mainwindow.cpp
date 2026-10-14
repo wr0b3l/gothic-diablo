@@ -232,11 +232,12 @@ void MainWindow::paintEvent(PaintEvent& event) {
         paintArpgBar(p);
         } else {
         arpgLabels.clear();
-        paintFocus(p,focus,vp);
+        if(!dialogs.isArpgCinema())
+          paintFocus(p,focus,vp); // gothic-diablo: nothing over the film of a dialog
         }
 
       if(auto pl = Gothic::inst().player()){
-        if (!Gothic::inst().isDesktop() && !arpgMenu.isOpen()) {
+        if (!Gothic::inst().isDesktop() && !arpgMenu.isOpen() && !dialogs.isArpgCinema()) {
           auto& opt = Gothic::options();
           float hp  = float(pl->attribute(ATR_HITPOINTS))/float(pl->attribute(ATR_HITPOINTSMAX));
           float mp  = float(pl->attribute(ATR_MANA))     /float(pl->attribute(ATR_MANAMAX));
@@ -1400,7 +1401,12 @@ void MainWindow::tickCamera(uint64_t dt) {
 
   if(!camera.isCutscene() && !camera.isFree()) {
     const bool fs = SystemApi::isFullscreen(hwnd());
-    if(!fs && mouseP[Event::ButtonLeft]) {
+    if(dialogs.isArpgCinema()) {
+      // gothic-diablo: cinematic dialog: the director in the camera films the two
+      camera.setArpgDialog(dialogs.arpgDialogInput());
+      camera.setTarget(pos);
+      }
+    else if(!fs && mouseP[Event::ButtonLeft]) {
       camera.setSpin(camera.spin());
       camera.setTarget(pos);
       }
