@@ -2085,6 +2085,15 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
     out = Point(int((0.5f*pos.x+0.5f)*float(w())), int((0.5f*pos.y+0.5f)*float(h())));
     return true;
     };
+  // a quad of two triangles; the UI pipeline culls one winding (Tempest: CullMode::Back), so both are given
+  auto quad = [&](const Point& p00, const Point& p01, const Point& p10, const Point& p11) {
+    auto tri = [&](const Point& a, const Point& b, const Point& c) {
+      p.drawTriangle(float(a.x),float(a.y),0,0, float(b.x),float(b.y),0,0, float(c.x),float(c.y),0,0);
+      p.drawTriangle(float(a.x),float(a.y),0,0, float(c.x),float(c.y),0,0, float(b.x),float(b.y),0,0);
+      };
+    tri(p00, p01, p11);
+    tri(p00, p11, p10);
+    };
 
   // life bars
   {
@@ -2205,8 +2214,7 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
            !toScreen(base+fw*(len*k1)-sd*w1, p10) || !toScreen(base+fw*(len*k1)+sd*w1, p11))
           continue;
         p.setBrush(Brush(Color(1.f*a, 0.85f*a, 0.45f*a, 1.f), Painter::Add));
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+        quad(p00, p01, p10, p11);
         }
       }
     else if(fx.kind==2 && fx.time!=0 && now>=fx.time && now<fx.time+400) {
@@ -2230,8 +2238,7 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         const float edge = 1.f - std::abs(float(i)+0.5f-float(N)/2.f)/(float(N)/2.f); // brighter in the middle
         const float a    = fade*(0.35f+0.65f*edge)*0.8f;
         p.setBrush(Brush(Color(0.75f*a, 0.85f*a, 1.f*a, 1.f), Painter::Add));
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+        quad(p00, p01, p10, p11);
         }
       }
     else if(fx.kind==0 && fx.time!=0 && now>=fx.time && now<fx.time+600) {
@@ -2258,8 +2265,7 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
           if(!pt(a0,r0,p00) || !pt(a0,r1,p01) || !pt(a1,r0,p10) || !pt(a1,r1,p11))
             continue;
           p.setBrush(Brush(Color(1.f*a, 0.82f*a, 0.4f*a, 1.f), Painter::Add));
-          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
-          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+          quad(p00, p01, p10, p11);
           }
         }
       }
@@ -2292,12 +2298,10 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         if(fx.kind==3)
           p.setBrush(Brush(Color(1.f*a, 0.82f*a, 0.4f*a, 1.f), Painter::Add)); else
           p.setBrush(Brush(Color(0.6f*a, 0.8f*a, 1.f*a, 1.f), Painter::Add));
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
-        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+        quad(p00, p01, p10, p11);
         if(fx.kind==4) {
           // twice: the wave shines over the ground
-          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
-          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+          quad(p00, p01, p10, p11);
           }
         }
       }
