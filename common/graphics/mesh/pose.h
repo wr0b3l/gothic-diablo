@@ -91,6 +91,9 @@ class Pose final {
     // gothic-diablo: play attack animations faster: moves them ahead by 'ms'
     void               warpAttack(uint64_t ms, uint64_t tickCount);
     bool               warpSeq(const Animation::Sequence* sq, uint64_t ms, uint64_t tickCount); // gothic-diablo: false = not playing
+    // gothic-diablo: animations with 'part' in the name faster (Szybki naciąg: "BOW"); combo windows longer (Wyczucie chwili)
+    void               warpNamed(std::string_view part, uint64_t ms, uint64_t tickCount);
+    void               setArpgComboWindow(float mul) { comboWindowMul = mul; }
     // gothic-diablo: keep a parade animation in its defence window (block held)
     void               holdParade(uint64_t tickCount);
     // gothic-diablo: keep an attack animation in its wind-up (charged attack)
@@ -166,6 +169,7 @@ class Pose final {
     Flags                           flag=NoFlags;
     uint64_t                        lastUpdate=0;
     ComboState                      combo;
+    float                           comboWindowMul = 1.f; // gothic-diablo
     bool                            needToUpdate = true;
     uint8_t                         hasEvents = 0;
     uint8_t                         isFlyCombined = 0;

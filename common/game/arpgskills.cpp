@@ -147,6 +147,7 @@ static bool exists(const NodeId& n) {
 // ---------------------------------------------------------------------------------------------------------------
 
 void ArpgProgress::clear() {
+  perksDirty = true;
   rk.clear();
   found.clear();
   caps.clear();
@@ -182,7 +183,7 @@ void ArpgProgress::save(Serialize& fout) const {
   }
 
 void ArpgProgress::load(Serialize& fin) {
-  clear();
+  clear(); // perks made again
   uint8_t ver = 0;
   fin.read(ver, bought);
   readMap(fin, rk);
@@ -205,6 +206,7 @@ void ArpgProgress::setCap(int talent, int32_t pct) {
 
 void ArpgProgress::initWeapons(const Hero& h) {
   weaponsInit = true;
+  perksDirty  = true;
   const size_t wt = weaponsTree();
   if(wt==size_t(-1))
     return;
@@ -241,6 +243,7 @@ void ArpgProgress::resetRanks(int32_t pctBack[5]) {
       }
     }
   rk.clear(); // points found for a branch stay there (to be spent again)
+  perksDirty = true;
   }
 
 int32_t ArpgProgress::spentTotal() const {
@@ -384,6 +387,7 @@ bool ArpgProgress::add(const NodeId& n, const Hero& h) {
   if(!canAdd(n, h))
     return false;
   rk[nodeKey(n.tree, n.branch, n.node)] = rank(n)+1;
+  perksDirty = true;
   return true;
   }
 
@@ -404,5 +408,72 @@ bool ArpgProgress::remove(const NodeId& n, const Ranks& base) {
   const auto k = nodeKey(n.tree, n.branch, n.node);
   if(--rk[k]<=0)
     rk.erase(k);
+  perksDirty = true;
   return true;
+  }
+
+const ArpgPerks& ArpgProgress::perks() const {
+  if(!perksDirty)
+    return perksCache;
+  perksDirty = false;
+  // rank of a node by its tree and name (keystones too)
+  auto r = [&](const char* tree, const char* node) -> float {
+    auto& tr = trees();
+    for(size_t t=0; t<tr.size(); ++t) {
+      if(std::string_view(tr[t].name)!=tree)
+        continue;
+      if(tr[t].keystone.name!=nullptr && std::string_view(tr[t].keystone.name)==node)
+        return float(rank(NodeId{t,-1,0}));
+      for(int b=0; b<int(tr[t].branches.size()); ++b)
+        for(int n=0; n<int(tr[t].branches[size_t(b)].nodes.size()); ++n)
+          if(std::string_view(tr[t].branches[size_t(b)].nodes[size_t(n)].name)==node)
+            return float(rank(NodeId{t,b,n}));
+      }
+    return 0.f;
+    };
+  ArpgPerks p;
+  p.meleeDmg    = 0.04f*r("Cios","Ostra klinga");
+  p.critAdd     = int(5.f*r("Cios","Słaby punkt"));
+  p.bleed       = 0.05f*r("Cios","Głębokie rany");
+  p.atkSpeed    = 0.03f*r("Cios","Płynne ruchy");
+  p.comboWindow = 0.25f*r("Cios","Wyczucie chwili");
+  p.fourthHit   = r("Cios","Czwarty cios")>0;
+  p.arc         = std::min(180.f, 120.f+20.f*r("Cios","Szeroki łuk"));
+  p.knockback   = 0.5f*r("Cios","Odrzut");
+  p.vsDown      = 0.15f*r("Cios","Dobicie");
+  p.leech       = 0.02f*r("Cios","Pijawka");
+  p.hardSkin    = int(5.f*r("Cios","Twarda skóra"));
+  p.shotSpeed   = 0.04f*r("Cios","Szybki naciąg");
+  p.pierce      = int(r("Cios","Przebicie"));
+  p.farAim      = 0.05f*r("Cios","Celne oko");
+  p.whirl       = r("Cios","Wir")>0;
+
+  p.chargeTime   = std::max(1.2f, 2.f-0.2f*r("Atak ładowany","Skupienie"));
+  p.chargeWindow = 0.2f+0.1f*r("Atak ładowany","Szersze okno");
+  p.sureHand     = r("Atak ładowany","Pewna ręka")>0;
+  p.chargeMul    = 3.f+0.2f*r("Atak ładowany","Miażdżący cios");
+  p.getUpDelay   = 0.5f*r("Atak ładowany","Wstrząs");
+  p.guardBreak   = r("Atak ładowany","Łamacz gardy")>0;
+  p.waveRange    = r("Atak ładowany","Fala uderzeniowa")>0 ? 400.f+100.f*r("Atak ładowany","Dalsza fala") : 0.f;
+  p.chargeCd     = 5.f-0.5f*r("Atak ładowany","Opanowanie");
+  p.battleRush   = r("Atak ładowany","Pęd bitewny")>0;
+  p.piercingShot = r("Atak ładowany","Strzała przeszywająca")>0;
+  p.volley       = int(r("Atak ładowany","Grad strzał"));
+  p.heavyHead    = int(r("Atak ładowany","Ciężki grot"));
+  p.innosWrath   = r("Atak ładowany","Gniew Innosa")>0;
+
+  p.rollInvuln   = 0.1f*r("Fikołek","Zwinność");
+  p.rollCdCut    = 0.05f*r("Fikołek","Lekki krok");
+  p.secondWind   = r("Fikołek","Drugi oddech")>0;
+  p.rollDist     = 0.15f*r("Fikołek","Dalszy przewrót");
+  p.rollThrough  = r("Fikołek","Przez szereg")>0;
+  p.counter      = 0.15f*r("Fikołek","Kontratak");
+  p.rollStrike   = r("Fikołek","Cios z przewrotu")>0;
+  p.sandEyes     = 1.f*r("Fikołek","Piasek w oczy");
+  p.trip         = r("Fikołek","Podcięcie")>0;
+  p.acrobat      = r("Fikołek","Akrobata")>0;
+  p.arrowDodge   = 0.1f*r("Fikołek","Wyczucie strzał");
+  p.shadow       = r("Fikołek","Cień")>0;
+  perksCache = p;
+  return perksCache;
   }

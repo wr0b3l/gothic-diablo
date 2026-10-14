@@ -2158,7 +2158,7 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
     Point sp;
     if(t>=0.f && toScreen(pl->position()+Vec3(0,230.f,0), sp)) {
       const int   bw   = int(90.f*scale), bh = std::max(4, int(8.f*scale));
-      const float full = PlayerControl::ChargeFull, win = PlayerControl::ChargeWindow;
+      const float full = player.arpgChargeTimeFull(), win = player.arpgChargeTimeWindow();
       p.setBrush(Brush(Color(0.f,0.f,0.f,0.7f), Painter::Alpha));
       p.drawRect(sp.x-bw/2-2, sp.y-2, bw+4, bh+4);
       if(t<full) {
@@ -2255,6 +2255,37 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
           p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
           p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
           }
+        }
+      }
+  }
+
+  // the skill trees: Wir (a ring all around the hero), Fala uderzeniowa (a wave running ahead of the charged swing)
+  {
+    const auto&    fx  = pl->arpgFx();
+    const uint64_t now = world->tickCount();
+    const uint64_t len = (fx.kind==3) ? 450 : 550;
+    if((fx.kind==3 || fx.kind==4) && fx.time!=0 && now>=fx.time && now<fx.time+len) {
+      const float k    = float(now-fx.time)/float(len);
+      const float fade = 1.f-k;
+      const float r1   = (fx.kind==3) ? 90.f+fx.reach*std::sqrt(k) : 120.f+fx.reach*k;
+      const float r0   = std::max(40.f, r1-(fx.kind==3 ? 60.f : 90.f));
+      const int   N    = (fx.kind==3) ? 32 : 10;
+      for(int i=0; i<N; ++i) {
+        const float a0 = fx.ang - fx.arc*0.5f + fx.arc*float(i)/float(N);
+        const float a1 = fx.ang - fx.arc*0.5f + fx.arc*float(i+1)/float(N);
+        auto pt = [&](float ang, float r, Point& out) {
+          const float rad = ang*float(M_PI)/180.f;
+          return toScreen(fx.pos + Vec3(std::cos(rad)*r, 80.f, std::sin(rad)*r), out);
+          };
+        Point p00, p01, p10, p11;
+        if(!pt(a0,r0,p00) || !pt(a0,r1,p01) || !pt(a1,r0,p10) || !pt(a1,r1,p11))
+          continue;
+        const float a = fade*0.8f;
+        if(fx.kind==3)
+          p.setBrush(Brush(Color(1.f*a, 0.82f*a, 0.4f*a, 1.f), Painter::Add)); else
+          p.setBrush(Brush(Color(0.75f*a, 0.85f*a, 1.f*a, 1.f), Painter::Add));
+        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
+        p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
         }
       }
   }
@@ -2440,7 +2471,7 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
     };
 
   const Rect rL = arpgBarSlot(0), rR = arpgBarSlot(1), rM = arpgBarSlot(2);
-  cooldown(rR, player.arpgSpecialLeft(), PlayerControl::SpecialCooldown);
+  cooldown(rR, player.arpgSpecialLeft(), player.arpgSpecialCooldown());
   if(bar.ranged)
     cooldown(rM, player.arpgPushLeft(), PlayerControl::PushCooldown);
   label(rL, "LPM", false);

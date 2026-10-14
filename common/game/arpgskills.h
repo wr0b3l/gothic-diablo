@@ -49,6 +49,53 @@ namespace ArpgSkills {
   const char* weaponName(int talent);    // "broń jednoręczna"...
   }
 
+// gothic-diablo: what the points in the trees do, in numbers (made from the ranks, ArpgProgress::perks)
+struct ArpgPerks {
+  // Cios
+  float meleeDmg    = 0;     // Ostra klinga: +damage of a normal hit (0.04 = +4%)
+  int   critAdd     = 0;     // Słaby punkt: +% chance of Gothic's full damage
+  float bleed       = 0;     // Głębokie rany: part of the hit as bleeding per second, 3 s
+  float atkSpeed    = 0;     // Płynne ruchy: faster swings (0.03 = +3%)
+  float comboWindow = 0;     // Wyczucie chwili: longer combo window (0.25 = +25%)
+  bool  fourthHit   = false; // Czwarty cios: from the 4th hit of a series x1.5
+  float arc         = 120;   // Szeroki łuk: degrees a swing hits
+  float knockback   = 0;     // Odrzut: m small creatures are pushed back
+  float vsDown      = 0;     // Dobicie: +damage against the knocked down
+  float leech       = 0;     // Pijawka: part of the damage back as health
+  int   hardSkin    = 0;     // Twarda skóra: protection for 3 s after a hit taken
+  float shotSpeed   = 0;     // Szybki naciąg: faster bow / crossbow
+  int   pierce      = 0;     // Przebicie: enemies an arrow flies through
+  float farAim      = 0;     // Celne oko: +hit chance beyond 15 m
+  bool  whirl       = false; // Wir: the last hit of a series hits all around
+  // Atak ładowany
+  float chargeTime   = 2.f;  // Skupienie: s to charge
+  float chargeWindow = 0.2f; // Szersze okno: s of the gold window
+  bool  sureHand     = false;// Pewna ręka: late release x2
+  float chargeMul    = 3.f;  // Miażdżący cios
+  float getUpDelay   = 0;    // Wstrząs: s the knocked down stay out of the fight longer
+  bool  guardBreak   = false;// Łamacz gardy
+  float waveRange    = 0;    // Fala uderzeniowa / Dalsza fala: cm of the wave (0 = none)
+  float chargeCd     = 5.f;  // Opanowanie: s of the cooldown
+  bool  battleRush   = false;// Pęd bitewny: a kill resets the cooldown
+  bool  piercingShot = false;// Strzała przeszywająca
+  int   volley       = 0;    // Grad strzał: more arrows of the charged shot
+  int   heavyHead    = 0;    // Ciężki grot: 1 = pushes back, 2 = knocks down
+  bool  innosWrath   = false;// Gniew Innosa: fire for 4 s
+  // Fikołek
+  float rollInvuln   = 0;    // Zwinność: + s without damage
+  float rollCdCut    = 0;    // Lekki krok: - s between rolls
+  bool  secondWind   = false;// Drugi oddech: two rolls in a row
+  float rollDist     = 0;    // Dalszy przewrót: +distance (0.15 = +15%)
+  bool  rollThrough  = false;// Przez szereg
+  float counter      = 0;    // Kontratak: +damage for 2 s after a roll
+  bool  rollStrike   = false;// Cios z przewrotu
+  float sandEyes     = 0;    // Piasek w oczy: s the enemies passed miss
+  bool  trip         = false;// Podcięcie
+  bool  acrobat      = false;// Akrobata: no damage from falls
+  float arrowDodge   = 0;    // Wyczucie strzał: chance an arrow misses for 1 s after a roll
+  bool  shadow       = false;// Cień: 1 s unseen after a roll
+  };
+
 class ArpgProgress final {
   public:
     static constexpr int32_t PointsPerLevel = 1;
@@ -79,6 +126,7 @@ class ArpgProgress final {
     bool     remove   (const ArpgSkills::NodeId& n, const Ranks& base);
 
     const Ranks& ranks() const { return rk; }
+    const ArpgPerks& perks() const;   // what the ranks do (kept until the ranks change)
 
     // Biegłość: how far a teacher let the hero learn (percent, at least FreeCap)
     int32_t  cap(int talent) const;
@@ -96,6 +144,8 @@ class ArpgProgress final {
 
   private:
     Ranks    rk;          // nodeKey -> rank
+    mutable ArpgPerks perksCache;
+    mutable bool      perksDirty = true;
 
     int32_t  rankOf(const Ranks& r, const ArpgSkills::NodeId& n) const;
     bool     reqMet(const Ranks& r, const ArpgSkills::NodeId& n, std::string* why) const;

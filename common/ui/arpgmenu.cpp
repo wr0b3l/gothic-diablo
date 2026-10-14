@@ -1103,9 +1103,22 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
       std::snprintf(buf, sizeof(buf), "%d", (int(pl.attribute(ATR_DEXTERITY))+dmgOf(inv.equippedIn(1)))/2);
       row(cr, y, gtxt("Obrażenia strzałą (x0,5)"), buf);
       }
-    row(cr, y, gtxt("Szybkość ataku"), "+20%");
-    row(cr, y, gtxt("Atak ładowany"), gtxt("x3, co 5 s"));
-    row(cr, y, gtxt("Fikołek bez obrażeń"), "0,45 s");
+    // with the skill trees
+    ArpgPerks pk;
+    if(auto pr = progress())
+      pk = pr->perks();
+    std::snprintf(buf, sizeof(buf), "+%d%%", int(std::lround((0.2f+pk.atkSpeed)*100.f)));
+    row(cr, y, gtxt("Szybkość ataku"), buf);
+    std::snprintf(buf, sizeof(buf), "x%.1f, %.1f s, co %.1f s", double(pk.chargeMul), double(pk.chargeTime), double(std::max(0.5f, pk.chargeCd)));
+    for(auto& c:buf)
+      if(c=='.')
+        c = ',';
+    row(cr, y, gtxt("Atak ładowany"), gtxt(buf));
+    std::snprintf(buf, sizeof(buf), "%.2f s", double(0.45f+pk.rollInvuln));
+    for(auto& c:buf)
+      if(c=='.')
+        c = ',';
+    row(cr, y, gtxt("Fikołek bez obrażeń"), buf);
   }
   }
 
@@ -1372,7 +1385,7 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
   if(selKind<=0)
     wrap(p, *f.small, nx, ny, nw, gtxt("Najedź na węzeł drzewka, żeby przeczytać jego opis."));
   text(p, *f.small, nx, nr.y+nr.h-pad-f.small->pixelSize(),
-       gtxt(t.weapons ? "Biegłość działa od razu (procent Gothica)." : "Te węzły zaczną działać w kolejnym etapie."));
+       gtxt(t.weapons ? "Biegłość działa od razu (procent Gothica)." : "Punkty działają od razu w walce."));
   }
 
 void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
