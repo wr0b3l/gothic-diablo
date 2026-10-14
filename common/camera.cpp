@@ -764,7 +764,7 @@ void Camera::tick(uint64_t dt) {
 
   {
     // gothic-diablo: the dialog shots are filmed with a narrower lens
-    const float fov = isArpgDialogShot() ? 45.f : Gothic::options().cameraFov;
+    const float fov = isArpgDialogShot() ? 50.f : Gothic::options().cameraFov;
     if(fov!=fovNow && vpWidth>0 && vpHeight>0) {
       proj.perspective(fov, float(vpWidth)/float(vpHeight), zNear(), zFar());
       fovNow = fov;

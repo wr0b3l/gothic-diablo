@@ -21,6 +21,18 @@ static Vec3 norm2(const Vec3& v, const Vec3& fallback) {
   return f/l;
   }
 
+// how far the point is from the line of sight (subject -> camera); far away when it is behind one of them
+static float offLine(const Vec3& pt, const Vec3& from, const Vec3& to) {
+  const Vec3  d  = to-from;
+  const float l2 = Vec3::dotProduct(d, d);
+  if(l2<1.f)
+    return 1e6f;
+  const float t = Vec3::dotProduct(pt-from, d)/l2;
+  if(t<=0.02f || t>=0.98f)
+    return 1e6f;
+  return (pt-(from+d*t)).length();
+  }
+
 static Vec3 face(const Npc& n) {
   // the head bone is the base of the head: eyes a bit above
   return n.mapHeadBone()+Vec3(0, 8.f, 0);
@@ -49,7 +61,7 @@ ArpgDialogCam::Shot ArpgDialogCam::compute(Kind k, const Npc* who, const Input& 
     const Vec3 u = norm2(y-x, who==in.pl ? fwdPl : fwdPl*-1.f); // from the subject towards the other
     switch(k) {
       case K_OverShoulder: {
-        s.origin = y + u*60.f + n*38.f + up*6.f;
+        s.origin = y + u*95.f + n*70.f + up*12.f;
         s.target = x - up*4.f;
         break;
         }
@@ -65,6 +77,18 @@ ArpgDialogCam::Shot ArpgDialogCam::compute(Kind k, const Npc* who, const Input& 
         s.target = x - up*2.f;
         break;
         }
+      }
+
+    // the other one must not cover the face: big shoulder plates (necromancer robes, paladins), a bow on the back.
+    // His head and shoulders keep 58 cm from the line of sight, else the camera goes further to its side.
+    for(int i=0; i<14; ++i) {
+      const Vec3 eye   = x+up*4.f;
+      const bool clear = offLine(y,          eye, s.origin)>58.f &&
+                         offLine(y-up*32.f,  eye, s.origin)>58.f &&
+                         (s.origin-y).length()>45.f;
+      if(clear)
+        break;
+      s.origin = s.origin + n*12.f;
       }
     }
 
