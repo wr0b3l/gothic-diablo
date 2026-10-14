@@ -19,6 +19,7 @@
 #include "world/triggers/abstracttrigger.h"
 #include "world/objects/npc.h"
 #include "world/objects/interactive.h"
+#include "game/gamesession.h"
 #include "game/serialize.h"
 #include "game/globaleffects.h"
 #include "utils/gthfont.h"
@@ -1366,6 +1367,19 @@ uint64_t MainWindow::tick() {
   Gothic::inst().tick(dt);
   player.tickFocus();
 
+  if(Camera::isArpgEnabled()) {
+    // gothic-diablo: a level up gives a skill point (ArpgProgress counts them from the level)
+    auto pl = Gothic::inst().player();
+    if(pl!=arpgLevelHero) {
+      arpgLevelHero = pl;
+      arpgLevelSeen = pl!=nullptr ? pl->level() : 0;
+      }
+    else if(pl!=nullptr && pl->level()>arpgLevelSeen) {
+      arpgLevelSeen = pl->level();
+      Gothic::inst().onPrint(ArpgMenu::gtxt("Nowy punkt umiejętności - drzewka pod T"));
+      }
+  }
+
   if(dialogs.isActive())
     ;//clearInput();
   if(document.isActive())
@@ -2463,6 +2477,18 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
     std::snprintf(key, sizeof(key), "%d", (k+3)%10);
     label(r, key, itm==nullptr);
     }
+
+  // skill points to spend: a gold line over the bar
+  if(auto gs = Gothic::inst().gameSession(); gs!=nullptr && pl!=nullptr) {
+    const int32_t pts = gs->arpgProgress().freePoints(pl->level());
+    if(pts>0) {
+      char txt[96] = {};
+      std::snprintf(txt, sizeof(txt), "Punkty umiejętności do wydania: %d  (T)", int(pts));
+      GthFont f = Resources::font(Resources::FontType::Hi, scale*0.8f);
+      f.setColor(Color(1.f, 0.82f, 0.42f, 1.f)); // gold
+      f.drawText(p, rL.x, rL.y-int(8.f*scale), ArpgMenu::gtxt(txt));
+      }
+  }
   }
 
 void MainWindow::onArpgSpeech(Npc& npc, std::string_view text, uint64_t ms, bool scripted) {
