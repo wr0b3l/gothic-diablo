@@ -42,8 +42,12 @@ class ArpgMenu final {
     void   paint       (Tempest::Painter& p, int w, int h, float scale, InventoryRenderer& items, Npc& pl);
     void   paintOverlay(Tempest::Painter& p, float scale, Npc& pl);
 
-    bool   mouseDown (const Tempest::Point& pos, bool right, Npc& pl);
-    void   mouseMove (const Tempest::Point& pos) { mouse = pos; }
+    // left button: click = like Gothic's inventory (equip / use / take off), held and moved = drag the item:
+    // onto an equipment slot (equip), onto a key 3-0 (rune / scroll), onto the backpack (take off), out of the book
+    // (drop on the ground); right button: drop one (Shift: all), on worn things: take off
+    bool   mouseDown (const Tempest::Point& pos, bool right, bool shift, Npc& pl);
+    void   mouseUp   (const Tempest::Point& pos, bool right, Npc& pl);
+    void   mouseMove (const Tempest::Point& pos);
     void   mouseWheel(int delta);
     bool   spellKey  (uint8_t slot, Npc& pl);   // 3..10: the rune / scroll under the cursor goes to that key
 
@@ -58,6 +62,7 @@ class ArpgMenu final {
       H_Equip,
       H_Tree,
       H_Node,
+      H_Key,      // runes and scrolls under the keys 3-0: id = Gothic's slot (3..10), count = the key number
       };
     struct Hit {
       Tempest::Rect r;
@@ -78,6 +83,24 @@ class ArpgMenu final {
     Tempest::Point       mouse;
     std::vector<Hit>     hits;
     size_t               hoverCls = 0;
+    Tempest::Rect        pageL, pageR;   // the pages (outside them: the ground)
+
+    // drag and drop
+    struct Drag {
+      bool           pending  = false; // left button down on an item, not moved yet
+      bool           on       = false; // being dragged
+      Tempest::Point from;
+      Tempest::Rect  src;
+      HitKind        kind     = H_Pack;
+      int            id       = 0;
+      size_t         cls      = 0;
+      bool           equipped = false;
+      };
+    Drag                 drag;
+    void   click   (const Hit& h, Npc& pl);
+    void   dropOn  (const Tempest::Point& pos, Npc& pl);
+    void   paintDrag(Tempest::Painter& p, const Fonts& f, InventoryRenderer& items, Npc& pl);
+    std::string_view dragHint(const Hit* target, const Item& it) const;
 
     // models of the game's items as icons of the skill nodes (made once, dropped on close or with a new world)
     const World*                                         iconWorld = nullptr;

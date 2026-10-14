@@ -332,7 +332,7 @@ void MainWindow::mouseDownEvent(MouseEvent &event) {
   if(arpgMenu.isOpen()) {
     // gothic-diablo: the ARPG window takes the mouse
     if(auto pl = Gothic::inst().player())
-      arpgMenu.mouseDown(event.pos(), event.button==Event::ButtonRight, *pl);
+      arpgMenu.mouseDown(event.pos(), event.button==Event::ButtonRight, (event.modifier & Event::M_Shift)!=0, *pl);
     return;
     }
   if(event.button==Event::ButtonLeft && isArpgMouse()) {
@@ -394,6 +394,11 @@ void MainWindow::mouseDownEvent(MouseEvent &event) {
   }
 
 void MainWindow::mouseUpEvent(MouseEvent &event) {
+  if(arpgMenu.isOpen()) {
+    // gothic-diablo: end of a click or of dragging an item in the ARPG window
+    if(auto pl = Gothic::inst().player())
+      arpgMenu.mouseUp(event.pos(), event.button==Event::ButtonRight, *pl);
+    }
   if(arpgMenu.isOpen() && !arpgLeftDown && !arpgRightDown && !arpgMidDown && !arpgMidBlock && !arpgMidPush)
     return;
   if(event.button==Event::ButtonLeft && arpgLeftDown) {

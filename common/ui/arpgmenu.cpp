@@ -287,6 +287,7 @@ void ArpgMenu::open(Page p) {
 void ArpgMenu::close() {
   page      = P_Closed;
   hoverCls  = 0;
+  drag      = Drag();
   hits.clear();
   icons.clear();
   iconWorld = nullptr;
@@ -330,7 +331,37 @@ void ArpgMenu::mouseWheel(int delta) {
   scroll = std::clamp(scroll + (delta>0 ? -1 : 1), 0, maxScroll);
   }
 
-bool ArpgMenu::mouseDown(const Point& pos, bool right, Npc& pl) {
+// which equipment slot (0..6, see Inventory::equippedIn) a thing goes to; -1: none
+static int slotOf(const Item& it) {
+  const auto cat = ItmFlags(it.mainFlag());
+  const auto flg = ItmFlags(it.handle().flags);
+  if(cat & ITM_CAT_NF)    return 0;
+  if(cat & ITM_CAT_FF)    return 1;
+  if(cat & ITM_CAT_ARMOR) return 2;
+  if(flg & ITM_AMULET)    return 3;
+  if(flg & ITM_RING)      return 4;
+  if(flg & ITM_BELT)      return 6;
+  return -1;
+  }
+
+static const Item* findItem(Npc& pl, size_t cls) {
+  for(auto it = pl.inventory().iterator(Inventory::T_Inventory); it.isValid(); ++it)
+    if(it->clsId()==cls)
+      return &(*it);
+  return nullptr;
+  }
+
+void ArpgMenu::mouseMove(const Point& pos) {
+  mouse = pos;
+  if(drag.pending && !drag.on) {
+    const Point d = pos-drag.from;
+    if(std::abs(d.x)>6 || std::abs(d.y)>6)
+      drag.on = true;
+    }
+  }
+
+bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
+  mouse = pos;
   auto h = hitAt(pos);
   if(h==nullptr)
     return false;
@@ -349,14 +380,150 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, Npc& pl) {
       return true;  // later: spend a skill point
     case H_Pack:
     case H_Equip:
-      if(right || h->cls==0)
-        return true; // right button: later (drop)
-      if(h->equipped)
-        pl.unequipItem(h->cls); else
-        pl.useItem(h->cls);      // equip / drink / read, like in Gothic's inventory
+    case H_Key:
+      if(h->cls==0)
+        return true;
+      if(right) {
+        // right button: worn things come off, the rest falls to the ground (one, Shift: all)
+        if(h->equipped)
+          pl.unequipItem(h->cls); else
+          pl.dropItem(h->cls, shift ? size_t(std::max<int32_t>(1, h->count)) : 1);
+        return true;
+        }
+      drag          = Drag();
+      drag.pending  = true;
+      drag.from     = pos;
+      drag.src      = h->r;
+      drag.kind     = h->kind;
+      drag.id       = h->id;
+      drag.cls      = h->cls;
+      drag.equipped = h->equipped;
       return true;
     }
   return false;
+  }
+
+void ArpgMenu::mouseUp(const Point& pos, bool right, Npc& pl) {
+  mouse = pos;
+  if(right || !drag.pending)
+    return;
+  const Drag d = drag;
+  drag = Drag();
+  if(d.on) {
+    drag = d;          // dropOn reads it
+    dropOn(pos, pl);
+    drag = Drag();
+    return;
+    }
+  // no move: a click, like in Gothic's inventory
+  Hit h;
+  h.kind     = d.kind;
+  h.id       = d.id;
+  h.cls      = d.cls;
+  h.equipped = d.equipped;
+  click(h, pl);
+  }
+
+void ArpgMenu::click(const Hit& h, Npc& pl) {
+  if(h.cls==0)
+    return;
+  if(h.equipped)
+    pl.unequipItem(h.cls); else
+    pl.useItem(h.cls);      // equip / drink / read
+  }
+
+std::string_view ArpgMenu::dragHint(const Hit* t, const Item& it) const {
+  if(t==nullptr) {
+    if(pageL.contains(mouse) || pageR.contains(mouse))
+      return {};
+    return "wyrzu\xe6 na ziemi\xea";                    // drop on the ground
+    }
+  switch(t->kind) {
+    case H_Equip: {
+      const int s = slotOf(it);
+      if(s<0 || !(s==t->id || (s==4 && t->id==5)))
+        return "nie pasuje";
+      return drag.equipped ? std::string_view() : std::string_view("za\xb3\xf3\xbf");   // put on
+      }
+    case H_Key:
+      return ((ItmFlags(it.mainFlag()) & ITM_CAT_RUNE)!=0) ? std::string_view("pod klawisz") : std::string_view("tylko runy i zwoje");
+    case H_Pack:
+      return drag.equipped ? std::string_view("zdejmij") : std::string_view();
+    default:
+      return {};
+    }
+  }
+
+void ArpgMenu::dropOn(const Point& pos, Npc& pl) {
+  const Item* it = findItem(pl, drag.cls);
+  if(it==nullptr)
+    return;
+  const Hit* t = hitAt(pos);
+  if(t==nullptr) {
+    if(pageL.contains(pos) || pageR.contains(pos)) {
+      // somewhere on the right page (the backpack): worn things come off
+      if(drag.equipped && pageR.contains(pos))
+        pl.unequipItem(drag.cls);
+      return;
+      }
+    // out of the book: on the ground, the whole stack (worn things first come off)
+    const size_t cls   = drag.cls;
+    const size_t count = it->count();
+    if(drag.equipped)
+      pl.unequipItem(cls);
+    pl.dropItem(cls, std::max<size_t>(1, count));
+    return;
+    }
+  switch(t->kind) {
+    case H_Equip: {
+      const int s = slotOf(*it);
+      if(s>=0 && (s==t->id || (s==4 && t->id==5)) && !drag.equipped)
+        pl.useItem(drag.cls);
+      return;
+      }
+    case H_Key:
+      if((ItmFlags(it->mainFlag()) & ITM_CAT_RUNE)!=0)
+        pl.useItem(drag.cls, uint8_t(t->id), false);
+      return;
+    case H_Pack:
+      if(drag.equipped)
+        pl.unequipItem(drag.cls);
+      return;
+    default:
+      return;
+    }
+  }
+
+void ArpgMenu::paintDrag(Painter& p, const Fonts& f, InventoryRenderer& items, Npc& pl) {
+  if(!drag.on)
+    return;
+  const Item* it = findItem(pl, drag.cls);
+  if(it==nullptr) {
+    drag = Drag();
+    return;
+    }
+  // the place it came from goes darker
+  fill(p, drag.src.x, drag.src.y, drag.src.w, drag.src.h, Color(0.f, 0.f, 0.f, 0.35f));
+
+  // the target: green when it fits, red when not
+  const Hit*             t    = hitAt(mouse);
+  const std::string_view hint = dragHint(t, *it);
+  if(t!=nullptr && (t->kind==H_Equip || t->kind==H_Key || t->kind==H_Pack) && !hint.empty()) {
+    const bool ok = (hint!="nie pasuje" && hint!="tylko runy i zwoje");
+    const int  lw = std::max(2, int(3*k));
+    frame(p, Rect(t->r.x-lw, t->r.y-lw, t->r.w+2*lw, t->r.h+2*lw),
+          ok ? Color(0.15f, 0.55f, 0.15f, 0.95f) : Color(0.70f, 0.08f, 0.05f, 0.95f), lw);
+    }
+
+  // the thing itself at the cursor
+  const int sz = int(72*k);
+  items.drawItem(mouse.x-sz/2, mouse.y-sz/2, sz, sz, *it);
+  if(!hint.empty()) {
+    const int tw = f.light->textSize(hint).w;
+    const Rect r(mouse.x-tw/2-int(8*k), mouse.y+sz/2+int(2*k), tw+int(16*k), f.light->pixelSize()+int(8*k));
+    fill(p, r.x, r.y, r.w, r.h, Color(0.f, 0.f, 0.f, 0.6f));
+    textCenter(p, *f.light, mouse.x, r.y+int(4*k), hint);
+    }
   }
 
 bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
@@ -488,6 +655,8 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
     left  = Rect(M,      top, pw, ph);
     right = Rect(w-M-pw, top, pw, ph);
     }
+  pageL = left;
+  pageR = right;
   const Rect cl = drawPage(p, left,  true);
   const Rect cr = drawPage(p, right, false);
   drawTabs(p, w, f);
@@ -501,6 +670,8 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
 
   if(page!=P_Skills)
     drawHint(p, w, h, f);
+  if(page==P_Equip)
+    paintDrag(p, f, items, pl);
   }
 
 static int itemCategory(const Item& it) {
@@ -566,14 +737,18 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
     if(it!=nullptr)
       f.body->drawText(p, tx, ny+f.body->pixelSize(), tw, 3*f.body->pixelSize(), it->description(), AlignLeft); else
       text(p, *f.small, tx, ny, "-");
-    if(it!=nullptr) {
-      Hit h; h.r = r; h.kind = H_Equip; h.cls = it->clsId(); h.equipped = true;
+    {
+      Hit h; h.r = r; h.kind = H_Equip; h.id = slots[i].slot;
+      if(it!=nullptr) {
+        h.cls      = it->clsId();
+        h.equipped = true;
+        }
       hits.push_back(h);
-      if(hv) {
+      if(hv && it!=nullptr) {
         hoverCls = it->clsId();
         info     = it;
         }
-      }
+    }
     }
   y += int((std::size(slots)+1)/2)*rowH+int(2*k);
 
@@ -618,7 +793,7 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
           info     = it;
           }
         }
-      Hit h; h.r = r; h.kind = H_Equip; h.id = -1; h.cls = 0; h.count = (i+3)%10; // key number for the overlay
+      Hit h; h.r = r; h.kind = H_Key; h.id = i+3; h.cls = 0; h.count = (i+3)%10; // Gothic's slot, the key number
       if(it!=nullptr) {
         h.cls      = it->clsId();
         h.equipped = true;
@@ -741,8 +916,9 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
   letter(p, r, 1.f);
   const int pad = int(28*k);  // the burnt edge
   if(it==nullptr) {
-    const std::string s = gtxt("Najedź na przedmiot.\nLPM: załóż, użyj albo zdejmij.");
-    f.small->drawText(p, r.x+pad, r.y+(r.h-2*f.small->pixelSize())/2+f.small->pixelSize(), r.w-2*pad, 0, s, AlignHCenter);
+    const std::string s = gtxt("Najedź na przedmiot.\nLPM: załóż, użyj, zdejmij; przeciągnij: przenieś albo wyrzuć.\nPPM: wyrzuć jeden (Shift: wszystkie), na założonym: zdejmij.");
+    const int lines = std::max(1, int(f.small->lineCount(r.w-2*pad, s)));
+    f.small->drawText(p, r.x+pad, r.y+(r.h-lines*f.small->pixelSize())/2+f.small->pixelSize(), r.w-2*pad, 0, s, AlignHCenter);
     return;
     }
   const int mw = r.h-2*pad;          // model on the right
@@ -1092,7 +1268,7 @@ void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
       std::snprintf(txt, sizeof(txt), "%d", int(h.count));
       textRight(p, fN, h.r.x+h.r.w-int(6*k), h.r.y+h.r.h-fN.pixelSize()-int(5*k), txt);
       }
-    if(h.kind==H_Equip && h.id==-1) {
+    if(h.kind==H_Key) {
       char txt[8] = {};
       std::snprintf(txt, sizeof(txt), "%d", int(h.count));
       text(p, fD, h.r.x+int(5*k), h.r.y+int(3*k), txt);
