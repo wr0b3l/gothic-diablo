@@ -2081,7 +2081,9 @@ bool Npc::commitDamageArpg() {
   const bool  special = arpgSpecialPending && arpgSpecialUntil>owner.tickCount();
   arpgSpecialPending = false;
   const auto  ct      = visual.pose().comboTiming(owner.tickCount());
-  const bool  whirl   = !special && pk!=nullptr && pk->whirl && ct.attack && ct.last;
+  // the last hit of the series: by the number of hits (Gothic's master and 2H combos have a window after it too)
+  const bool  lastHit = ct.attack && ct.hits>1 && ct.len+1>=ct.hits;
+  const bool  whirl   = !special && pk!=nullptr && pk->whirl && lastHit;
   const float arcDeg  = special ? 180.f : (whirl ? 360.f : (pk!=nullptr ? pk->arc : 120.f));
   const float rot     = rotationRad();
   const Tempest::Vec2 fwd = {std::cos(rot), std::sin(rot)};
@@ -2133,16 +2135,25 @@ bool Npc::commitDamageArpg() {
     arpgFxLast.arc   = 360.f;
     arpgFxLast.reach = 300.f;
     arpgFxLast.kind  = 3;
+    arpgSpinUntil    = owner.tickCount()+300; // the hero turns round once with the swing
+    owner.arpgPopup(position()+Tempest::Vec3(0,230.f,0), 1, 5);
+    Tempest::Log::i("gothic-diablo: Wir, hit ", int(ct.len+1), "/", int(ct.hits), ", ", hit.size(), " enemies");
     }
   else if(waveR>0.f) {
     arpgFxLast.time  = owner.tickCount();
     arpgFxLast.pos   = position();
     arpgFxLast.ang   = angle;
-    arpgFxLast.arc   = 40.f;
+    arpgFxLast.arc   = 50.f;
     arpgFxLast.reach = waveR;
     arpgFxLast.kind  = 4;
+    owner.arpgPopup(position()+Tempest::Vec3(0,230.f,0), 2, 5);
+    Tempest::Log::i("gothic-diablo: Fala uderzeniowa ", int(waveR), " cm, ", wave.size(), " enemies");
     }
   return true;
+  }
+
+bool Npc::arpgSpinning() const {
+  return arpgSpinUntil>owner.tickCount();
   }
 
 void Npc::arpgHoldParade() {
@@ -2760,6 +2771,12 @@ void Npc::tick(uint64_t dt) {
     }
   if(arpgBleed.until!=0 || arpgBurn.until!=0)
     arpgTickDots();
+  if(arpgSpinUntil!=0) {
+    // Wir: one turn in 0.3 s
+    if(arpgSpinUntil>owner.tickCount())
+      setDirection(angle+float(dt)*1.2f); else
+      arpgSpinUntil = 0;
+    }
 
   // gothic-diablo: one animation played faster (hero's dodge roll)
   if(arpgFastSeq!=nullptr) {
@@ -4578,6 +4595,8 @@ bool Npc::shootBow(Interactive* focOverride) {
           bi.setArpgPierce(b.arpgPierceLeft());
           bi.setArpgHeavy(charged ? pk->heavyHead : 0);
           }
+        owner.arpgPopup(position()+Tempest::Vec3(0,230.f,0), 3, 5);
+        Tempest::Log::i("gothic-diablo: Grad strzał, +", pk->volley, " arrows");
         }
       }
     }

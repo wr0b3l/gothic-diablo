@@ -2188,7 +2188,7 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
     const float turn  = fight ? step*1.6f : step;
     faceAng = std::atan2(d.z, d.x)*180.f/float(M_PI);
     faceDa  = std::remainder(faceAng-rot, 360.f);
-    if(allowRot)
+    if(allowRot && !pl.arpgSpinning()) // Wir: the turn round is not stopped
       rot += std::clamp(faceDa, -turn, turn);
     }
 

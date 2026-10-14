@@ -204,6 +204,7 @@ class Npc final {
     void       arpgRollDone(uint64_t endTick) { arpgRollEnd = endTick; } // gothic-diablo: hero's roll ends then
     void       arpgSetShadow(uint64_t ms); // gothic-diablo: unseen for 'ms' (enemies lose him)
     bool       arpgInShadow() const;
+    bool       arpgSpinning() const;       // gothic-diablo: Wir: the hero turns round with the last hit
     bool       arpgTakeSpecialKill() { const bool r = arpgSpecialKill; arpgSpecialKill = false; return r; }
     void       arpgNpcCollision(bool on);  // gothic-diablo: hero's roll through enemies
     // gothic-diablo: a ring / wave of a swing to draw (Wir, the shock wave of the charged attack)
@@ -569,6 +570,7 @@ class Npc final {
     uint64_t  arpgHardSkinUntil  = 0;     // hero: Twarda skóra after a hit taken
     uint64_t  arpgRollEnd        = 0;     // hero: end of the last roll
     uint64_t  arpgShadowUntil    = 0;     // hero: Cień
+    uint64_t  arpgSpinUntil      = 0;     // hero: Wir, turning round
     bool      arpgShadowOn       = false;
     bool      arpgSpecialKill    = false; // hero: the charged attack killed someone (Pęd bitewny)
     struct ArpgDot {

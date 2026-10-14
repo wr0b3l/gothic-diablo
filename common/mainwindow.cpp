@@ -2141,6 +2141,12 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       else if(e.kind==4) {
         type = Resources::FontType::Yellow;
         std::snprintf(txt, sizeof(txt), "Unik");
+        }
+      else if(e.kind==5) {
+        // a skill of the trees went off
+        type = Resources::FontType::Yellow;
+        const char* nm = (e.value==1) ? "Wir!" : (e.value==2) ? "Fala uderzeniowa!" : (e.value==3) ? "Grad strzał!" : "";
+        std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt(nm).c_str());
         } else {
         type = (e.kind==1) ? Resources::FontType::Red : Resources::FontType::Normal;
         std::snprintf(txt, sizeof(txt), "%d", int(e.value));
@@ -2263,13 +2269,13 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
   {
     const auto&    fx  = pl->arpgFx();
     const uint64_t now = world->tickCount();
-    const uint64_t len = (fx.kind==3) ? 450 : 550;
+    const uint64_t len = (fx.kind==3) ? 450 : 700;
     if((fx.kind==3 || fx.kind==4) && fx.time!=0 && now>=fx.time && now<fx.time+len) {
       const float k    = float(now-fx.time)/float(len);
-      const float fade = 1.f-k;
-      const float r1   = (fx.kind==3) ? 90.f+fx.reach*std::sqrt(k) : 120.f+fx.reach*k;
-      const float r0   = std::max(40.f, r1-(fx.kind==3 ? 60.f : 90.f));
-      const int   N    = (fx.kind==3) ? 32 : 10;
+      const float fade = 1.f-k*k;
+      const float r1   = (fx.kind==3) ? 90.f+fx.reach*std::sqrt(k) : 80.f+fx.reach*std::sqrt(k);
+      const float r0   = std::max(30.f, r1-(fx.kind==3 ? 60.f : 160.f));
+      const int   N    = (fx.kind==3) ? 32 : 16;
       for(int i=0; i<N; ++i) {
         const float a0 = fx.ang - fx.arc*0.5f + fx.arc*float(i)/float(N);
         const float a1 = fx.ang - fx.arc*0.5f + fx.arc*float(i+1)/float(N);
@@ -2280,12 +2286,19 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         Point p00, p01, p10, p11;
         if(!pt(a0,r0,p00) || !pt(a0,r1,p01) || !pt(a1,r0,p10) || !pt(a1,r1,p11))
           continue;
-        const float a = fade*0.8f;
+        // brighter in the middle of the wave
+        const float edge = (fx.kind==3) ? 1.f : 1.f-std::abs(float(i)+0.5f-float(N)/2.f)/(float(N)/2.f);
+        const float a    = fade*(fx.kind==3 ? 0.8f : (0.45f+0.55f*edge));
         if(fx.kind==3)
           p.setBrush(Brush(Color(1.f*a, 0.82f*a, 0.4f*a, 1.f), Painter::Add)); else
-          p.setBrush(Brush(Color(0.75f*a, 0.85f*a, 1.f*a, 1.f), Painter::Add));
+          p.setBrush(Brush(Color(0.6f*a, 0.8f*a, 1.f*a, 1.f), Painter::Add));
         p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
         p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+        if(fx.kind==4) {
+          // twice: the wave shines over the ground
+          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p01.x),float(p01.y),0,0, float(p11.x),float(p11.y),0,0);
+          p.drawTriangle(float(p00.x),float(p00.y),0,0, float(p11.x),float(p11.y),0,0, float(p10.x),float(p10.y),0,0);
+          }
         }
       }
   }

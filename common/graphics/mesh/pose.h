@@ -85,6 +85,7 @@ class Pose final {
       float    progress   = 0;     // 0..1 time until the window opens
       float    windowLeft = 0;     // 0..1 part of the window that is left
       uint16_t len        = 0;     // hits already chained
+      uint16_t hits       = 0;     // gothic-diablo: hits of the whole series (Gothic: 2 untrained, 3-4 warrior / master)
       };
     ComboTiming        comboTiming(uint64_t tickCount) const;
 

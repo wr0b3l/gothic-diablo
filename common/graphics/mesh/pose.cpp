@@ -901,6 +901,7 @@ Pose::ComboTiming Pose::comboTiming(uint64_t tickCount) const {
     r.attack = true;
     r.broken = combo.isBreak();
     r.len    = combo.len();
+    r.hits   = uint16_t(d.defHitEnd.size());
 
     const size_t id = size_t(combo.len())*2;
     if(id+1>=d.defWindow.size()) {
