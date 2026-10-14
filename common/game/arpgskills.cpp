@@ -64,6 +64,24 @@ const std::vector<Tree>& ArpgSkills::trees() {
       },
       {"Cień",1,"Po fikołku 1 s niewidzialności: wrogowie gubią cel","ITAT_SHADOWFUR"},
       "3/3 w Kontrataku", {2}, {0, {{2,0}}}},
+    {"Biegłość", "", "Procent Gothica w broni: szansa na pełne obrażenia i lepsze ruchy w walce (od 30% wojownik, od 60% mistrz). "
+                     "Bez nauczyciela do 30%, dalej do tylu procent, do ilu nauczyciel uczy", "ITMW_1H_SPECIAL_04",
+      {
+        {"Jednoręczna",  {{"Nowicjusz",4,"+5% biegłości w broni jednoręcznej za punkt (do 30%)","ITMW_SHORTSWORD1"},
+                          {"Wojownik",6,"+5% za punkt (do 60%); od 30% ruchy wojownika. Wymaga nauczyciela","ITMW_1H_MIL_SWORD"},
+                          {"Mistrz",8,"+5% za punkt (do 100%); od 60% ruchy mistrza. Wymaga nauczyciela","ITMW_1H_PAL_SWORD"}}},
+        {"Dwuręczna",    {{"Nowicjusz",4,"+5% biegłości w broni dwuręcznej za punkt (do 30%)","ITMW_ZWEIHAENDER1"},
+                          {"Wojownik",6,"+5% za punkt (do 60%); od 30% ruchy wojownika. Wymaga nauczyciela","ITMW_2H_SLD_SWORD"},
+                          {"Mistrz",8,"+5% za punkt (do 100%); od 60% ruchy mistrza. Wymaga nauczyciela","ITMW_2H_PAL_SWORD"}}},
+        {"Łuk",          {{"Nowicjusz",4,"+5% biegłości w łuku za punkt (do 30%)","ITRW_BOW_L_04"},
+                          {"Strzelec",6,"+5% za punkt (do 60%). Wymaga nauczyciela","ITRW_BOW_M_04"},
+                          {"Mistrz",8,"+5% za punkt (do 100%). Wymaga nauczyciela","ITRW_BOW_H_04"}}},
+        {"Kusza",        {{"Nowicjusz",4,"+5% biegłości w kuszy za punkt (do 30%)","ITRW_CROSSBOW_L_01"},
+                          {"Strzelec",6,"+5% za punkt (do 60%). Wymaga nauczyciela","ITRW_CROSSBOW_M_01"},
+                          {"Mistrz",8,"+5% za punkt (do 100%). Wymaga nauczyciela","ITRW_CROSSBOW_H_01"}}},
+      },
+      {nullptr,0,nullptr,nullptr},
+      "", {}, {}, true},
     };
   return t;
   }
@@ -71,8 +89,35 @@ const std::vector<Tree>& ArpgSkills::trees() {
 std::string ArpgSkills::nodeKey(size_t tree, int branch, int node) {
   auto& t = trees()[tree];
   if(branch<0)
-    return std::string(t.name)+"/"+t.keystone.name;
-  return std::string(t.name)+"/"+t.branches[size_t(branch)].nodes[size_t(node)].name;
+    return std::string(t.name)+"/"+(t.keystone.name!=nullptr ? t.keystone.name : "");
+  auto& br = t.branches[size_t(branch)];
+  if(t.weapons) // the same node names in every branch
+    return std::string(t.name)+"/"+br.name+"/"+br.nodes[size_t(node)].name;
+  return std::string(t.name)+"/"+br.nodes[size_t(node)].name;
+  }
+
+size_t ArpgSkills::weaponsTree() {
+  auto& tr = trees();
+  for(size_t i=0; i<tr.size(); ++i)
+    if(tr[i].weapons)
+      return i;
+  return size_t(-1);
+  }
+
+int ArpgSkills::talentOf(const NodeId& n) {
+  if(n.tree!=weaponsTree() || n.branch<0 || n.branch>3)
+    return 0;
+  return n.branch+1;
+  }
+
+const char* ArpgSkills::weaponName(int talent) {
+  switch(talent) {
+    case 1: return "broń jednoręczna";
+    case 2: return "broń dwuręczna";
+    case 3: return "łuk";
+    case 4: return "kusza";
+    }
+  return "";
   }
 
 std::string ArpgSkills::branchKey(size_t tree, int branch) {
@@ -93,7 +138,7 @@ static bool exists(const NodeId& n) {
     return false;
   auto& t = tr[n.tree];
   if(n.branch<0)
-    return true;
+    return t.keystone.name!=nullptr;
   if(size_t(n.branch)>=t.branches.size())
     return false;
   return n.node>=0 && size_t(n.node)<t.branches[size_t(n.branch)].nodes.size();
@@ -104,39 +149,105 @@ static bool exists(const NodeId& n) {
 void ArpgProgress::clear() {
   rk.clear();
   found.clear();
-  bought = 0;
+  caps.clear();
+  bought      = 0;
+  weaponsInit = false;
   }
 
-void ArpgProgress::save(Serialize& fout) const {
-  const uint8_t ver = 1;
-  fout.write(ver, bought);
-  fout.write(uint32_t(rk.size()));
-  for(auto& i:rk)
-    fout.write(i.first, i.second);
-  fout.write(uint32_t(found.size()));
-  for(auto& i:found)
+static void writeMap(Serialize& fout, const ArpgProgress::Ranks& m) {
+  fout.write(uint32_t(m.size()));
+  for(auto& i:m)
     fout.write(i.first, i.second);
   }
 
-void ArpgProgress::load(Serialize& fin) {
-  clear();
-  uint8_t ver = 0;
-  fin.read(ver, bought);
+static void readMap(Serialize& fin, ArpgProgress::Ranks& m) {
   uint32_t n = 0;
   fin.read(n);
   for(uint32_t i=0; i<n; ++i) {
     std::string k;
     int32_t     v = 0;
     fin.read(k, v);
-    rk[k] = v;
+    m[k] = v;
     }
-  fin.read(n);
-  for(uint32_t i=0; i<n; ++i) {
-    std::string k;
-    int32_t     v = 0;
-    fin.read(k, v);
-    found[k] = v;
+  }
+
+void ArpgProgress::save(Serialize& fout) const {
+  const uint8_t ver = 2;
+  fout.write(ver, bought);
+  writeMap(fout, rk);
+  writeMap(fout, found);
+  // v2: Biegłość
+  writeMap(fout, caps);
+  fout.write(weaponsInit);
+  }
+
+void ArpgProgress::load(Serialize& fin) {
+  clear();
+  uint8_t ver = 0;
+  fin.read(ver, bought);
+  readMap(fin, rk);
+  readMap(fin, found);
+  if(ver>=2) {
+    readMap(fin, caps);
+    fin.read(weaponsInit);
     }
+  }
+
+int32_t ArpgProgress::cap(int talent) const {
+  auto it = caps.find(std::to_string(talent));
+  const int32_t c = (it!=caps.end()) ? it->second : 0;
+  return std::clamp(std::max(c, FreeCap), 0, 100);
+  }
+
+void ArpgProgress::setCap(int talent, int32_t pct) {
+  caps[std::to_string(talent)] = std::clamp(pct, 0, 100);
+  }
+
+void ArpgProgress::initWeapons(const Hero& h) {
+  weaponsInit = true;
+  const size_t wt = weaponsTree();
+  if(wt==size_t(-1))
+    return;
+  auto& t = trees()[wt];
+  for(int b=0; b<int(t.branches.size()) && b<4; ++b) {
+    const int     tal  = b+1;
+    const int32_t pct  = h.pct[tal];
+    int32_t       left = std::clamp((pct-BasePct)/PctPerRank, 0, 18);
+    // a teacher let him learn that far
+    if(pct>cap(tal))
+      setCap(tal, pct);
+    if(left<=0)
+      continue;
+    found[branchKey(wt, b)] += left;
+    auto& br = t.branches[size_t(b)];
+    for(int n=0; n<int(br.nodes.size()) && left>0; ++n) {
+      const int32_t r = std::min(left, int32_t(br.nodes[size_t(n)].max));
+      rk[nodeKey(wt, b, n)] = r;
+      left -= r;
+      }
+    }
+  }
+
+void ArpgProgress::resetRanks(int32_t pctBack[5]) {
+  for(int i=0; i<5; ++i)
+    pctBack[i] = 0;
+  const size_t wt = weaponsTree();
+  if(wt!=size_t(-1)) {
+    for(int b=0; b<4 && b<int(trees()[wt].branches.size()); ++b) {
+      int32_t r = 0;
+      for(int n=0; n<int(trees()[wt].branches[size_t(b)].nodes.size()); ++n)
+        r += rank(NodeId{wt,b,n});
+      pctBack[b+1] = r*PctPerRank;
+      }
+    }
+  rk.clear(); // points found for a branch stay there (to be spent again)
+  }
+
+int32_t ArpgProgress::spentTotal() const {
+  int32_t sum = 0;
+  for(auto& i:rk)
+    sum += i.second;
+  return sum;
   }
 
 int32_t ArpgProgress::rankOf(const Ranks& r, const NodeId& n) const {
@@ -205,11 +316,15 @@ int32_t ArpgProgress::branchLeft(size_t tree, int branch) const {
 bool ArpgProgress::reqMet(const Ranks& r, const NodeId& n, std::string* why) const {
   auto& t = trees()[n.tree];
   if(n.branch>=0) {
-    // the first node of a branch is open; the next one needs a point in the one before it
-    if(n.node==0 || rankOf(r, NodeId{n.tree, n.branch, n.node-1})>0)
+    // the first node of a branch is open; the next one needs a point in the one before it (Biegłość: that one full)
+    if(n.node==0)
+      return true;
+    const NodeId prev{n.tree, n.branch, n.node-1};
+    const auto&  pn   = nodeOf(prev);
+    if(t.weapons ? rankOf(r, prev)>=pn.max : rankOf(r, prev)>0)
       return true;
     if(why!=nullptr)
-      *why = std::string("Wymaga punktu w: ")+t.branches[size_t(n.branch)].nodes[size_t(n.node-1)].name;
+      *why = std::string(t.weapons ? "Wymaga pełnego węzła: " : "Wymaga punktu w: ")+pn.name;
     return false;
     }
   auto& kr = t.keyReq;
@@ -241,7 +356,7 @@ bool ArpgProgress::valid(const Ranks& r) const {
   return true;
   }
 
-bool ArpgProgress::canAdd(const NodeId& n, int32_t level, std::string* why) const {
+bool ArpgProgress::canAdd(const NodeId& n, const Hero& h, std::string* why) const {
   if(!exists(n))
     return false;
   if(rank(n)>=nodeOf(n).max) {
@@ -251,17 +366,22 @@ bool ArpgProgress::canAdd(const NodeId& n, int32_t level, std::string* why) cons
     }
   if(!reqMet(rk, n, why))
     return false;
+  if(const int tal = talentOf(n); tal>0 && h.pct[tal]+PctPerRank>cap(tal)) {
+    if(why!=nullptr)
+      *why = "Dalej tylko u nauczyciela: teraz możesz do "+std::to_string(cap(tal))+"%";
+    return false;
+    }
   if(n.branch>=0 && branchLeft(n.tree, n.branch)>0)
     return true;
-  if(freePoints(level)>0)
+  if(freePoints(h.level)>0)
     return true;
   if(why!=nullptr)
     *why = "Brak wolnych punktów umiejętności";
   return false;
   }
 
-bool ArpgProgress::add(const NodeId& n, int32_t level) {
-  if(!canAdd(n, level))
+bool ArpgProgress::add(const NodeId& n, const Hero& h) {
+  if(!canAdd(n, h))
     return false;
   rk[nodeKey(n.tree, n.branch, n.node)] = rank(n)+1;
   return true;

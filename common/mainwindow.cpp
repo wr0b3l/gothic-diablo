@@ -1378,6 +1378,14 @@ uint64_t MainWindow::tick() {
       arpgLevelSeen = pl->level();
       Gothic::inst().onPrint(ArpgMenu::gtxt("Nowy punkt umiejętności - drzewka pod T"));
       }
+    // the first time with Biegłość (a new game, a save from before it): the weapon percents learned so far become ranks
+    if(auto gs = Gothic::inst().gameSession(); gs!=nullptr && pl!=nullptr && !gs->arpgProgress().weaponsReady()) {
+      ArpgProgress::Hero h;
+      h.level = pl->level();
+      for(int t=1; t<=4; ++t)
+        h.pct[t] = pl->hitChance(Talent(t));
+      gs->arpgProgress().initWeapons(h);
+      }
   }
 
   if(dialogs.isActive())
