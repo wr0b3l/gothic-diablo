@@ -91,7 +91,7 @@ void DialogMenu::tick(uint64_t dt) {
   tickActing(dt);
   {
     // gothic-diablo: the letterbox comes in and goes out in 0.3 s
-    const float dst = isArpgCinema() ? 1.f : 0.f;
+    const float dst = (isArpgCinema() && trade.isOpen()==InventoryMenu::State::Closed) ? 1.f : 0.f; // not over the trade
     const float stp = float(dt)/300.f;
     if(barsK!=dst) {
       barsK = std::clamp(dst, barsK-stp, barsK+stp);

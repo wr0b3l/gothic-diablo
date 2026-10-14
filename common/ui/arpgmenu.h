@@ -13,6 +13,7 @@ class Npc;
 class Item;
 class World;
 class InventoryRenderer;
+class InventoryMenu;
 class GthFont;
 
 // gothic-diablo: the ARPG window: equipment, character, skill trees.
@@ -30,6 +31,7 @@ class ArpgMenu final {
       P_Equip,
       P_Character,
       P_Skills,
+      P_Trade,     // trade, a chest, looting: opened and closed with Gothic's menu (InventoryMenu keeps the state)
       };
 
     bool   isOpen()  const { return page!=P_Closed; }
@@ -50,6 +52,7 @@ class ArpgMenu final {
     void   mouseMove (const Tempest::Point& pos);
     void   mouseWheel(int delta);
     bool   spellKey  (uint8_t slot, Npc& pl);   // 3..10: the rune / scroll under the cursor goes to that key
+    void   setInventoryMenu(InventoryMenu* m) { invMenu = m; }
 
     // UTF-8 text for Gothic's fonts (they draw the bytes of the game's code page; Polish game = Windows-1250)
     static std::string gtxt(std::string_view utf8);
@@ -63,6 +66,9 @@ class ArpgMenu final {
       H_Tree,
       H_Node,
       H_Key,      // runes and scrolls under the keys 3-0: id = Gothic's slot (3..10), count = the key number
+      H_Other,    // trade / chest / looting: a thing on the other's page
+      H_CatL,     // trade / chest / looting: kind of things on the other's page
+      H_TakeAll,  // chest / looting: take everything
       };
     struct Hit {
       Tempest::Rect r;
@@ -71,6 +77,7 @@ class ArpgMenu final {
       size_t        cls      = 0;
       bool          equipped = false;
       int32_t       count    = 0;
+      int32_t       price    = 0;   // trade: what it costs / what the hero gets
       };
     struct Fonts;
 
@@ -79,6 +86,10 @@ class ArpgMenu final {
     int                  tree   = 0;   // skill tree shown
     int                  scroll = 0;   // backpack: rows scrolled
     int                  maxScroll = 0;
+    int                  catL      = 0; // trade / chest / looting: the other's page
+    int                  scrollL   = 0;
+    int                  maxScrollL = 0;
+    InventoryMenu*       invMenu   = nullptr;
     float                k      = 1;   // size of the window: 1 = 1080 lines
     Tempest::Point       mouse;
     std::vector<Hit>     hits;
@@ -95,6 +106,8 @@ class ArpgMenu final {
       int            id       = 0;
       size_t         cls      = 0;
       bool           equipped = false;
+      bool           shift    = false;
+      int32_t        count    = 0;
       };
     Drag                 drag;
     void   click   (const Hit& h, Npc& pl);
@@ -108,7 +121,7 @@ class ArpgMenu final {
     const Item*          iconItem(const char* instance);
 
     const Hit*     hitAt(const Tempest::Point& pos) const;
-    Tempest::Rect  drawPage (Tempest::Painter& p, const Tempest::Rect& r, bool left) const;
+    Tempest::Rect  drawPage (Tempest::Painter& p, const Tempest::Rect& r, bool left, const char* tex = nullptr) const;
     void   drawSlot  (Tempest::Painter& p, const Tempest::Rect& r, bool equipped, bool hover) const;
     void   drawBar   (Tempest::Painter& p, const Tempest::Rect& r, const char* fill, float v) const;
     void   drawRule  (Tempest::Painter& p, int x, int y, int w) const;
@@ -118,5 +131,9 @@ class ArpgMenu final {
     void   paintEquip(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
     void   paintStats(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, Npc& pl);
     void   paintTrees(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items);
-    void   paintInfo (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& r, InventoryRenderer& items, const Item* it) const;
+    void   paintInfo (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& r, InventoryRenderer& items, const Item* it,
+                      std::string_view extra = {}, std::string_view help = {}) const;
+    void   paintTrade(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    void   tradeMove (bool fromOther, size_t cls, int32_t count, bool equipped, Npc& pl);
+    void   tradeDrop (const Tempest::Point& pos, Npc& pl);
   };

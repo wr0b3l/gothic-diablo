@@ -11,6 +11,8 @@
 #include <map>
 
 #include "graphics/inventoryrenderer.h"
+#include "ui/inventorymenu.h"
+#include "world/objects/interactive.h"
 #include "world/objects/npc.h"
 #include "world/objects/item.h"
 #include "world/world.h"
@@ -282,6 +284,11 @@ ArpgMenu::~ArpgMenu() = default;
 void ArpgMenu::open(Page p) {
   page   = p;
   scroll = 0;
+  if(p==P_Trade) {
+    catL    = 0;
+    scrollL = 0;
+    cat     = 0;
+    }
   }
 
 void ArpgMenu::close() {
@@ -326,7 +333,11 @@ const ArpgMenu::Hit* ArpgMenu::hitAt(const Point& pos) const {
   }
 
 void ArpgMenu::mouseWheel(int delta) {
-  if(page!=P_Equip)
+  if(page==P_Trade && pageL.contains(mouse)) {
+    scrollL = std::clamp(scrollL + (delta>0 ? -1 : 1), 0, maxScrollL);
+    return;
+    }
+  if(page!=P_Equip && page!=P_Trade)
     return;
   scroll = std::clamp(scroll + (delta>0 ? -1 : 1), 0, maxScroll);
   }
@@ -378,11 +389,44 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
       return true;
     case H_Node:
       return true;  // later: spend a skill point
+    case H_CatL:
+      catL    = h->id;
+      scrollL = 0;
+      return true;
+    case H_TakeAll: {
+      // everything from the chest / the body
+      if(invMenu==nullptr)
+        return true;
+      std::vector<std::pair<size_t,size_t>> all;
+      if(auto oi = invMenu->arpgOtherInventory())
+        for(auto it = oi->iterator(invMenu->arpgOtherIter()); it.isValid(); ++it)
+          all.emplace_back(it->clsId(), it.count());
+      for(auto& i:all)
+        invMenu->arpgMove(true, i.first, i.second);
+      return true;
+      }
+    case H_Other:
     case H_Pack:
     case H_Equip:
     case H_Key:
       if(h->cls==0)
         return true;
+      if(page==P_Trade && right) {
+        tradeMove(h->kind==H_Other, h->cls, h->count, h->equipped, pl); // the whole stack
+        return true;
+        }
+      if(page==P_Trade) {
+        drag          = Drag();
+        drag.pending  = true;
+        drag.from     = pos;
+        drag.src      = h->r;
+        drag.kind     = h->kind;
+        drag.cls      = h->cls;
+        drag.equipped = h->equipped;
+        drag.shift    = shift;
+        drag.count    = h->count;
+        return true;
+        }
       if(right) {
         // right button: worn things come off, the rest falls to the ground (one, Shift: all)
         if(h->equipped)
@@ -409,6 +453,21 @@ void ArpgMenu::mouseUp(const Point& pos, bool right, Npc& pl) {
     return;
   const Drag d = drag;
   drag = Drag();
+  if(page==P_Trade) {
+    if(d.on) {
+      drag = d;
+      tradeDrop(pos, pl);
+      drag = Drag();
+      return;
+      }
+    // a click: one piece (Shift: the stack); gold and loot from chests and bodies go whole
+    const bool other = (d.kind==H_Other);
+    int32_t    cnt   = d.shift ? d.count : 1;
+    if(other && invMenu!=nullptr && invMenu->isOpen()!=InventoryMenu::State::Trade)
+      cnt = d.count;
+    tradeMove(other, d.cls, cnt, d.equipped, pl);
+    return;
+    }
   if(d.on) {
     drag = d;          // dropOn reads it
     dropOn(pos, pl);
@@ -506,8 +565,22 @@ void ArpgMenu::paintDrag(Painter& p, const Fonts& f, InventoryRenderer& items, N
   fill(p, drag.src.x, drag.src.y, drag.src.w, drag.src.h, Color(0.f, 0.f, 0.f, 0.35f));
 
   // the target: green when it fits, red when not
-  const Hit*             t    = hitAt(mouse);
-  const std::string_view hint = dragHint(t, *it);
+  const Hit*       t = hitAt(mouse);
+  std::string_view hint;
+  std::string      tradeHint;
+  if(page==P_Trade) {
+    // trade, chest, looting: the hint says what happens on the other page
+    const auto st    = invMenu!=nullptr ? invMenu->isOpen() : InventoryMenu::State::Closed;
+    const bool other = (drag.kind==H_Other);
+    if(other && pageR.contains(mouse))
+      tradeHint = gtxt(st==InventoryMenu::State::Trade ? "kup" : "weź");
+    else if(!other && pageL.contains(mouse) && st!=InventoryMenu::State::Ransack)
+      tradeHint = drag.equipped ? gtxt("zdejmij najpierw") : gtxt(st==InventoryMenu::State::Trade ? "sprzedaj" : "odłóż");
+    hint = tradeHint;
+    t    = nullptr;
+    } else {
+    hint = dragHint(t, *it);
+    }
   if(t!=nullptr && (t->kind==H_Equip || t->kind==H_Key || t->kind==H_Pack) && !hint.empty()) {
     const bool ok = (hint!="nie pasuje" && hint!="tylko runy i zwoje");
     const int  lw = std::max(2, int(3*k));
@@ -543,9 +616,9 @@ bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
 // ---------------------------------------------------------------------------------------------------------------
 // drawing helpers: Gothic's own textures
 
-Rect ArpgMenu::drawPage(Painter& p, const Rect& r, bool left) const {
+Rect ArpgMenu::drawPage(Painter& p, const Rect& r, bool left, const char* tex) const {
   // the pages of the game's books: the left one is bound on its left side, the right one on its right side
-  if(auto t = Resources::loadTexture(left ? BookL : BookR)) {
+  if(auto t = Resources::loadTexture(tex!=nullptr ? tex : (left ? BookL : BookR))) {
     const int tw = t->w(), th = t->h();
     const int u0 = left ? tw*192/512 : 0;
     const int u1 = left ? tw         : tw*320/512;
@@ -620,7 +693,9 @@ void ArpgMenu::drawTabs(Painter& p, int w, const Fonts& f) {
   }
 
 void ArpgMenu::drawHint(Painter& p, int w, int h, const Fonts& f) const {
-  const std::string s = gtxt("Q / E - obrót kamery        Esc - zamknij");
+  const std::string s = (page==P_Trade) ?
+    gtxt("LPM - jedna sztuka      Shift+LPM / PPM - cały stos      przeciągnij na drugą stronę      Esc - koniec") :
+    gtxt("Q / E - obrót kamery        Esc - zamknij");
   const int tw = f.small->textSize(s).w + int(70*k);
   const int th = int(40*k);
   const Rect r((w-tw)/2, h-int(12*k)-th, tw, th);
@@ -657,20 +732,23 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
     }
   pageL = left;
   pageR = right;
-  const Rect cl = drawPage(p, left,  true);
+  // trade, chest, looting: the other's page is a red book (not ours), ours the brown one
+  const Rect cl = drawPage(p, left,  true, page==P_Trade ? "BOOK_RED_L.TGA" : nullptr);
   const Rect cr = drawPage(p, right, false);
-  drawTabs(p, w, f);
+  if(page!=P_Trade)
+    drawTabs(p, w, f);
 
   switch(page) {
     case P_Closed:    break;
     case P_Equip:     paintEquip(p, f, cl, cr, items, pl); break;
     case P_Character: paintStats(p, f, cl, cr, pl);        break;
     case P_Skills:    paintTrees(p, f, cl, cr, items);     break;
+    case P_Trade:     paintTrade(p, f, cl, cr, items, pl); break;
     }
 
   if(page!=P_Skills)
     drawHint(p, w, h, f);
-  if(page==P_Equip)
+  if(page==P_Equip || page==P_Trade)
     paintDrag(p, f, items, pl);
   }
 
@@ -911,12 +989,14 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
   paintInfo(p, f, Rect(cr.x-int(14*k), infoY, cr.w+int(28*k), cr.y+cr.h-infoY), items, info);
   }
 
-void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRenderer& items, const Item* it) const {
+void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRenderer& items, const Item* it,
+                         std::string_view extra, std::string_view help) const {
   // the description on a sheet of the game's letters
   letter(p, r, 1.f);
   const int pad = int(28*k);  // the burnt edge
   if(it==nullptr) {
-    const std::string s = gtxt("Najedź na przedmiot.\nLPM: załóż, użyj, zdejmij; przeciągnij: przenieś albo wyrzuć.\nPPM: wyrzuć jeden (Shift: wszystkie), na założonym: zdejmij.");
+    const std::string s = !help.empty() ? std::string(help) :
+      gtxt("Najedź na przedmiot.\nLPM: załóż, użyj, zdejmij; przeciągnij: przenieś albo wyrzuć.\nPPM: wyrzuć jeden (Shift: wszystkie), na założonym: zdejmij.");
     const int lines = std::max(1, int(f.small->lineCount(r.w-2*pad, s)));
     f.small->drawText(p, r.x+pad, r.y+(r.h-lines*f.small->pixelSize())/2+f.small->pixelSize(), r.w-2*pad, 0, s, AlignHCenter);
     return;
@@ -927,12 +1007,13 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
   auto& fName = f.sub->textSize(it->description()).w<=tw ? *f.sub : *f.body;
   text(p, fName, r.x+pad, y, it->description());
   y += fName.pixelSize()+int(6*k);
+  const int bottom = r.y+r.h-pad+int(6*k) - (extra.empty() ? 0 : f.redS->pixelSize()+int(4*k));
   for(size_t i=0; i<Item::MAX_UI_ROWS; ++i) {
     auto    txt = it->uiText(i);
     int32_t val = it->uiValue(i);
     if(txt.empty())
       continue;
-    if(y+f.small->pixelSize()>r.y+r.h-pad+int(6*k))
+    if(y+f.small->pixelSize()>bottom)
       break;
     text(p, *f.small, r.x+pad, y, txt);
     if(val!=0) {
@@ -942,6 +1023,8 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
       }
     y += f.small->pixelSize()+int(2*k);
     }
+  if(!extra.empty())
+    text(p, *f.redS, r.x+pad, std::min(y+int(2*k), bottom+int(2*k)), extra);
   items.drawItem(r.x+r.w-pad-mw, r.y+pad, mw, mw, *it);
   }
 
@@ -1256,14 +1339,20 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
   }
 
 void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
-  // over the item models: how many, and the key of each rune slot
-  if(page!=P_Equip)
+  // over the item models: how many, the key of each rune slot, the price in a trade
+  if(page!=P_Equip && page!=P_Trade)
     return;
   auto& fN = Resources::font("font_old_10_white.tga", Resources::FontType::Normal, 0.95f*k);
   auto& fD = Resources::font("font_old_10_white.tga", Resources::FontType::Hi,     0.85f*k);
+  auto& fG = tinted(Resources::font("font_old_10_white.tga", Resources::FontType::Hi, 0.85f*k), 2, Color(1.f, 0.82f, 0.42f, 1.f));
   p.setBrush(Color(1.f));
   for(auto& h:hits) {
-    if(h.kind==H_Pack && h.count>1) {
+    if((h.kind==H_Pack || h.kind==H_Other) && h.price>0) {
+      char txt[16] = {};
+      std::snprintf(txt, sizeof(txt), "%d", int(h.price));
+      text(p, fG, h.r.x+int(6*k), h.r.y+int(4*k), txt);
+      }
+    if((h.kind==H_Pack || h.kind==H_Other) && h.count>1) {
       char txt[16] = {};
       std::snprintf(txt, sizeof(txt), "%d", int(h.count));
       textRight(p, fN, h.r.x+h.r.w-int(6*k), h.r.y+h.r.h-fN.pixelSize()-int(5*k), txt);
@@ -1274,4 +1363,211 @@ void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
       text(p, fD, h.r.x+int(5*k), h.r.y+int(3*k), txt);
       }
     }
+  }
+
+// ---------------------------------------------------------------------------------------------------------------
+// trade, chest, looting: the other's page on the left (a red book), ours on the right
+
+void ArpgMenu::tradeMove(bool fromOther, size_t cls, int32_t count, bool equipped, Npc& pl) {
+  if(invMenu==nullptr || cls==0)
+    return;
+  const auto st = invMenu->isOpen();
+  if(!fromOther) {
+    if(st==InventoryMenu::State::Ransack) {
+      // looting a body: our own things work as in the equipment window
+      if(equipped)
+        pl.unequipItem(cls); else
+        pl.useItem(cls);
+      return;
+      }
+    if(equipped)
+      return; // worn things are not sold or put away
+    }
+  invMenu->arpgMove(fromOther, cls, size_t(std::max<int32_t>(1, count)));
+  }
+
+void ArpgMenu::tradeDrop(const Point& pos, Npc& pl) {
+  // dragged to the other page: the whole stack
+  if(invMenu==nullptr)
+    return;
+  const bool fromOther = (drag.kind==H_Other);
+  if(fromOther && pageR.contains(pos))
+    tradeMove(true, drag.cls, drag.count, false, pl);
+  else if(!fromOther && pageL.contains(pos) && invMenu->isOpen()!=InventoryMenu::State::Ransack)
+    tradeMove(false, drag.cls, drag.count, drag.equipped, pl);
+  }
+
+void ArpgMenu::paintTrade(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
+  if(invMenu==nullptr)
+    return;
+  const auto       st      = invMenu->isOpen();
+  const bool       tradeOn = (st==InventoryMenu::State::Trade);
+  const bool       chestOn = (st==InventoryMenu::State::Chest);
+  Npc*             other   = invMenu->arpgOther();
+  Interactive*     chest   = invMenu->arpgChest();
+  const Inventory* oinv    = invMenu->arpgOtherInventory();
+  auto             wrld    = Gothic::inst().world();
+  const size_t     goldId  = [&]() -> size_t {
+    if(wrld!=nullptr)
+      if(auto g = wrld->script().goldId())
+        return g->index();
+    return size_t(-1);
+    }();
+
+  static const char* cats[8] = {"Wszystko","Broń","Pancerze","Magia","Mikstury","Jedzenie","Dokumenty","Inne"};
+
+  auto pagePaint = [&](const Rect& c, bool otherPage) {
+    int y = c.y;
+
+    // whose page it is and what is done with it
+    std::string title, caption;
+    if(otherPage) {
+      if(chestOn && chest!=nullptr)
+        title = std::string(chest->displayName()); // names from the scripts: already in the game's code page
+      else if(other!=nullptr)
+        title = std::string(other->displayName());
+      if(title.empty())
+        title = gtxt(chestOn ? "Skrzynia" : "Handlarz");
+      caption = gtxt(tradeOn ? "Handlarz - od niego kupujesz" :
+                     (chestOn ? "Skrzynia - bierzesz z niej" : "Przeszukujesz - bierzesz"));
+      } else {
+      title   = gtxt("Bezimienny");
+      caption = gtxt(tradeOn ? "Twój plecak - sprzedajesz" :
+                     (chestOn ? "Twój plecak - odkładasz do skrzyni" : "Twój plecak"));
+      }
+    text(p, *f.title, c.x, y, title);
+    const int gy = y+(f.title->pixelSize()-f.red->pixelSize())/2;
+    if(otherPage && !tradeOn) {
+      // take everything: a button on a sheet of the game's letters
+      const std::string s  = gtxt("Zabierz wszystko");
+      const int         bw = f.ink->textSize(s).w+int(44*k);
+      const int         bh = int(42*k);
+      const Rect        b(c.x+c.w-bw+int(10*k), y-int(6*k), bw, bh);
+      const bool        hv = b.contains(mouse);
+      letter(p, b, hv ? 1.f : 0.85f);
+      auto& fn = hv ? *f.red : *f.ink;
+      textCenter(p, fn, b.x+b.w/2, b.y+(b.h-fn.pixelSize())/2, s);
+      Hit h; h.r = b; h.kind = H_TakeAll;
+      hits.push_back(h);
+      } else {
+      const size_t      gold = otherPage ? (oinv!=nullptr ? oinv->goldCount() : 0) : pl.inventory().goldCount();
+      const std::string v    = std::to_string(gold);
+      textRight(p, *f.red, c.x+c.w, gy, v);
+      textRight(p, *f.ink, c.x+c.w-f.red->textSize(v).w-int(8*k), gy, gtxt("Złoto:"));
+      }
+    y += f.title->pixelSize()+int(2*k);
+    text(p, *f.redS, c.x, y, caption);
+    y += f.redS->pixelSize()+int(6*k);
+    drawRule(p, c.x, y, c.w);
+    y += int(8*k);
+
+    // kinds of things
+    int& kcat = otherPage ? catL : cat;
+    {
+      const int cw = c.w/4;
+      const int ch = f.body->pixelSize()+int(12*k);
+      for(int i=0; i<8; ++i) {
+        const Rect r(c.x+(i%4)*cw, y+(i/4)*ch, cw, ch);
+        const bool on = (kcat==i), hv = r.contains(mouse);
+        auto& fn = on ? *f.red : (hv ? *f.ink : *f.body);
+        const std::string s = gtxt(cats[i]);
+        textCenter(p, fn, r.x+r.w/2, r.y+(r.h-fn.pixelSize())/2, s);
+        if(on) {
+          const int tw = fn.textSize(s).w;
+          fill(p, r.x+(r.w-tw)/2, r.y+r.h-int(4*k), tw, std::max(1,int(2*k)), LineRedC);
+          }
+        Hit h; h.r = r; h.kind = otherPage ? H_CatL : H_Cat; h.id = i;
+        hits.push_back(h);
+        }
+      y += 2*ch+int(10*k);
+    }
+
+    // the things
+    struct Cell { const Item* it; size_t cls; int32_t count; bool eq; int32_t price; };
+    std::vector<Cell> list;
+    auto add = [&](const Inventory& inv, Inventory::IteratorType type, bool skipGold) {
+      for(auto it = inv.iterator(type); it.isValid(); ++it) {
+        const Item& itm = *it;
+        if(skipGold && itm.clsId()==goldId)
+          continue;
+        if(kcat!=0 && itemCategory(itm)!=kcat)
+          continue;
+        int32_t price = 0;
+        if(tradeOn)
+          price = otherPage ? inv.priceOf(itm.clsId()) : inv.sellPriceOf(itm.clsId());
+        list.push_back({&itm, itm.clsId(), int32_t(it.count()), it.isEquipped(), price});
+        }
+      };
+    if(otherPage) {
+      if(oinv!=nullptr)
+        add(*oinv, invMenu->arpgOtherIter(), tradeOn); // gold is loot in chests and on bodies
+      } else {
+      add(pl.inventory(), Inventory::T_Inventory, true);
+      }
+
+    const int infoMin = int(190*k);
+    const int cols    = 6;
+    const int gap     = int(5*k);
+    const int cs      = (c.w-(cols-1)*gap)/cols;
+    const int ind     = f.small->pixelSize()+int(4*k);
+    const int rows    = std::max(1, (c.y+c.h-infoMin-int(10*k)-ind-y+gap)/(cs+gap));
+    int&      scr     = otherPage ? scrollL    : scroll;
+    int&      maxScr  = otherPage ? maxScrollL : maxScroll;
+    const int totalRows = int((list.size()+cols-1)/cols);
+    maxScr = std::max(0, totalRows-rows);
+    scr    = std::clamp(scr, 0, maxScr);
+
+    const Cell* hover = nullptr;
+    for(int i=0; i<rows*cols; ++i) {
+      const Rect   r(c.x+(i%cols)*(cs+gap), y+(i/cols)*(cs+gap), cs, cs);
+      const size_t id = size_t(i+scr*cols);
+      if(id>=list.size()) {
+        drawSlot(p, r, false, false);
+        continue;
+        }
+      auto&      cell = list[id];
+      const bool hv   = r.contains(mouse);
+      drawSlot(p, r, cell.eq, hv);
+      items.drawItem(r.x+cs/8, r.y+cs/8, cs-cs/4, cs-cs/4, *cell.it);
+      Hit h; h.r = r; h.kind = otherPage ? H_Other : H_Pack; h.cls = cell.cls; h.equipped = cell.eq;
+      h.count = cell.count; h.price = cell.price;
+      hits.push_back(h);
+      if(hv)
+        hover = &cell;
+      }
+    if(maxScr>0) {
+      char txt[64] = {};
+      std::snprintf(txt, sizeof(txt), "%s %d / %d", gtxt("kółko myszy - strona").c_str(), scr+1, maxScr+1);
+      textRight(p, *f.small, c.x+c.w, y+rows*(cs+gap), txt);
+      }
+
+    // the note: the thing under the cursor, with its price
+    std::string extra;
+    if(hover!=nullptr && tradeOn) {
+      char buf[96] = {};
+      if(otherPage)
+        std::snprintf(buf, sizeof(buf), gtxt("Cena: %d złota").c_str(), int(hover->price));
+      else if(hover->eq)
+        std::snprintf(buf, sizeof(buf), "%s", gtxt("Założone - zdejmij, żeby sprzedać").c_str());
+      else
+        std::snprintf(buf, sizeof(buf), gtxt("Dostaniesz: %d złota").c_str(), int(hover->price));
+      extra = buf;
+      }
+    std::string help;
+    if(otherPage)
+      help = gtxt(tradeOn ? "Kliknij, żeby kupić jedną sztukę.\nShift+klik albo PPM: cały stos.\nAlbo przeciągnij na swoją stronę." :
+                            "Kliknij, żeby zabrać.\nAlbo przeciągnij na swoją stronę.");
+    else
+      help = gtxt(tradeOn ? "Kliknij, żeby sprzedać jedną sztukę.\nShift+klik albo PPM: cały stos.\nAlbo przeciągnij na stronę handlarza." :
+                 (chestOn ? "Kliknij, żeby odłożyć jedną sztukę.\nShift+klik albo PPM: cały stos." :
+                            "Kliknij: załóż albo użyj, jak w ekwipunku."));
+    const int infoY = y+rows*(cs+gap)+ind+int(6*k);
+    paintInfo(p, f, Rect(c.x-int(14*k), infoY, c.w+int(28*k), c.y+c.h-infoY), items,
+              hover!=nullptr ? hover->it : nullptr, extra, help);
+    if(hover!=nullptr)
+      hoverCls = hover->cls;
+    };
+
+  pagePaint(cl, true);
+  pagePaint(cr, false);
   }

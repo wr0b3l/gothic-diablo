@@ -37,6 +37,7 @@ MainWindow::MainWindow(Device& device)
     mobileUi(player),
 #endif
     player(dialogs,inventory) {
+  arpgMenu.setInventoryMenu(&inventory); // gothic-diablo: trade / chests / looting in the ARPG book
   Gothic::inst().onSettingsChanged.bind(this,&MainWindow::onSettings);
   onSettings();
 
@@ -1394,11 +1395,20 @@ void MainWindow::tickCamera(uint64_t dt) {
 
   // gothic-diablo: the ARPG window closes for dialogs, Gothic's menus, documents, death...;
   // while it is open the camera stands in front of the hero
-  if(arpgMenu.isOpen() && (pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() ||
-                           document.isActive() || rootMenu.isActive() || video.isActive() ||
-                           !pcamera->isArpgActive()))
+  if(inventory.isArpgBook()) {
+    // trade, a chest, looting: shown by the ARPG book while Gothic's menu keeps the state
+    if(arpgMenu.current()!=ArpgMenu::P_Trade)
+      arpgMenu.open(ArpgMenu::P_Trade);
+    }
+  else if(arpgMenu.current()==ArpgMenu::P_Trade) {
     arpgMenu.close();
-  pcamera->setArpgPortrait(arpgMenu.isOpen());
+    }
+  if(arpgMenu.isOpen() && arpgMenu.current()!=ArpgMenu::P_Trade &&
+     (pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() ||
+      document.isActive() || rootMenu.isActive() || video.isActive() || !pcamera->isArpgActive()))
+    arpgMenu.close();
+  // in front of the hero for his own windows; a trade from a dialog keeps the dialog's camera, a chest the ARPG view
+  pcamera->setArpgPortrait(arpgMenu.isOpen() && arpgMenu.current()!=ArpgMenu::P_Trade && !dialogs.isActive());
 
   auto&      camera       = *pcamera;
   const auto ws           = pl!=nullptr ? pl->weaponState() : WeaponState::NoWeapon;
@@ -1772,7 +1782,7 @@ void MainWindow::render(){
       numOverlay.clear();
       PaintEvent p(numOverlay,atlas,this->w(),this->h());
       inventory.paintNumOverlay(p);
-      if(!inventory.isActive()) {
+      if(!inventory.isActive() || inventory.isArpgBook()) {
         Painter pn(p);
         if(arpgMenu.isOpen()) {
           if(auto pl = Gothic::inst().player())
