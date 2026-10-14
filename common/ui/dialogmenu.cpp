@@ -5,11 +5,13 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cstdlib>
 #include <map>
 
 #include "utils/gthfont.h"
 #include "utils/string_frm.h"
 #include "world/objects/npc.h"
+#include "world/world.h"
 #include "gothic.h"
 #include "inventorymenu.h"
 #include "resources.h"
@@ -78,6 +80,7 @@ void DialogMenu::tick(uint64_t dt) {
   if(remPrint>0 || choiceAnimTime>0 || current.time>0 || pscreen.size()>0)
     update();
 
+  tickActing(dt);
   {
     // gothic-diablo: the letterbox comes in and goes out in 0.3 s
     const float dst = isArpgCinema() ? 1.f : 0.f;
@@ -363,6 +366,7 @@ void DialogMenu::onDoneText() {
   }
 
 void DialogMenu::close() {
+  stopActing();
   auto prevPl  = pl;
   auto prevNpc = other;
 
@@ -825,5 +829,89 @@ void DialogMenu::paintArpg(Painter& p) {
       }
     const std::string_view hint = "1-9 / mysz - wyb\xf3r"; // the game's code page
     fSmall.drawText(p, w()-fSmall.textSize(hint).w-int(30*k), h()-int(14*k), hint);
+    }
+  }
+
+// ---------------------------------------------------------------------------------------------------------------
+// gothic-diablo: acting in cinematic dialogs
+
+static uint64_t rnd(uint64_t from, uint64_t to) {
+  return from + uint64_t(std::rand())%(to-from+1);
+  }
+
+void DialogMenu::tickActing(uint64_t dt) {
+  if(!isArpgCinema() || state!=State::Active) {
+    if(acting.on)
+      stopActing();
+    return;
+    }
+  if(!acting.on) {
+    acting         = Acting();
+    acting.on      = true;
+    acting.blinkPl    = rnd(800, 2500);
+    acting.blinkOther = rnd(400, 2000);
+    }
+  acting.t += dt;
+  const uint64_t t = acting.t;
+
+  // looks: both keep their eyes on each other
+  pl   ->arpgLookAtHead(other, dt);
+  other->arpgLookAtHead(pl,    dt);
+
+  // blinking: every 2.5 - 5.5 s (close-ups show the faces)
+  if(t>=acting.blinkPl) {
+    pl->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-1));
+    acting.blinkPl = t+rnd(2500, 5500);
+    }
+  if(t>=acting.blinkOther) {
+    other->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-1));
+    acting.blinkOther = t+rnd(2500, 5500);
+    }
+
+  // the mood of the other one, from his attitude to the hero (kept fresh while the talk goes on)
+  if(t>=acting.moodAt) {
+    const char* mood = "S_NEUTRAL";
+    switch(other->world().script().personAttitude(*other, *pl)) {
+      case ATT_FRIENDLY: mood = "S_FRIENDLY"; break;
+      case ATT_ANGRY:    mood = "S_ANGRY";    break;
+      case ATT_HOSTILE:  mood = "S_HOSTILE";  break;
+      default:           mood = "S_NEUTRAL";  break;
+      }
+    other->startFaceAnim(mood, 0.8f, 4000);
+    acting.moodAt = t+2000;
+    }
+
+  // the listener nods now and then: in the middle of a longer line, not more often than every 6 s
+  if(current.time>0 && lineId!=acting.line) {
+    acting.line   = lineId;
+    acting.nodWho = nullptr;
+    Npc* listener = curentIsPl ? other : pl;
+    const uint64_t last = (listener==pl) ? acting.lastNodPl : acting.lastNodOther;
+    if(current.msgTime>=3500 && t>last+6000 && (std::rand()%3)!=0) {
+      acting.nodWho = listener;
+      acting.nodAt  = t + current.msgTime*uint64_t(rnd(40, 65))/100u;
+      }
+    }
+  if(acting.nodWho!=nullptr && t>=acting.nodAt) {
+    if(current.time>0 && acting.nodWho->arpgNod()) {
+      if(acting.nodWho==pl)
+        acting.lastNodPl = t; else
+        acting.lastNodOther = t;
+      }
+    acting.nodWho = nullptr;
+    }
+  }
+
+void DialogMenu::stopActing() {
+  if(!acting.on)
+    return;
+  acting.on = false;
+  // straight ahead and a calm face again
+  if(pl!=nullptr) {
+    pl->arpgLookAtHead(nullptr, 0);
+    }
+  if(other!=nullptr && other!=pl) {
+    other->arpgLookAtHead(nullptr, 0);
+    other->startFaceAnim("S_NEUTRAL", 1.f, 300);
     }
   }

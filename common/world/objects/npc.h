@@ -176,6 +176,10 @@ class Npc final {
     bool       setAnimItem(std::string_view scheme, int state);
     void       stopAnim(std::string_view ani);
     void       startFaceAnim(std::string_view anim, float intensity, uint64_t duration);
+    // gothic-diablo: cinematic dialogs: the head follows the one we talk with (nullptr: straight ahead again);
+    // a nod of the listener (only standing, hands free)
+    void       arpgLookAtHead(const Npc* who, uint64_t dt);
+    bool       arpgNod();
     bool       stopItemStateAnim();
     bool       hasAnim(std::string_view scheme) const;
     bool       hasAnim(Anim a) const;

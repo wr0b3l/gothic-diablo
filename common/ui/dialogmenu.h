@@ -159,6 +159,21 @@ class DialogMenu : public Tempest::Widget {
     uint64_t                            choiceAnimTime      = 0;
 
     uint32_t                            lineId              = 0; // gothic-diablo: counts the lines (cuts of the camera)
+
+    // gothic-diablo: acting in cinematic dialogs: looks, nods of the listener, moods, blinking
+    struct Acting {
+      bool     on        = false;
+      uint64_t t         = 0;    // ms in the talk
+      uint32_t line      = 0;
+      Npc*     nodWho    = nullptr;
+      uint64_t nodAt     = 0;
+      uint64_t lastNodPl = 0, lastNodOther = 0;
+      uint64_t blinkPl   = 0, blinkOther   = 0;
+      uint64_t moodAt    = 0;
+      };
+    Acting                              acting;
+    void tickActing(uint64_t dt);
+    void stopActing();
     float                               barsK               = 0; // gothic-diablo: 0..1 letterbox
     std::vector<Tempest::Rect>          choiceRects;             // gothic-diablo: the answers on the screen (mouse)
   };

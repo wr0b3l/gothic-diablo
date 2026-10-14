@@ -1030,6 +1030,21 @@ void Npc::stopAnim(std::string_view ani) {
   visual.stopAnim(*this,ani);
   }
 
+void Npc::arpgLookAtHead(const Npc* who, uint64_t dt) {
+  if(who==nullptr || who==this) {
+    visual.setHeadRotation(0, 0);
+    return;
+    }
+  const Vec3 d = who->mapHeadBone()-visual.mapHeadBone();
+  implLookAt(d.x, d.y, d.z, dt);
+  }
+
+bool Npc::arpgNod() {
+  if(bodyStateMasked()!=BS_STAND || interactive()!=nullptr || weaponState()!=WeaponState::NoWeapon || isDown())
+    return false;
+  return playAnimByName("T_YES", BS_STAND)!=nullptr;
+  }
+
 void Npc::startFaceAnim(std::string_view anim, float intensity, uint64_t duration) {
   visual.startFaceAnim(*this,anim,intensity,duration);
   }
