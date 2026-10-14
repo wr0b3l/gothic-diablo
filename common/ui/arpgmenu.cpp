@@ -4,9 +4,11 @@
 #include <Tempest/Color>
 
 #include <algorithm>
-#include <iterator>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <iterator>
+#include <map>
 
 #include "graphics/inventoryrenderer.h"
 #include "world/objects/npc.h"
@@ -81,13 +83,56 @@ std::string ArpgMenu::gtxt(std::string_view s) {
   return out;
   }
 
-static const GthFont& font(Resources::FontType t, float scale) {
-  return Resources::font(t, scale);
+
+// ---------------------------------------------------------------------------------------------------------------
+// look: an open book of the game. Dark ink on the pages, red ink for values and what is chosen.
+
+static const char* const BookL = "BOOK_BROWN_L.TGA";   // also in the game: BOOK_RED_*, BOOK_WOOD_*, BOOK_MAGE_*
+static const char* const BookR = "BOOK_BROWN_R.TGA";
+
+static const Color InkC    (0.20f, 0.13f, 0.07f, 1.f);
+static const Color RedC    (0.62f, 0.10f, 0.05f, 1.f);
+static const Color LineC   (0.26f, 0.17f, 0.08f, 0.80f);
+static const Color RuleC   (0.26f, 0.17f, 0.08f, 0.35f);
+static const Color FaintC  (0.26f, 0.17f, 0.08f, 0.14f);
+static const Color LineRedC(0.55f, 0.09f, 0.05f, 0.85f);
+
+// a copy of a game font in another colour (the old white font is light: multiplied, it gives coloured ink)
+static const GthFont& tinted(const GthFont& base, int id, const Color& c) {
+  static std::map<std::pair<const GthFont*,int>,GthFont> cache;
+  const auto key = std::make_pair(&base, id);
+  auto it = cache.find(key);
+  if(it==cache.end()) {
+    GthFont f = base;
+    f.setColor(c);
+    it = cache.emplace(key, std::move(f)).first;
+    }
+  return it->second;
   }
 
-static const GthFont& bigFont(Resources::FontType t, float scale) {
-  return Resources::font("font_old_20_white.tga", t, scale);
-  }
+struct ArpgMenu::Fonts {
+  explicit Fonts(float k) {
+    using FT = Resources::FontType;
+    body  = &Resources::font("font_10_book.tga", FT::Normal, 1.30f*k);
+    small = &Resources::font("font_10_book.tga", FT::Normal, 1.05f*k);
+    title = &Resources::font("font_20_book.tga", FT::Normal, 0.95f*k);
+    sub   = &Resources::font("font_20_book.tga", FT::Normal, 0.75f*k);
+    auto& old  = Resources::font("font_old_10_white.tga", FT::Normal, 1.25f*k);
+    auto& oldS = Resources::font("font_old_10_white.tga", FT::Normal, 1.05f*k);
+    ink   = &tinted(old,  0, InkC);
+    red   = &tinted(old,  1, RedC);
+    redS  = &tinted(oldS, 1, RedC);
+    light = &old;
+    }
+  const GthFont* body  = nullptr; // the book's ink
+  const GthFont* small = nullptr;
+  const GthFont* title = nullptr;
+  const GthFont* sub   = nullptr;
+  const GthFont* ink   = nullptr; // labels
+  const GthFont* red   = nullptr; // values, what is chosen
+  const GthFont* redS  = nullptr;
+  const GthFont* light = nullptr; // over dark things: bars, item counts
+  };
 
 // y = top of the line
 static void text(Painter& p, const GthFont& f, int x, int y, std::string_view s) {
@@ -102,72 +147,137 @@ static void textCenter(Painter& p, const GthFont& f, int cx, int y, std::string_
   f.drawText(p, cx-f.textSize(s).w/2, y+f.pixelSize(), s);
   }
 
+// wrapped text, returns its height
+static int wrap(Painter& p, const GthFont& f, int x, int y, int w, std::string_view s) {
+  if(s.empty())
+    return 0;
+  const int lines = std::max(1, int(f.lineCount(w, s)));
+  f.drawText(p, x, y+f.pixelSize(), w, 0, s, AlignLeft);
+  return lines*f.pixelSize();
+  }
+
+// one or two centered lines (split at the space nearest the middle)
+static void nameUnder(Painter& p, const GthFont& f, int cx, int y, int maxW, const std::string& s) {
+  if(f.textSize(s).w<=maxW) {
+    textCenter(p, f, cx, y, s);
+    return;
+    }
+  size_t best = std::string::npos;
+  const int mid = int(s.size()/2);
+  for(size_t i=0; i<s.size(); ++i)
+    if(s[i]==' ' && (best==std::string::npos || std::abs(int(i)-mid)<std::abs(int(best)-mid)))
+      best = i;
+  if(best==std::string::npos) {
+    textCenter(p, f, cx, y, s);
+    return;
+    }
+  textCenter(p, f, cx, y,                s.substr(0, best));
+  textCenter(p, f, cx, y+f.pixelSize(),  s.substr(best+1));
+  }
+
+static void fill(Painter& p, int x, int y, int w, int h, const Color& c) {
+  if(w<=0 || h<=0)
+    return;
+  p.setBrush(Brush(c, Painter::Alpha));
+  p.drawRect(x, y, w, h);
+  }
+
+static void frame(Painter& p, const Rect& r, const Color& c, int t) {
+  fill(p, r.x,         r.y,         r.w, t,       c);
+  fill(p, r.x,         r.y+r.h-t,   r.w, t,       c);
+  fill(p, r.x,         r.y+t,       t,   r.h-2*t, c);
+  fill(p, r.x+r.w-t,   r.y+t,       t,   r.h-2*t, c);
+  }
+
+// a sheet of the game's letters (burnt edges)
+static void letter(Painter& p, const Rect& r, float alpha) {
+  if(auto t = Resources::loadTexture("LETTERS.TGA")) {
+    p.setBrush(Brush(*t, Color(1.f, 1.f, 1.f, alpha)));
+    p.drawRect(r.x, r.y, r.w, r.h, 0, 0, t->w(), t->h());
+    }
+  }
+
 // ---------------------------------------------------------------------------------------------------------------
-// skill trees (descriptions only for now)
+// skill trees (descriptions only for now). Icons: the game's item models.
 
 namespace {
-struct TreeNode   { const char* name; int max; const char* desc; };
+struct TreeNode   { const char* name; int max; const char* desc; const char* icon; };
 struct TreeBranch { const char* name; std::vector<TreeNode> nodes; };
-struct Tree       { const char* name; const char* key; const char* root; std::vector<TreeBranch> branches; TreeNode keystone; const char* keyReq; };
+struct Tree {
+  const char*             name;
+  const char*             key;
+  const char*             root;
+  const char*             icon;
+  std::vector<TreeBranch> branches;
+  TreeNode                keystone;
+  const char*             keyReq;
+  std::vector<int>        keyFrom;   // branches leading to the keystone (empty: all of them)
+  };
 }
 
 static const std::vector<Tree>& skillTrees() {
   static const std::vector<Tree> t = {
-    {"Cios", "LPM", "Zwykły atak bronią białą lub strzał z łuku",
+    {"Cios", "LPM", "Zwykły atak bronią białą lub strzał z łuku", "ITMW_1H_SLD_SWORD",
       {
-        {"Ostrze",       {{"Ostra klinga",5,"+4% obrażeń ciosu za punkt"},
-                          {"Słaby punkt",3,"+5% szansy na pełne obrażenia (krytyk Gothica)"},
-                          {"Głębokie rany",3,"Trafienie: krwawienie 5% obrażeń na sekundę przez 3 s, za punkt"}}},
-        {"Rytm",         {{"Płynne ruchy",5,"+3% szybkości ataku za punkt"},
-                          {"Wyczucie chwili",2,"Okno combo dłuższe o 25% za punkt"},
-                          {"Czwarty cios",1,"Seria kończy się dodatkowym ciosem x1,5"}}},
-        {"Zamach",       {{"Szeroki łuk",3,"Łuk cięcia 120 stopni, +20 za punkt (do 180)"},
-                          {"Odrzut",2,"Cios odpycha małe stworzenia o 0,5 m za punkt"},
-                          {"Dobicie",3,"+15% obrażeń wobec powalonych za punkt"}}},
-        {"Krew za krew", {{"Pijawka",3,"2% zadanych obrażeń wraca jako zdrowie, za punkt"},
-                          {"Twarda skóra",3,"Po trafieniu +5 ochrony przed bronią na 3 s, za punkt"}}},
-        {"Łucznik",      {{"Szybki naciąg",5,"+4% szybkości strzałów za punkt"},
-                          {"Przebicie",2,"Strzała przelatuje przez 1 wroga za punkt"},
-                          {"Celne oko",3,"+5% szansy trafienia powyżej 15 m, za punkt"}}},
+        {"Ostrze",       {{"Ostra klinga",5,"+4% obrażeń ciosu za punkt","ITMW_SCHWERT1"},
+                          {"Słaby punkt",3,"+5% szansy na pełne obrażenia (krytyk Gothica)","ITMW_1H_VLK_DAGGER"},
+                          {"Głębokie rany",3,"Trafienie: krwawienie 5% obrażeń na sekundę przez 3 s, za punkt","ITAT_CLAW"}}},
+        {"Rytm",         {{"Płynne ruchy",5,"+3% szybkości ataku za punkt","ITMW_RAPIER"},
+                          {"Wyczucie chwili",2,"Okno combo dłuższe o 25% za punkt","ITMI_SEXTANT"},
+                          {"Czwarty cios",1,"Seria kończy się dodatkowym ciosem x1,5","ITMW_MEISTERDEGEN"}}},
+        {"Zamach",       {{"Szeroki łuk",3,"Łuk cięcia 120 stopni, +20 za punkt (do 180)","ITMW_SENSE"},
+                          {"Odrzut",2,"Cios odpycha małe stworzenia o 0,5 m za punkt","ITMW_KRIEGSHAMMER1"},
+                          {"Dobicie",3,"+15% obrażeń wobec powalonych za punkt","ITMW_SCHLACHTAXT"}}},
+        {"Krew za krew", {{"Pijawka",3,"2% zadanych obrażeń wraca jako zdrowie, za punkt","ITPO_HEALTH_01"},
+                          {"Twarda skóra",3,"Po trafieniu +5 ochrony przed bronią na 3 s, za punkt","ITAT_CRAWLERPLATE"}}},
+        {"Łucznik",      {{"Szybki naciąg",5,"+4% szybkości strzałów za punkt","ITRW_BOW_L_01"},
+                          {"Przebicie",2,"Strzała przelatuje przez 1 wroga za punkt","ITRW_ARROW"},
+                          {"Celne oko",3,"+5% szansy trafienia powyżej 15 m, za punkt","ITRW_BOW_H_01"}}},
       },
-      {"Wir",1,"Ostatni cios serii: obrót dookoła, trafia wszystkich wokół"}, "3/3 w Dobiciu albo Czwarty cios"},
-    {"Atak ładowany", "PPM", "Ładuj 2 s, puść w złotym oknie: x3, zamach 180 stopni",
+      {"Wir",1,"Ostatni cios serii: obrót dookoła, trafia wszystkich wokół","ITRU_WHIRLWIND"},
+      "3/3 w Dobiciu albo Czwarty cios", {1,2}},
+    {"Atak ładowany", "PPM", "Ładuj 2 s, puść w złotym oknie: x3, zamach 180 stopni", "ITMW_ZWEIHAENDER1",
       {
-        {"Ładowanie",    {{"Skupienie",4,"Ładowanie krótsze o 0,2 s za punkt (do 1,2 s)"},
-                          {"Szersze okno",2,"Złote okno puszczenia +0,1 s za punkt"},
-                          {"Pewna ręka",1,"Spóźnione puszczenie daje x2, a nie zwykły cios"}}},
-        {"Siła",         {{"Miażdżący cios",5,"Mnożnik obrażeń +0,2 za punkt (do x4)"},
-                          {"Wstrząs",3,"Powaleni wstają o 0,5 s później, za punkt"},
-                          {"Łamacz gardy",1,"Atak ładowany przebija blok przeciwnika"}}},
-        {"Fala",         {{"Fala uderzeniowa",1,"Zamach puszcza falę na 4 m przed postać (50% obrażeń)"},
-                          {"Dalsza fala",3,"+1 m zasięgu fali za punkt"}}},
-        {"Odnowienie",   {{"Opanowanie",4,"Odnowienie krótsze o 0,5 s za punkt"},
-                          {"Pęd bitewny",1,"Zabicie atakiem ładowanym zeruje odnowienie"}}},
-        {"Łuk",          {{"Strzała przeszywająca",1,"Strzał ładowany przebija wszystkich w linii"},
-                          {"Grad strzał",3,"+1 strzała w wachlarzu za punkt"},
-                          {"Ciężki grot",2,"Strzał ładowany odpycha, przy 2/2 przewraca"}}},
+        {"Ładowanie",    {{"Skupienie",4,"Ładowanie krótsze o 0,2 s za punkt (do 1,2 s)","ITMI_FOCUS"},
+                          {"Szersze okno",2,"Złote okno puszczenia +0,1 s za punkt","ITMI_ROCKCRYSTAL"},
+                          {"Pewna ręka",1,"Spóźnione puszczenie daje x2, a nie zwykły cios","ITRI_STR_01"}}},
+        {"Siła",         {{"Miażdżący cios",5,"Mnożnik obrażeń +0,2 za punkt (do x4)","ITMW_STEINBRECHER"},
+                          {"Wstrząs",3,"Powaleni wstają o 0,5 s później, za punkt","ITMW_MORGENSTERN"},
+                          {"Łamacz gardy",1,"Atak ładowany przebija blok przeciwnika","ITMW_2H_ORCAXE_01"}}},
+        {"Fala",         {{"Fala uderzeniowa",1,"Zamach puszcza falę na 4 m przed postać (50% obrażeń)","ITRU_WINDFIST"},
+                          {"Dalsza fala",3,"+1 m zasięgu fali za punkt","ITSC_WINDFIST"}}},
+        {"Odnowienie",   {{"Opanowanie",4,"Odnowienie krótsze o 0,5 s za punkt","ITPL_SPEED_HERB_01"},
+                          {"Pęd bitewny",1,"Zabicie atakiem ładowanym zeruje odnowienie","ITPO_SPEED"}}},
+        {"Łuk",          {{"Strzała przeszywająca",1,"Strzał ładowany przebija wszystkich w linii","ITRW_ADDON_MAGICARROW"},
+                          {"Grad strzał",3,"+1 strzała w wachlarzu za punkt","ITRW_BOW_M_01"},
+                          {"Ciężki grot",2,"Strzał ładowany odpycha, przy 2/2 przewraca","ITRW_BOLT"}}},
       },
-      {"Gniew Innosa",1,"Atak ładowany podpala wrogów: ogień przez 4 s"}, "10 punktów w drzewku"},
-    {"Fikołek", "Spacja", "Przewrót w stronę kursora, chwila bez obrażeń",
+      {"Gniew Innosa",1,"Atak ładowany podpala wrogów: ogień przez 4 s","ITMI_INNOSSTATUE"},
+      "10 punktów w drzewku", {}},
+    {"Fikołek", "Spacja", "Przewrót w stronę kursora, chwila bez obrażeń", "ITBE_ADDON_DEX_10",
       {
-        {"Zwinność",     {{"Zwinność",3,"Bez obrażeń dłużej o 0,1 s za punkt"},
-                          {"Lekki krok",3,"Przerwa między fikołkami krótsza o 0,05 s, za punkt"},
-                          {"Drugi oddech",1,"Dwa fikołki pod rząd, ładunek wraca po 3 s"}}},
-        {"Dystans",      {{"Dalszy przewrót",3,"+15% dystansu za punkt"},
-                          {"Przez szereg",1,"Fikołek przez wrogów, bez zatrzymania na nich"}}},
-        {"Kontra",       {{"Kontratak",3,"Przez 2 s po fikołku cios +15% obrażeń, za punkt"},
-                          {"Cios z przewrotu",1,"LPM w trakcie fikołka: cios zaraz po nim"}}},
-        {"Kurz",         {{"Piasek w oczy",2,"Mijani wrogowie chybiają przez 1 s, za punkt"},
-                          {"Podcięcie",1,"Wrogowie na drodze fikołka przewracają się"}}},
-        {"Akrobatyka",   {{"Akrobata",1,"Fikołek przy upadku z wysokości: bez obrażeń"},
-                          {"Wyczucie strzał",3,"+10% szans, że strzała chybi, przez 1 s po fikołku"}}},
+        {"Zwinność",     {{"Zwinność",3,"Bez obrażeń dłużej o 0,1 s za punkt","ITRI_DEX_01"},
+                          {"Lekki krok",3,"Przerwa między fikołkami krótsza o 0,05 s, za punkt","ITAT_WING"},
+                          {"Drugi oddech",1,"Dwa fikołki pod rząd, ładunek wraca po 3 s","ITFO_ADDON_SCHNELLERHERING"}}},
+        {"Dystans",      {{"Dalszy przewrót",3,"+15% dystansu za punkt","ITRI_DEX_02"},
+                          {"Przez szereg",1,"Fikołek przez wrogów, bez zatrzymania na nich","ITAT_SHADOWHORN"}}},
+        {"Kontra",       {{"Kontratak",3,"Przez 2 s po fikołku cios +15% obrażeń, za punkt","ITMW_ELBASTARDO"},
+                          {"Cios z przewrotu",1,"LPM w trakcie fikołka: cios zaraz po nim","ITMW_SHORTSWORD1"}}},
+        {"Kurz",         {{"Piasek w oczy",2,"Mijani wrogowie chybiają przez 1 s, za punkt","ITMI_SULFUR"},
+                          {"Podcięcie",1,"Wrogowie na drodze fikołka przewracają się","ITMW_STABKEULE"}}},
+        {"Akrobatyka",   {{"Akrobata",1,"Fikołek przy upadku z wysokości: bez obrażeń","ITAR_LEATHER_L"},
+                          {"Wyczucie strzał",3,"+10% szans, że strzała chybi, przez 1 s po fikołku","ITAM_PROT_POINT_01"}}},
       },
-      {"Cień",1,"Po fikołku 1 s niewidzialności: wrogowie gubią cel"}, "3/3 w Kontrataku"},
+      {"Cień",1,"Po fikołku 1 s niewidzialności: wrogowie gubią cel","ITAT_SHADOWFUR"},
+      "3/3 w Kontrataku", {2}},
     };
   return t;
   }
 
 // ---------------------------------------------------------------------------------------------------------------
+
+ArpgMenu::ArpgMenu()  = default;
+ArpgMenu::~ArpgMenu() = default;
 
 void ArpgMenu::open(Page p) {
   page   = p;
@@ -175,15 +285,36 @@ void ArpgMenu::open(Page p) {
   }
 
 void ArpgMenu::close() {
-  page     = P_Closed;
-  hoverCls = 0;
+  page      = P_Closed;
+  hoverCls  = 0;
   hits.clear();
+  icons.clear();
+  iconWorld = nullptr;
   }
 
 void ArpgMenu::toggle(Page p) {
   if(page==p)
     close(); else
     open(p);
+  }
+
+const Item* ArpgMenu::iconItem(const char* instance) {
+  auto w = Gothic::inst().world();
+  if(w==nullptr || instance==nullptr)
+    return nullptr;
+  if(w!=iconWorld) {
+    icons.clear();
+    iconWorld = w;
+    }
+  for(auto& i:icons)
+    if(i.first==instance)
+      return i.second.get();
+  std::unique_ptr<Item> itm;
+  const size_t id = w->script().findSymbolIndex(instance);
+  if(id!=size_t(-1))
+    itm = std::make_unique<Item>(*w, id, Item::T_Inventory);
+  icons.emplace_back(instance, std::move(itm));
+  return icons.back().second.get();
   }
 
 const ArpgMenu::Hit* ArpgMenu::hitAt(const Point& pos) const {
@@ -214,6 +345,8 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, Npc& pl) {
     case H_Tree:
       tree = h->id;
       return true;
+    case H_Node:
+      return true;  // later: spend a skill point
     case H_Pack:
     case H_Equip:
       if(right || h->cls==0)
@@ -243,29 +376,35 @@ bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
 // ---------------------------------------------------------------------------------------------------------------
 // drawing helpers: Gothic's own textures
 
-void ArpgMenu::drawPanel(Painter& p, const Rect& r) const {
-  if(auto t = Resources::loadTexture("MENU_INGAME.TGA")) {
+Rect ArpgMenu::drawPage(Painter& p, const Rect& r, bool left) const {
+  // the pages of the game's books: the left one is bound on its left side, the right one on its right side
+  if(auto t = Resources::loadTexture(left ? BookL : BookR)) {
+    const int tw = t->w(), th = t->h();
+    const int u0 = left ? tw*192/512 : 0;
+    const int u1 = left ? tw         : tw*320/512;
     p.setBrush(*t);
-    p.drawRect(r.x, r.y, r.w, r.h, 0, 0, t->w(), t->h());
+    p.drawRect(r.x, r.y, r.w, r.h, u0, 0, u1, th);
     } else {
-    p.setBrush(Brush(Color(0.f,0.f,0.f,0.7f), Painter::Alpha));
-    p.drawRect(r.x, r.y, r.w, r.h);
+    fill(p, r.x, r.y, r.w, r.h, Color(0.85f, 0.80f, 0.70f, 1.f));
     }
+  // the paper without the cover
+  const int x = r.x + int(float(r.w)*(left ? 0.215f : 0.045f));
+  return Rect(x, r.y+int(float(r.h)*0.05f), int(float(r.w)*0.74f), int(float(r.h)*0.90f));
   }
 
 void ArpgMenu::drawSlot(Painter& p, const Rect& r, bool equipped, bool hover) const {
-  const char* name = equipped ? "INV_SLOT_EQUIPPED.TGA" : "INV_SLOT.TGA";
-  if(auto t = Resources::loadTexture(name)) {
+  // the framed slots of Gothic's inventory: metal corners, the equipped one with a red border
+  if(auto t = Resources::loadTexture(equipped ? "INV_SLOT_EQUIPPED_FOCUS.TGA" : "INV_SLOT_FOCUS.TGA")) {
     p.setBrush(*t);
     p.drawRect(r.x, r.y, r.w, r.h, 0, 0, t->w(), t->h());
     }
   if(hover) {
-    // the framed slot of Gothic's inventory (metal corners)
-    if(auto t = Resources::loadTexture(equipped ? "INV_SLOT_EQUIPPED_FOCUS.TGA" : "INV_SLOT_FOCUS.TGA")) {
-      const int d = r.w/10;
-      p.setBrush(*t);
-      p.drawRect(r.x-d, r.y-d, r.w+2*d, r.h+2*d, 0, 0, t->w(), t->h());
-      }
+    // small: a lighter inside and a thin red line close around
+    const int d  = std::max(2, r.w/16);
+    const int lw = std::max(2, int(2.f*k));
+    p.setBrush(Brush(Color(0.12f, 0.10f, 0.07f, 1.f), Painter::Add));
+    p.drawRect(r.x+d, r.y+d, r.w-2*d, r.h-2*d);
+    frame(p, Rect(r.x-lw, r.y-lw, r.w+2*lw, r.h+2*lw), LineRedC, lw);
     }
   }
 
@@ -282,57 +421,86 @@ void ArpgMenu::drawBar(Painter& p, const Rect& r, const char* fill, float v) con
     }
   }
 
-void ArpgMenu::drawTabs(Painter& p, int w, float s, const Rect& left, const Rect& right) {
+void ArpgMenu::drawRule(Painter& p, int x, int y, int w) const {
+  fill(p, x, y, w, std::max(1, int(2.f*k)), RuleC);
+  }
+
+int ArpgMenu::drawSection(Painter& p, const Fonts& f, const Rect& c, int y, std::string_view name) const {
+  y += int(10*k);
+  text(p, *f.sub, c.x, y, name);
+  y += f.sub->pixelSize()+int(2*k);
+  drawRule(p, c.x, y, c.w);
+  return y+int(8*k);
+  }
+
+void ArpgMenu::drawTabs(Painter& p, int w, const Fonts& f) {
   static const char* names[3] = {"Ekwipunek (I)", "Postać (C)", "Umiejętności (T)"};
-  const int gap = int(8*s);
-  const int tw  = std::min(int(230*s), (right.x-(left.x+left.w)-4*gap)/3);
-  const int th  = int(40*s);
-  const int y   = left.y-th-int(10*s);
+  const int gap = int(10*k);
+  const int tw  = int(220*k);
+  const int th  = int(46*k);
+  const int y   = int(14*k);
   const int x0  = (w-(3*tw+2*gap))/2;
-  auto  bar = Resources::loadTexture("MENU_CHOICE_BACK.TGA");
   for(int i=0; i<3; ++i) {
     const Rect r(x0+i*(tw+gap), y, tw, th);
     const bool on = (page==P_Equip+i);
     const bool hv = r.contains(mouse);
-    if(bar!=nullptr) {
-      p.setBrush(Brush(*bar, on ? Color(1.f) : Color(0.75f,0.75f,0.75f,0.85f)));
-      p.drawRect(r.x, r.y, r.w, r.h, 0, 0, bar->w(), bar->h());
-      }
-    auto& f = font(on ? Resources::FontType::Hi : (hv ? Resources::FontType::Normal : Resources::FontType::Disabled), s);
-    textCenter(p, f, r.x+r.w/2, r.y+(r.h-f.pixelSize())/2, gtxt(names[i]));
+    letter(p, r, (on || hv) ? 1.f : 0.78f);
+    auto& fn = on ? *f.red : *f.ink;
+    textCenter(p, fn, r.x+r.w/2, r.y+(r.h-fn.pixelSize())/2, gtxt(names[i]));
     Hit h; h.r = r; h.kind = H_Tab; h.id = P_Equip+i;
     hits.push_back(h);
     }
   }
 
+void ArpgMenu::drawHint(Painter& p, int w, int h, const Fonts& f) const {
+  const std::string s = gtxt("Q / E - obrót kamery        Esc - zamknij");
+  const int tw = f.small->textSize(s).w + int(70*k);
+  const int th = int(40*k);
+  const Rect r((w-tw)/2, h-int(12*k)-th, tw, th);
+  letter(p, r, 0.92f);
+  textCenter(p, *f.small, w/2, r.y+(r.h-f.small->pixelSize())/2, s);
+  }
+
 // ---------------------------------------------------------------------------------------------------------------
 
-void ArpgMenu::paint(Painter& p, int w, int h, float s, InventoryRenderer& items, Npc& pl) {
+void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRenderer& items, Npc& pl) {
   if(page==P_Closed)
     return;
   hits.clear();
   hoverCls = 0;
 
-  const int M   = int(20*s);
-  const int pw  = std::min(int(600*s), int(float(w)*0.36f));
-  const int top = M+int(56*s);
-  const Rect left (M,        top, pw, h-top-M);
-  const Rect right(w-M-pw,   top, pw, h-top-M);
+  // the window follows the height of the screen (designed for 1080 lines)
+  k = std::max(0.5f, float(h)/1080.f);
+  const Fonts f(k);
 
-  drawPanel(p, left);
-  drawPanel(p, right);
-  drawTabs(p, w, s, left, right);
+  const int M   = int(16*k);
+  const int top = int(14*k)+int(46*k)+int(10*k);
+  const int ph  = h-top-M;
+  Rect left, right;
+  if(page==P_Skills) {
+    // one open book in the middle: the tree needs room
+    const int pw = std::min(int(float(ph)*0.68f), (w-2*M)/2);
+    left  = Rect(w/2-pw, top, pw, ph);
+    right = Rect(w/2,    top, pw, ph);
+    } else {
+    // two pages at the sides, the hero between them
+    const int pw = std::min(int(float(ph)*0.66f), int(float(w)*0.34f));
+    left  = Rect(M,      top, pw, ph);
+    right = Rect(w-M-pw, top, pw, ph);
+    }
+  const Rect cl = drawPage(p, left,  true);
+  const Rect cr = drawPage(p, right, false);
+  drawTabs(p, w, f);
 
   switch(page) {
     case P_Closed:    break;
-    case P_Equip:     paintEquip(p, s, left, right, items, pl); break;
-    case P_Character: paintStats(p, s, left, right, pl);        break;
-    case P_Skills:    paintTrees(p, s, left, right);            break;
+    case P_Equip:     paintEquip(p, f, cl, cr, items, pl); break;
+    case P_Character: paintStats(p, f, cl, cr, pl);        break;
+    case P_Skills:    paintTrees(p, f, cl, cr, items);     break;
     }
 
-  // the hero stands in the middle: name under his feet
-  auto& f = font(Resources::FontType::Disabled, s);
-  textCenter(p, f, w/2, h-M-f.pixelSize(), gtxt("Q / E - obrót kamery   ·   Esc - zamknij"));
+  if(page!=P_Skills)
+    drawHint(p, w, h, f);
   }
 
 static int itemCategory(const Item& it) {
@@ -353,51 +521,51 @@ static int itemCategory(const Item& it) {
   return 7;
   }
 
-void ArpgMenu::paintEquip(Painter& p, float s, const Rect& left, const Rect& right, InventoryRenderer& items, Npc& pl) {
-  auto&      inv  = pl.inventory();
-  const int  pad  = int(18*s);
-  auto&      fN   = font(Resources::FontType::Normal,   s);
-  auto&      fD   = font(Resources::FontType::Disabled, s);
-  auto&      fH   = font(Resources::FontType::Hi,       s);
-  auto&      fBig = bigFont(Resources::FontType::Normal, s);
+void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
+  auto&       inv  = pl.inventory();
+  auto        wrld = Gothic::inst().world();
   const Item* info = nullptr;
 
-  // ---- left: what the hero wears ----
-  int y = left.y+pad;
-  text(p, fBig, left.x+pad, y, gtxt("Bezimienny"));
-  y += fBig.pixelSize()+int(4*s);
+  // ---- left page: what the hero wears ----
+  int y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Bezimienny"));
+  y += f.title->pixelSize()+int(2*k);
   {
     char lvl[64] = {};
     std::snprintf(lvl, sizeof(lvl), "Poziom %d", int(pl.level()));
     std::string line = gtxt(lvl);
-    if(auto w = Gothic::inst().world())
-      if(auto g = w->script().findSymbol("TXT_GUILDS"))
+    if(wrld!=nullptr)
+      if(auto g = wrld->script().findSymbol("TXT_GUILDS"))
         line = std::string(g->get_string(uint16_t(pl.guild()))) + "  -  " + line;
-    text(p, fD, left.x+pad, y, line);
-    y += fD.pixelSize()+int(14*s);
+    text(p, *f.body, cl.x, y, line);
+    y += f.body->pixelSize()+int(8*k);
   }
+  drawRule(p, cl.x, y, cl.w);
+  y += int(12*k);
 
   static const struct { uint8_t slot; const char* name; } slots[] = {
     {0,"Broń biała"}, {1,"Broń dystansowa"}, {2,"Pancerz"}, {3,"Amulet"}, {4,"Pierścień"}, {5,"Pierścień"}, {6,"Pas"},
     };
-  const int colW = (left.w-2*pad-pad)/2;
-  const int ss   = std::min(int(92*s), colW/2);
+  const int gapX = int(8*k);
+  const int colW = (cl.w-gapX)/2;
+  const int ss   = std::min(int(80*k), colW*2/5);
+  const int rowH = ss+int(10*k);
   for(size_t i=0; i<std::size(slots); ++i) {
-    const int  cx = left.x+pad + int(i%2)*(colW+pad);
-    const int  cy = y + int(i/2)*(ss+int(14*s));
-    const Rect r(cx, cy, ss, ss);
+    const int   cx = cl.x + int(i%2)*(colW+gapX);
+    const int   cy = y + int(i/2)*rowH;
+    const Rect  r(cx, cy, ss, ss);
     const Item* it = inv.equippedIn(slots[i].slot);
-    const bool hv  = r.contains(mouse);
+    const bool  hv = r.contains(mouse) && it!=nullptr;
     drawSlot(p, r, it!=nullptr, hv);
     if(it!=nullptr)
-      items.drawItem(r.x+ss/10, r.y+ss/10, ss-ss/5, ss-ss/5, *it);
-    text(p, fD, cx+ss+int(10*s), cy+int(6*s), gtxt(slots[i].name));
-    if(it!=nullptr) {
-      const int tw = colW-ss-int(14*s);
-      fN.drawText(p, cx+ss+int(10*s), cy+int(10*s)+fD.pixelSize(), tw, ss-fD.pixelSize(), it->description(), AlignLeft);
-      } else {
-      text(p, fD, cx+ss+int(10*s), cy+int(10*s)+fD.pixelSize(), "-");
-      }
+      items.drawItem(r.x+ss/8, r.y+ss/8, ss-ss/4, ss-ss/4, *it);
+    const int tx = cx+ss+int(8*k);
+    const int tw = colW-ss-int(8*k);
+    text(p, *f.redS, tx, cy+int(2*k), gtxt(slots[i].name));
+    const int ny = cy+int(4*k)+f.redS->pixelSize();
+    if(it!=nullptr)
+      f.body->drawText(p, tx, ny+f.body->pixelSize(), tw, 3*f.body->pixelSize(), it->description(), AlignLeft); else
+      text(p, *f.small, tx, ny, "-");
     if(it!=nullptr) {
       Hit h; h.r = r; h.kind = H_Equip; h.cls = it->clsId(); h.equipped = true;
       hits.push_back(h);
@@ -407,96 +575,125 @@ void ArpgMenu::paintEquip(Painter& p, float s, const Rect& left, const Rect& rig
         }
       }
     }
-  y += int((std::size(slots)+1)/2)*(ss+int(14*s)) + int(6*s);
+  y += int((std::size(slots)+1)/2)*rowH+int(2*k);
 
   // life and mana (Gothic's bars)
+  drawRule(p, cl.x, y, cl.w);
+  y += int(12*k);
   {
-    const int bw = left.w-2*pad, bh = int(22*s);
+    const int lab = int(96*k), bh = int(24*k);
     char txt[64] = {};
-    drawBar(p, Rect(left.x+pad, y, bw, bh), "BAR_HEALTH.TGA",
+    text(p, *f.ink, cl.x, y+(bh-f.ink->pixelSize())/2, gtxt("Zdrowie"));
+    drawBar(p, Rect(cl.x+lab, y, cl.w-lab, bh), "BAR_HEALTH.TGA",
             float(pl.attribute(ATR_HITPOINTS))/float(std::max(1,pl.attribute(ATR_HITPOINTSMAX))));
     std::snprintf(txt, sizeof(txt), "%d / %d", int(pl.attribute(ATR_HITPOINTS)), int(pl.attribute(ATR_HITPOINTSMAX)));
-    textCenter(p, fN, left.x+left.w/2, y+(bh-fN.pixelSize())/2, txt);
-    y += bh+int(6*s);
-    drawBar(p, Rect(left.x+pad, y, bw, bh), "BAR_MANA.TGA",
+    textCenter(p, *f.light, cl.x+lab+(cl.w-lab)/2, y+(bh-f.light->pixelSize())/2, txt);
+    y += bh+int(8*k);
+    text(p, *f.ink, cl.x, y+(bh-f.ink->pixelSize())/2, gtxt("Mana"));
+    drawBar(p, Rect(cl.x+lab, y, cl.w-lab, bh), "BAR_MANA.TGA",
             float(pl.attribute(ATR_MANA))/float(std::max(1,pl.attribute(ATR_MANAMAX))));
     std::snprintf(txt, sizeof(txt), "%d / %d", int(pl.attribute(ATR_MANA)), int(pl.attribute(ATR_MANAMAX)));
-    textCenter(p, fN, left.x+left.w/2, y+(bh-fN.pixelSize())/2, txt);
-    y += bh+int(14*s);
+    textCenter(p, *f.light, cl.x+lab+(cl.w-lab)/2, y+(bh-f.light->pixelSize())/2, txt);
+    y += bh+int(12*k);
   }
 
   // runes and scrolls under the keys 3-0 (1 and 2 drink potions)
+  drawRule(p, cl.x, y, cl.w);
+  y += int(12*k);
   {
-    text(p, fD, left.x+pad, y, gtxt("Klawisze 3–0: najedź na runę albo zwój w plecaku i naciśnij klawisz"));
-    y += fD.pixelSize()+int(8*s);
-    const int gap = int(6*s);
-    const int qs  = std::min(int(56*s), (left.w-2*pad-7*gap)/8);
-    for(uint8_t k=0; k<8; ++k) {
-      const Rect r(left.x+pad+k*(qs+gap), y, qs, qs);
-      const Item* it = inv.currentSpell(k);
-      const bool  hv = r.contains(mouse);
-      drawSlot(p, r, false, hv);
+    text(p, *f.ink, cl.x, y, gtxt("Klawisze 3–0"));
+    y += f.ink->pixelSize()+int(2*k);
+    y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Najedź na runę albo zwój w plecaku i naciśnij klawisz.")) + int(8*k);
+    const int gap = int(6*k);
+    const int qs  = std::min(int(58*k), (cl.w-7*gap)/8);
+    for(uint8_t i=0; i<8; ++i) {
+      const Rect  r(cl.x+i*(qs+gap), y, qs, qs);
+      const Item* it = inv.currentSpell(i);
+      const bool  hv = r.contains(mouse) && it!=nullptr;
+      drawSlot(p, r, it!=nullptr, hv);
       if(it!=nullptr) {
-        items.drawItem(r.x+qs/10, r.y+qs/10, qs-qs/5, qs-qs/5, *it);
+        items.drawItem(r.x+qs/8, r.y+qs/8, qs-qs/4, qs-qs/4, *it);
         if(hv) {
           hoverCls = it->clsId();
           info     = it;
           }
         }
-      Hit h; h.r = r; h.kind = H_Equip; h.id = -1; h.cls = 0; h.count = (k+3)%10; // key number for the overlay
+      Hit h; h.r = r; h.kind = H_Equip; h.id = -1; h.cls = 0; h.count = (i+3)%10; // key number for the overlay
       if(it!=nullptr) {
         h.cls      = it->clsId();
         h.equipped = true;
         }
       hits.push_back(h);
       }
+    y += qs;
   }
 
-  // ---- right: the backpack ----
-  y = right.y+pad;
-  text(p, fBig, right.x+pad, y, gtxt("Plecak"));
+  // protection, in short (the whole list: character page)
+  y = drawSection(p, f, cl, y+int(4*k), gtxt("Ochrona"));
+  {
+    static const struct { Protection prot; const char* name; } prot[] = {
+      {PROT_EDGE,"Przed bronią"}, {PROT_POINT,"Przed strzałami"}, {PROT_FIRE,"Przed ogniem"}, {PROT_MAGIC,"Przed magią"},
+      };
+    const int colW2 = (cl.w-int(24*k))/2;
+    for(size_t i=0; i<std::size(prot); ++i) {
+      const int x  = cl.x+int(i%2)*(colW2+int(24*k));
+      const int ry = y+int(i/2)*(f.body->pixelSize()+int(8*k));
+      char v[16] = {};
+      std::snprintf(v, sizeof(v), "%d", int(pl.protection(prot[i].prot)));
+      text(p, *f.body, x, ry, gtxt(prot[i].name));
+      textRight(p, *f.red, x+colW2, ry+(f.body->pixelSize()-f.red->pixelSize())/2, v);
+      }
+  }
+
+  // ---- right page: the backpack ----
+  y = cr.y;
+  text(p, *f.title, cr.x, y, gtxt("Plecak"));
   {
     int32_t gold = 0;
-    if(auto w = Gothic::inst().world())
-      if(auto g = w->script().goldId())
+    if(wrld!=nullptr)
+      if(auto g = wrld->script().goldId())
         gold = int32_t(pl.itemCount(g->index()));
-    char txt[64] = {};
-    std::snprintf(txt, sizeof(txt), "%s %d", gtxt("Złoto:").c_str(), int(gold));
-    textRight(p, fN, right.x+right.w-pad, y+int(6*s), txt);
+    const std::string v  = std::to_string(gold);
+    const int         gy = y+(f.title->pixelSize()-f.red->pixelSize())/2;
+    textRight(p, *f.red, cr.x+cr.w, gy, v);
+    textRight(p, *f.ink, cr.x+cr.w-f.red->textSize(v).w-int(8*k), gy, gtxt("Złoto:"));
   }
-  y += fBig.pixelSize()+int(14*s);
+  y += f.title->pixelSize()+int(6*k);
+  drawRule(p, cr.x, y, cr.w);
+  y += int(8*k);
 
   static const char* cats[8] = {"Wszystko","Broń","Pancerze","Magia","Mikstury","Jedzenie","Dokumenty","Inne"};
   {
-    const int cw = (right.w-2*pad)/4;
-    const int ch = fN.pixelSize()+int(10*s);
-    auto bar = Resources::loadTexture("INV_TITEL.TGA");
+    const int cw = cr.w/4;
+    const int ch = f.body->pixelSize()+int(12*k);
     for(int i=0; i<8; ++i) {
-      const Rect r(right.x+pad+(i%4)*cw, y+(i/4)*ch, cw-int(4*s), ch-int(2*s));
+      const Rect r(cr.x+(i%4)*cw, y+(i/4)*ch, cw, ch);
       const bool on = (cat==i), hv = r.contains(mouse);
-      if(on && bar!=nullptr) {
-        p.setBrush(*bar);
-        p.drawRect(r.x, r.y, r.w, r.h, 0, 0, bar->w(), bar->h());
+      auto& fn = on ? *f.red : (hv ? *f.ink : *f.body);
+      const std::string s = gtxt(cats[i]);
+      textCenter(p, fn, r.x+r.w/2, r.y+(r.h-fn.pixelSize())/2, s);
+      if(on) {
+        const int tw = fn.textSize(s).w;
+        fill(p, r.x+(r.w-tw)/2, r.y+r.h-int(4*k), tw, std::max(1,int(2*k)), LineRedC);
         }
-      auto& f = on ? fH : (hv ? fN : fD);
-      textCenter(p, f, r.x+r.w/2, r.y+(r.h-f.pixelSize())/2, gtxt(cats[i]));
       Hit h; h.r = r; h.kind = H_Cat; h.id = i;
       hits.push_back(h);
       }
-    y += 2*ch+int(10*s);
+    y += 2*ch+int(10*k);
   }
 
-  const int descH = int(150*s);
+  const int infoMin = int(210*k);
   const int cols  = 6;
-  const int gap   = int(6*s);
-  const int cs    = (right.w-2*pad-(cols-1)*gap)/cols;
-  const int rows  = std::max(1, (right.y+right.h-pad-descH-int(10*s)-y+gap)/(cs+gap));
+  const int gap   = int(5*k);
+  const int cs    = (cr.w-(cols-1)*gap)/cols;
+  const int ind   = f.small->pixelSize()+int(4*k);
+  const int rows  = std::max(1, (cr.y+cr.h-infoMin-int(10*k)-ind-y+gap)/(cs+gap));
 
   struct Cell { const Item* it; size_t cls; int32_t count; bool eq; };
   std::vector<Cell> list;
   const size_t goldId = [&]() -> size_t {
-    if(auto w = Gothic::inst().world())
-      if(auto g = w->script().goldId())
+    if(wrld!=nullptr)
+      if(auto g = wrld->script().goldId())
         return g->index();
     return size_t(-1);
     }();
@@ -512,16 +709,16 @@ void ArpgMenu::paintEquip(Painter& p, float s, const Rect& left, const Rect& rig
   maxScroll = std::max(0, totalRows-rows);
   scroll    = std::clamp(scroll, 0, maxScroll);
   for(int i=0; i<rows*cols; ++i) {
-    const Rect   r(right.x+pad+(i%cols)*(cs+gap), y+(i/cols)*(cs+gap), cs, cs);
+    const Rect   r(cr.x+(i%cols)*(cs+gap), y+(i/cols)*(cs+gap), cs, cs);
     const size_t id = size_t(i+scroll*cols);
-    const bool   hv = r.contains(mouse);
     if(id>=list.size()) {
       drawSlot(p, r, false, false);
       continue;
       }
-    auto& c = list[id];
+    auto&      c  = list[id];
+    const bool hv = r.contains(mouse);
     drawSlot(p, r, c.eq, hv);
-    items.drawItem(r.x+cs/10, r.y+cs/10, cs-cs/5, cs-cs/5, *c.it);
+    items.drawItem(r.x+cs/8, r.y+cs/8, cs-cs/4, cs-cs/4, *c.it);
     Hit h; h.r = r; h.kind = H_Pack; h.cls = c.cls; h.equipped = c.eq; h.count = c.count;
     hits.push_back(h);
     if(hv) {
@@ -530,143 +727,132 @@ void ArpgMenu::paintEquip(Painter& p, float s, const Rect& left, const Rect& rig
       }
     }
   if(maxScroll>0) {
-    char txt[32] = {};
-    std::snprintf(txt, sizeof(txt), "%d / %d", scroll+1, maxScroll+1);
-    textRight(p, fD, right.x+right.w-pad, y+rows*(cs+gap), txt);
+    char txt[64] = {};
+    std::snprintf(txt, sizeof(txt), "%s %d / %d", gtxt("kółko myszy - strona").c_str(), scroll+1, maxScroll+1);
+    textRight(p, *f.small, cr.x+cr.w, y+rows*(cs+gap), txt);
     }
 
-  paintInfo(p, s, Rect(right.x+pad, right.y+right.h-pad-descH, right.w-2*pad, descH), items, info);
+  const int infoY = y+rows*(cs+gap)+ind+int(6*k);
+  paintInfo(p, f, Rect(cr.x-int(14*k), infoY, cr.w+int(28*k), cr.y+cr.h-infoY), items, info);
   }
 
-void ArpgMenu::paintInfo(Painter& p, float s, const Rect& r, InventoryRenderer& items, const Item* it) const {
-  // like the description box of Gothic's inventory
-  if(auto t = Resources::loadTexture("INV_DESC.TGA")) {
-    p.setBrush(*t);
-    p.drawRect(r.x, r.y, r.w, r.h, 0, 0, t->w(), t->h());
-    }
-  auto& fN = font(Resources::FontType::Normal,   s);
-  auto& fD = font(Resources::FontType::Disabled, s);
-  const int pad = int(12*s);
+void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRenderer& items, const Item* it) const {
+  // the description on a sheet of the game's letters
+  letter(p, r, 1.f);
+  const int pad = int(28*k);  // the burnt edge
   if(it==nullptr) {
-    textCenter(p, fD, r.x+r.w/2, r.y+(r.h-fD.pixelSize())/2,
-               gtxt("Najedź na przedmiot. LPM: załóż / użyj / zdejmij"));
+    const std::string s = gtxt("Najedź na przedmiot.\nLPM: załóż, użyj albo zdejmij.");
+    f.small->drawText(p, r.x+pad, r.y+(r.h-2*f.small->pixelSize())/2+f.small->pixelSize(), r.w-2*pad, 0, s, AlignHCenter);
     return;
     }
   const int mw = r.h-2*pad;          // model on the right
-  const int tw = r.w-2*pad-mw-pad;
-  textCenter(p, fN, r.x+pad+tw/2, r.y+pad, it->description());
-  int y = r.y+pad+fN.pixelSize()+int(6*s);
+  const int tw = r.w-2*pad-mw-int(8*k);
+  int y = r.y+pad-int(4*k);
+  auto& fName = f.sub->textSize(it->description()).w<=tw ? *f.sub : *f.body;
+  text(p, fName, r.x+pad, y, it->description());
+  y += fName.pixelSize()+int(6*k);
   for(size_t i=0; i<Item::MAX_UI_ROWS; ++i) {
     auto    txt = it->uiText(i);
     int32_t val = it->uiValue(i);
     if(txt.empty())
       continue;
-    if(y+fD.pixelSize()>r.y+r.h-pad/2)
+    if(y+f.small->pixelSize()>r.y+r.h-pad+int(6*k))
       break;
-    text(p, fD, r.x+pad, y, txt);
+    text(p, *f.small, r.x+pad, y, txt);
     if(val!=0) {
       char v[32] = {};
       std::snprintf(v, sizeof(v), "%d", int(val));
-      textRight(p, fN, r.x+pad+tw, y, v);
+      textRight(p, *f.redS, r.x+pad+tw, y, v);
       }
-    y += fD.pixelSize()+int(2*s);
+    y += f.small->pixelSize()+int(2*k);
     }
   items.drawItem(r.x+r.w-pad-mw, r.y+pad, mw, mw, *it);
   }
 
-void ArpgMenu::paintStats(Painter& p, float s, const Rect& left, const Rect& right, Npc& pl) {
-  const int pad  = int(18*s);
-  auto&     fN   = font(Resources::FontType::Normal,   s);
-  auto&     fD   = font(Resources::FontType::Disabled, s);
-  auto&     fH   = font(Resources::FontType::Hi,       s);
-  auto&     fBig = bigFont(Resources::FontType::Normal, s);
+void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, Npc& pl) {
   auto      w    = Gothic::inst().world();
-  const int line = fN.pixelSize()+int(8*s);
+  const int line = f.body->pixelSize()+int(9*k);
   char      buf[128] = {};
 
-  auto row = [&](const Rect& panel, int y, std::string_view k, std::string_view v) {
-    text(p, fD, panel.x+pad, y, k);
-    textRight(p, fN, panel.x+panel.w-pad, y, v);
+  auto row = [&](const Rect& c, int& y, std::string_view key, std::string_view val) {
+    text(p, *f.body, c.x, y, key);
+    textRight(p, *f.red, c.x+c.w, y+(f.body->pixelSize()-f.red->pixelSize())/2, val);
+    fill(p, c.x, y+f.body->pixelSize()+int(3*k), c.w, std::max(1,int(k)), FaintC);
+    y += line;
+    };
+  auto section = [&](const Rect& c, int& y, std::string_view name) {
+    y = drawSection(p, f, c, y, name);
     };
 
-  // ---- left: the hero ----
-  int y = left.y+pad;
-  text(p, fBig, left.x+pad, y, gtxt("Bezimienny"));
-  y += fBig.pixelSize()+int(4*s);
+  // ---- left page: the hero ----
+  int y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Bezimienny"));
+  y += f.title->pixelSize()+int(2*k);
   if(w!=nullptr)
     if(auto g = w->script().findSymbol("TXT_GUILDS")) {
-      text(p, fD, left.x+pad, y, g->get_string(uint16_t(pl.guild())));
-      y += fD.pixelSize()+int(12*s);
+      text(p, *f.body, cl.x, y, g->get_string(uint16_t(pl.guild())));
+      y += f.body->pixelSize()+int(2*k);
       }
 
+  section(cl, y, gtxt("Postęp"));
   std::snprintf(buf, sizeof(buf), "%d", int(pl.level()));
-  row(left, y, gtxt("Poziom"), buf);
-  y += line;
+  row(cl, y, gtxt("Poziom"), buf);
   std::snprintf(buf, sizeof(buf), "%d / %d", int(pl.experience()), int(pl.experienceNext()));
-  row(left, y, gtxt("Doświadczenie"), buf);
-  y += line;
+  row(cl, y, gtxt("Doświadczenie"), buf);
   {
-    const int bh = int(18*s);
-    const float v = pl.experienceNext()>0 ? float(pl.experience())/float(pl.experienceNext()) : 0.f;
-    drawBar(p, Rect(left.x+pad, y, left.w-2*pad, bh), "BAR_MISC.TGA", v);
-    y += bh+int(10*s);
+    const int   bh = int(20*k);
+    const float v  = pl.experienceNext()>0 ? float(pl.experience())/float(pl.experienceNext()) : 0.f;
+    drawBar(p, Rect(cl.x, y-int(2*k), cl.w, bh), "BAR_MISC.TGA", v);
+    y += bh+int(8*k);
   }
   std::snprintf(buf, sizeof(buf), "%d", int(pl.learningPoints()));
-  row(left, y, gtxt("Punkty nauki"), buf);
-  y += line;
-  row(left, y, gtxt("Punkty umiejętności"), "0");
-  y += line;
-  text(p, fD, left.x+pad, y, gtxt("(do drzewek; później nauczyciele zamienią na nie punkty nauki)"));
-  y += line+int(8*s);
+  row(cl, y, gtxt("Punkty nauki"), buf);
+  row(cl, y, gtxt("Punkty umiejętności"), "0");
+  y += wrap(p, *f.small, cl.x, y-int(4*k), cl.w, gtxt("Do drzewek umiejętności. Później nauczyciele zamienią na nie punkty nauki."));
 
-  text(p, fH, left.x+pad, y, gtxt("Atrybuty"));
-  y += line;
+  section(cl, y, gtxt("Atrybuty"));
   std::snprintf(buf, sizeof(buf), "%d", int(pl.attribute(ATR_STRENGTH)));
-  row(left, y, gtxt("Siła"), buf);
-  y += line;
+  row(cl, y, gtxt("Siła"), buf);
   std::snprintf(buf, sizeof(buf), "%d", int(pl.attribute(ATR_DEXTERITY)));
-  row(left, y, gtxt("Zręczność"), buf);
-  y += line;
+  row(cl, y, gtxt("Zręczność"), buf);
   std::snprintf(buf, sizeof(buf), "%d / %d", int(pl.attribute(ATR_HITPOINTS)), int(pl.attribute(ATR_HITPOINTSMAX)));
-  row(left, y, gtxt("Zdrowie"), buf);
-  y += line;
+  row(cl, y, gtxt("Zdrowie"), buf);
   std::snprintf(buf, sizeof(buf), "%d / %d", int(pl.attribute(ATR_MANA)), int(pl.attribute(ATR_MANAMAX)));
-  row(left, y, gtxt("Mana"), buf);
-  y += line+int(8*s);
+  row(cl, y, gtxt("Mana"), buf);
 
-  text(p, fH, left.x+pad, y, gtxt("Ochrona"));
-  y += line;
+  section(cl, y, gtxt("Ochrona"));
   std::snprintf(buf, sizeof(buf), "%d", int(pl.protection(PROT_EDGE)));
-  row(left, y, gtxt("Przed bronią"), buf);
-  y += line;
+  row(cl, y, gtxt("Przed bronią"), buf);
   std::snprintf(buf, sizeof(buf), "%d", int(pl.protection(PROT_POINT)));
-  row(left, y, gtxt("Przed strzałami"), buf);
-  y += line;
+  row(cl, y, gtxt("Przed strzałami"), buf);
   std::snprintf(buf, sizeof(buf), "%d", int(pl.protection(PROT_FIRE)));
-  row(left, y, gtxt("Przed ogniem"), buf);
-  y += line;
+  row(cl, y, gtxt("Przed ogniem"), buf);
   std::snprintf(buf, sizeof(buf), "%d", int(pl.protection(PROT_MAGIC)));
-  row(left, y, gtxt("Przed magią"), buf);
+  row(cl, y, gtxt("Przed magią"), buf);
 
-  // ---- right: Gothic's talents (names from the scripts) and the ARPG fight ----
-  y = right.y+pad;
-  text(p, fBig, right.x+pad, y, gtxt("Umiejętności Gothica"));
-  y += fBig.pixelSize()+int(12*s);
+  // ---- right page: Gothic's talents (names from the scripts) and the ARPG fight ----
+  y = cr.y;
+  text(p, *f.title, cr.x, y, gtxt("Umiejętności Gothica"));
+  y += f.title->pixelSize()+int(2*k);
+  const int talentsEnd = cr.y+cr.h-(6*line+f.sub->pixelSize()+int(30*k)); // room for the fight below
   if(w!=nullptr) {
     auto& sc   = w->script();
     auto* tal  = sc.findSymbol("TXT_TALENTS");
     auto* talV = sc.findSymbol("TXT_TALENTS_SKILLS");
     if(tal!=nullptr && talV!=nullptr) {
+      y += int(8*k);
       const bool g2  = Gothic::inst().version().game==2;
       const int  max = g2 ? TALENT_MAX_G2 : TALENT_MAX_G1;
       for(int i=0; i<max; ++i) {
         auto& name = tal->get_string(uint16_t(i));
         if(name.empty())
           continue;
+        if(y+line>talentsEnd)
+          break;
         // skill level: "a|b|c" from the scripts, picked by the talent's skill
         std::string_view lv = talV->get_string(uint16_t(i));
         int sk = pl.talentSkill(Talent(i));
-        for(int k=0; k<sk; ++k) {
+        for(int s=0; s<sk; ++s) {
           auto pos = lv.find('|');
           if(pos==std::string_view::npos) {
             lv = {};
@@ -680,120 +866,236 @@ void ArpgMenu::paintStats(Painter& p, float s, const Rect& left, const Rect& rig
           std::snprintf(buf, sizeof(buf), "  %d%%", int(g2 ? pl.hitChance(Talent(i)) : pl.talentValue(Talent(i))));
           val += buf;
           }
-        row(right, y, name, val);
-        y += line;
-        if(y>right.y+right.h/2+int(40*s))
-          break;
+        row(cr, y, name, val);
         }
       }
     }
-  y += int(10*s);
 
-  text(p, fH, right.x+pad, y, gtxt("Walka"));
-  y += line;
+  section(cr, y, gtxt("Walka"));
   {
     auto dmgOf = [](const Item* it) { return it!=nullptr ? int(it->handle().damage_total) : 0; };
     auto& inv  = pl.inventory();
     std::snprintf(buf, sizeof(buf), "%d", int(pl.attribute(ATR_STRENGTH))+dmgOf(inv.equippedIn(0)));
-    row(right, y, gtxt("Obrażenia wręcz (siła + broń)"), buf);
-    y += line;
+    row(cr, y, gtxt("Obrażenia wręcz (siła + broń)"), buf);
     if(inv.equippedIn(1)!=nullptr) {
       std::snprintf(buf, sizeof(buf), "%d", (int(pl.attribute(ATR_DEXTERITY))+dmgOf(inv.equippedIn(1)))/2);
-      row(right, y, gtxt("Obrażenia strzałą (x0,5)"), buf);
-      y += line;
+      row(cr, y, gtxt("Obrażenia strzałą (x0,5)"), buf);
       }
-    row(right, y, gtxt("Szybkość ataku"), "+20%");
-    y += line;
-    row(right, y, gtxt("Atak ładowany"), gtxt("x3, co 5 s"));
-    y += line;
-    row(right, y, gtxt("Fikołek bez obrażeń"), "0,45 s");
+    row(cr, y, gtxt("Szybkość ataku"), "+20%");
+    row(cr, y, gtxt("Atak ładowany"), gtxt("x3, co 5 s"));
+    row(cr, y, gtxt("Fikołek bez obrażeń"), "0,45 s");
   }
   }
 
-void ArpgMenu::paintTrees(Painter& p, float s, const Rect& left, const Rect& right) {
-  const int pad  = int(18*s);
-  auto&     fN   = font(Resources::FontType::Normal,   s);
-  auto&     fD   = font(Resources::FontType::Disabled, s);
-  auto&     fH   = font(Resources::FontType::Hi,       s);
-  auto&     fY   = font(Resources::FontType::Yellow,   s);
-  auto&     fBig = bigFont(Resources::FontType::Normal, s);
-  auto&     tr   = skillTrees();
-  tree = std::clamp(tree, 0, int(tr.size())-1);
+void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items) {
+  auto& trees = skillTrees();
+  tree = std::clamp(tree, 0, int(trees.size())-1);
+  auto& t = trees[size_t(tree)];
 
-  // ---- left: the trees ----
-  int y = left.y+pad;
-  text(p, fBig, left.x+pad, y, gtxt("Drzewka umiejętności"));
-  y += fBig.pixelSize()+int(14*s);
-  const int bh = int(64*s);
-  for(size_t i=0; i<tr.size(); ++i) {
-    const Rect r(left.x+pad, y, left.w-2*pad, bh);
+  // what the cursor is on: -1 nothing, 0 the root, 1 a node, 2 the keystone
+  int selKind = -1, selB = 0, selN = 0;
+
+  // ---- right page: the tree as a graph (root - trunk - branches - keystone) ----
+  int y = cr.y;
+  text(p, *f.title, cr.x, y, gtxt(t.name));
+  textRight(p, *f.red, cr.x+cr.w, y+(f.title->pixelSize()-f.red->pixelSize())/2, gtxt(t.key));
+  y += f.title->pixelSize()+int(2*k);
+  y += wrap(p, *f.small, cr.x, y, cr.w, gtxt(t.root))+int(6*k);
+  drawRule(p, cr.x, y, cr.w);
+  y += int(8*k);
+
+  const int rows  = std::max(1, int(t.branches.size()));
+  const int gy    = y;
+  const int rh    = (cr.y+cr.h-gy)/rows;
+  const int colW  = cr.w/5;
+  const int nameH = f.redS->pixelSize()+int(4*k);      // branch name over the first node
+  const int below = f.redS->pixelSize()+2*f.small->pixelSize()+int(6*k);
+  const int ns    = std::max(int(24*k), std::min({int(64*k), colW-int(26*k), rh-nameH-below}));
+  const int lw    = std::max(2, int(3*k));
+  auto nodeRect = [&](int col, int row) {
+    return Rect(cr.x+col*colW+(colW-ns)/2, gy+row*rh+nameH, ns, ns);
+    };
+  auto midY = [](const Rect& r) { return r.y+r.h/2; };
+  auto grow = [](const Rect& r, int d) { return Rect(r.x-d, r.y-d, r.w+2*d, r.h+2*d); };
+
+  // lines (under the nodes)
+  const Rect root   = grow(nodeRect(0, rows/2), int(4*k));
+  const int  trunkX = cr.x+colW;
+  fill(p, root.x+root.w, midY(root)-lw/2, trunkX-(root.x+root.w)+lw, lw, LineC);
+  fill(p, trunkX, midY(nodeRect(1,0))-lw/2, lw, midY(nodeRect(1,rows-1))-midY(nodeRect(1,0))+lw, LineC);
+  for(int b=0; b<int(t.branches.size()); ++b) {
+    auto&      br = t.branches[size_t(b)];
+    const Rect n0 = nodeRect(1, b);
+    fill(p, trunkX, midY(n0)-lw/2, n0.x-trunkX, lw, LineC);
+    for(int n=1; n<int(br.nodes.size()); ++n) {
+      const Rect a = nodeRect(n, b), c = nodeRect(n+1, b);
+      fill(p, a.x+a.w, midY(a)-lw/2, c.x-(a.x+a.w), lw, LineC);
+      }
+    }
+
+  // the keystone: red lines from the ends of the branches it needs
+  std::vector<int> from = t.keyFrom;
+  if(from.empty())
+    for(int b=0; b<int(t.branches.size()); ++b)
+      from.push_back(b);
+  int keyRow = 0;
+  for(int b:from)
+    keyRow += b;
+  keyRow = (keyRow+int(from.size())/2)/std::max(1, int(from.size()));
+  const Rect key   = grow(nodeRect(4, keyRow), int(6*k));
+  const int  collX = cr.x+4*colW-lw;
+  int ymin = midY(key), ymax = midY(key);
+  for(int b:from) {
+    auto&      br = t.branches[size_t(b)];
+    const Rect e  = nodeRect(int(br.nodes.size()), b);
+    fill(p, e.x+e.w, midY(e)-lw/2, collX-(e.x+e.w)+lw, lw, LineRedC);
+    ymin = std::min(ymin, midY(e));
+    ymax = std::max(ymax, midY(e));
+    }
+  fill(p, collX, ymin-lw/2, lw, ymax-ymin+lw, LineRedC);
+  fill(p, collX, midY(key)-lw/2, key.x-collX, lw, LineRedC);
+
+  // nodes: Gothic's slot frames with item models
+  auto node = [&](const Rect& r, const char* icon, bool big, int kind, int b, int n) {
+    const bool hv = r.contains(mouse);
+    drawSlot(p, r, big, hv);
+    if(auto itm = iconItem(icon)) {
+      const int d = r.w/7;
+      items.drawItem(r.x+d, r.y+d, r.w-2*d, r.h-2*d, *itm);
+      }
+    if(hv) {
+      selKind = kind;
+      selB    = b;
+      selN    = n;
+      }
+    Hit h; h.r = r; h.kind = H_Node; h.id = b*16+n;
+    hits.push_back(h);
+    };
+
+  node(root, t.icon, true, 0, 0, 0);
+  textCenter(p, *f.redS, root.x+root.w/2, root.y+root.h+int(3*k), gtxt(t.name));
+
+  for(int b=0; b<int(t.branches.size()); ++b) {
+    auto&      br = t.branches[size_t(b)];
+    const Rect n0 = nodeRect(1, b);
+    text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(br.name));
+    for(int n=0; n<int(br.nodes.size()); ++n) {
+      auto&      nd = br.nodes[size_t(n)];
+      const Rect r  = nodeRect(n+1, b);
+      node(r, nd.icon, false, 1, b, n);
+      char rank[16] = {};
+      std::snprintf(rank, sizeof(rank), "0/%d", nd.max);
+      textCenter(p, *f.redS, r.x+r.w/2, r.y+r.h+int(2*k), rank);
+      nameUnder(p, *f.small, r.x+r.w/2, r.y+r.h+int(3*k)+f.redS->pixelSize(), colW-int(16*k), gtxt(nd.name));
+      }
+    }
+
+  node(key, t.keystone.icon, true, 2, 0, 0);
+  textCenter(p, *f.redS,  key.x+key.w/2, key.y+key.h+int(3*k), gtxt(t.keystone.name));
+  textCenter(p, *f.small, key.x+key.w/2, key.y+key.h+int(4*k)+f.redS->pixelSize(), gtxt("kluczowy"));
+
+  // ---- left page: the trees, the points, the note on the node under the cursor ----
+  y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Umiejętności"));
+  y += f.title->pixelSize()+int(8*k);
+  const int eh = int(84*k);
+  for(size_t i=0; i<trees.size(); ++i) {
+    const Rect r(cl.x, y, cl.w, eh);
     const bool on = (int(i)==tree), hv = r.contains(mouse);
-    drawSlot(p, r, on, hv);
-    char head[96] = {};
-    std::snprintf(head, sizeof(head), "%s  (%s)", tr[i].name, tr[i].key);
-    text(p, on ? fH : fN, r.x+int(14*s), r.y+int(8*s), gtxt(head));
-    text(p, fD, r.x+int(14*s), r.y+int(12*s)+fN.pixelSize(), gtxt(tr[i].root));
+    if(on) {
+      fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.08f));
+      frame(p, r, LineRedC, std::max(1, int(2*k)));
+      } else if(hv) {
+      frame(p, r, RuleC, std::max(1, int(2*k)));
+      }
+    const Rect ic(r.x+int(6*k), r.y+int(6*k), eh-int(12*k), eh-int(12*k));
+    drawSlot(p, ic, on, false);
+    if(auto itm = iconItem(trees[i].icon)) {
+      const int d = ic.w/7;
+      items.drawItem(ic.x+d, ic.y+d, ic.w-2*d, ic.h-2*d, *itm);
+      }
+    auto& fn = on ? *f.red : *f.ink;
+    const int tx = ic.x+ic.w+int(12*k);
+    text(p, fn,       tx, r.y+int(12*k), gtxt(trees[i].name));
+    text(p, *f.small, tx, r.y+int(16*k)+fn.pixelSize(), gtxt(std::string("klawisz ")+trees[i].key+",  punkty w drzewku: 0"));
     Hit h; h.r = r; h.kind = H_Tree; h.id = int(i);
     hits.push_back(h);
-    y += bh+int(10*s);
+    y += eh+int(6*k);
     }
-  y += int(10*s);
-  text(p, fN, left.x+pad, y, gtxt("Punkty umiejętności: 0"));
-  y += fN.pixelSize()+int(8*s);
-  fD.drawText(p, left.x+pad, y+fD.pixelSize(), left.w-2*pad, left.y+left.h-y-pad,
-              gtxt("Każda umiejętność ma własne drzewko (jak w Last Epoch). Na razie same opisy, bez działania w grze. "
-                   "Punkty umiejętności dadzą później nauczyciele w zamian za punkty nauki."), AlignLeft);
+  y += int(6*k);
+  drawRule(p, cl.x, y, cl.w);
+  y += int(12*k);
+  text(p, *f.ink, cl.x, y, gtxt("Punkty umiejętności:"));
+  textRight(p, *f.red, cl.x+cl.w, y, "0");
+  y += f.ink->pixelSize()+int(4*k);
+  y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Później nauczyciele zamienią punkty nauki na punkty umiejętności."))+int(14*k);
 
-  // ---- right: the branches of the chosen tree ----
-  auto& t = tr[size_t(tree)];
-  y = right.y+pad;
-  text(p, fBig, right.x+pad, y, gtxt(t.name));
-  y += fBig.pixelSize()+int(10*s);
-  const int bottom = right.y+right.h-pad;
-  for(auto& b:t.branches) {
-    if(y+fY.pixelSize()>bottom)
+  // the note: on a sheet of the game's letters
+  const Rect nr(cl.x-int(16*k), y, cl.w+int(32*k), cl.y+cl.h-y);
+  letter(p, nr, 1.f);
+  const int pad = int(30*k);
+  const int nx  = nr.x+pad;
+  const int nw  = nr.w-2*pad;
+  int       ny  = nr.y+pad;
+  std::string name, desc, branch, req;
+  int maxRank = 0;
+  switch(selKind) {
+    case 1: {
+      auto& br = t.branches[size_t(selB)];
+      auto& nd = br.nodes[size_t(selN)];
+      name   = nd.name;
+      desc   = nd.desc;
+      maxRank = nd.max;
+      branch = std::string("Gałąź: ")+br.name;
       break;
-    text(p, fY, right.x+pad, y, gtxt(b.name));
-    y += fY.pixelSize()+int(4*s);
-    for(auto& n:b.nodes) {
-      if(y+fN.pixelSize()>bottom)
-        break;
-      char rank[16] = {};
-      std::snprintf(rank, sizeof(rank), "0/%d", n.max);
-      text(p, fN, right.x+pad+int(14*s), y, gtxt(n.name));
-      textRight(p, fH, right.x+right.w-pad, y, rank);
-      y += fN.pixelSize()+int(2*s);
-      const int lw = right.w-2*pad-int(28*s);
-      const int lh = fD.lineCount(lw, gtxt(n.desc))*fD.pixelSize();
-      fD.drawText(p, right.x+pad+int(28*s), y+fD.pixelSize(), lw, lh+fD.pixelSize(), gtxt(n.desc), AlignLeft);
-      y += lh+int(6*s);
       }
-    y += int(4*s);
+    case 2:
+      name   = t.keystone.name;
+      desc   = t.keystone.desc;
+      maxRank = t.keystone.max;
+      branch = "Węzeł kluczowy";
+      req    = std::string("Wymaga: ")+t.keyReq;
+      break;
+    default:
+      name   = t.name;
+      desc   = t.root;
+      branch = std::string("Klawisz: ")+t.key;
+      break;
     }
-  if(y+3*fN.pixelSize()<=bottom) {
-    text(p, fY, right.x+pad, y, gtxt("Węzeł kluczowy: ")+gtxt(t.keystone.name)+"  ("+gtxt(t.keyReq)+")");
-    y += fY.pixelSize()+int(2*s);
-    fD.drawText(p, right.x+pad+int(28*s), y+fD.pixelSize(), right.w-2*pad-int(28*s), bottom-y, gtxt(t.keystone.desc), AlignLeft);
+  text(p, *f.sub, nx, ny, gtxt(name));
+  if(maxRank>0) {
+    char rank[16] = {};
+    std::snprintf(rank, sizeof(rank), "0 / %d", maxRank);
+    textRight(p, *f.red, nx+nw, ny+(f.sub->pixelSize()-f.red->pixelSize())/2, rank);
     }
+  ny += f.sub->pixelSize()+int(6*k);
+  text(p, *f.redS, nx, ny, gtxt(branch));
+  ny += f.redS->pixelSize()+int(8*k);
+  ny += wrap(p, *f.body, nx, ny, nw, gtxt(desc))+int(10*k);
+  if(!req.empty())
+    ny += wrap(p, *f.redS, nx, ny, nw, gtxt(req))+int(10*k);
+  if(selKind<=0)
+    wrap(p, *f.small, nx, ny, nw, gtxt("Najedź na węzeł drzewka, żeby przeczytać jego opis."));
+  text(p, *f.small, nx, nr.y+nr.h-pad-f.small->pixelSize(), gtxt("Na razie same opisy - bez działania w grze."));
   }
 
-void ArpgMenu::paintOverlay(Painter& p, float s, Npc&) {
+void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
   // over the item models: how many, and the key of each rune slot
   if(page!=P_Equip)
     return;
-  auto& fN = font(Resources::FontType::Normal,   s*0.9f);
-  auto& fD = font(Resources::FontType::Disabled, s*0.85f);
+  auto& fN = Resources::font("font_old_10_white.tga", Resources::FontType::Normal, 0.95f*k);
+  auto& fD = Resources::font("font_old_10_white.tga", Resources::FontType::Hi,     0.85f*k);
   p.setBrush(Color(1.f));
   for(auto& h:hits) {
     if(h.kind==H_Pack && h.count>1) {
       char txt[16] = {};
       std::snprintf(txt, sizeof(txt), "%d", int(h.count));
-      textRight(p, fN, h.r.x+h.r.w-int(4*s), h.r.y+h.r.h-fN.pixelSize()-int(4*s), txt);
+      textRight(p, fN, h.r.x+h.r.w-int(6*k), h.r.y+h.r.h-fN.pixelSize()-int(5*k), txt);
       }
     if(h.kind==H_Equip && h.id==-1) {
       char txt[8] = {};
       std::snprintf(txt, sizeof(txt), "%d", int(h.count));
-      text(p, fD, h.r.x+int(3*s), h.r.y+int(1*s), txt);
+      text(p, fD, h.r.x+int(5*k), h.r.y+int(3*k), txt);
       }
     }
   }
