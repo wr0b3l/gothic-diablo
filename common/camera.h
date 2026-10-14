@@ -155,6 +155,11 @@ class Camera final {
     // gothic-diablo: cinematic dialogs: the dialog menu tells the camera who talks (every frame, before tick)
     void               setArpgDialog(const ArpgDialogCam::Input& in) { arpgDlg.in = in; arpgDlg.on = true; }
     bool               isArpgDialogShot() const { return camMod==Dialog && arpgDlg.cutDone; }
+    // depth of field of the dialog shots: strength 0..1, distance in focus (cm)
+    struct ArpgDof { float strength = 0; float focus = 0; };
+    ArpgDof            arpgDof() const { return ArpgDof{arpgDlg.dof, arpgDlg.focus}; }
+    // a soft light for the faces in dialog shots (false: none)
+    bool               arpgDialogLight(Tempest::Vec3& pos, float& range) const;
 
   private:
     struct Arpg {
@@ -191,11 +196,19 @@ class Camera final {
       bool                 cutDone  = false;
       bool                 keepView = false; // the ARPG view (cut-away, fog of war) stays: on the way down, workbench menus
       Tempest::Vec3        viewFrom = {};
+      Tempest::Vec3        look     = {};    // where the shot looks
+      float                focus    = 0;     // cm from the camera to the face in focus
+      float                dof      = 0;     // 0..1, depth of field fades in and out
+      bool                 exitOn   = false; // after the talk: the camera goes back up to the ARPG view
+      float                exitT    = 0;
+      Tempest::Vec3        exitFrom = {};
+      Tempest::Vec3        exitLook = {};
       };
     ArpgDlg               arpgDlg;
     ArpgDialogCam         arpgDir;
     float                 fovNow = 0;
     void                  tickArpgDialog(float dtF);
+    void                  arpgPlaceHero (const ArpgDialogCam::Input& in);
 
     struct Pin {
       Tempest::Vec3       origin = {};

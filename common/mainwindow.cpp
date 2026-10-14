@@ -127,6 +127,7 @@ MainWindow::~MainWindow() {
   takeWidget(&mobileUi);
 #endif
   removeAllWidgets();
+  dropArpgDialogLight(); // gothic-diablo: before its world goes
   // unload
   Gothic::inst().setGame(std::unique_ptr<GameSession>());
   }
@@ -1438,6 +1439,7 @@ void MainWindow::tickCamera(uint64_t dt) {
   if(camera.isToggleEnabled() && !camera.isCutscene())
     camera.setMode(solveCameraMode());
   camera.tick(dt);
+  updateArpgDialogLight(camera);
   }
 
 Camera::Mode MainWindow::solveCameraMode() const {
@@ -1582,6 +1584,7 @@ void MainWindow::onVideo(std::string_view fname) {
   }
 
 void MainWindow::onStartLoading() {
+  dropArpgDialogLight();
   player   .clearInput();
   inventory.onWorldChanged();
   dialogs  .onWorldChanged();
@@ -1657,9 +1660,50 @@ void MainWindow::onBenchmarkFinished() {
 
 void MainWindow::setGameImpl(std::unique_ptr<GameSession> &&w) {
   // clear pointers to outdated game-state
+  dropArpgDialogLight();
   inventory.onWorldChanged();
   dialogs  .onWorldChanged();
   Gothic::inst().setGame(std::move(w));
+  }
+
+void MainWindow::dropArpgDialogLight() {
+  // the world is still there: the light leaves it properly
+  if(arpgDlgLightOn && Gothic::inst().world()==arpgDlgLightWorld)
+    arpgDlgLight = LightGroup::Light(); else
+    arpgDlgLight.release();
+  arpgDlgLightOn    = false;
+  arpgDlgLightWorld = nullptr;
+  }
+
+void MainWindow::updateArpgDialogLight(const Camera& camera) {
+  // gothic-diablo: a soft light from the camera on the faces in dialog shots (night, interiors)
+  auto  world = Gothic::inst().world();
+  Vec3  pos;
+  float range = 0;
+  const bool on = world!=nullptr && camera.arpgDialogLight(pos, range);
+  if(arpgDlgLightOn && arpgDlgLightWorld!=world) {
+    arpgDlgLight.release(); // another world: the old one took its lights with it
+    arpgDlgLightOn = false;
+    }
+  if(!on) {
+    if(arpgDlgLightOn)
+      dropArpgDialogLight();
+    return;
+    }
+  if(!arpgDlgLightOn) {
+    zenkit::VLight v;
+    v.preset    = "ARPG_DIALOG_FILL";
+    v.range     = range;
+    v.color     = zenkit::Color{150, 138, 120, 255};
+    v.is_static = false;
+    v.on        = true;
+    v.position  = {pos.x, pos.y, pos.z};
+    arpgDlgLight      = world->addLight(v);
+    arpgDlgLightOn    = true;
+    arpgDlgLightWorld = world;
+    }
+  arpgDlgLight.setPosition(pos);
+  arpgDlgLight.setRange(range);
   }
 
 void MainWindow::clearInput() {

@@ -710,11 +710,23 @@ void Camera::tick(uint64_t dt) {
   const float dtF = float(dt)/1000.f;
 
   if(camMod!=Dialog) {
-    // gothic-diablo: the next talk starts with the way down again
+    // gothic-diablo: the camera goes back up from the last shot; the next talk starts with the way down again
+    if(arpgDlg.cutDone && isArpgActive()) {
+      arpgDlg.exitOn   = true;
+      arpgDlg.exitT    = 0;
+      arpgDlg.exitFrom = origin;
+      arpgDlg.exitLook = arpgDlg.look;
+      }
     arpgDlg.t        = 0;
     arpgDlg.cutDone  = false;
     arpgDlg.keepView = false;
     }
+  if(!isArpgActive())
+    arpgDlg.exitOn = false;
+  {
+    const float dst = isArpgDialogShot() ? 1.f : 0.f;
+    arpgDlg.dof += std::clamp(dst-arpgDlg.dof, -4.f*dtF, 3.f*dtF);
+  }
 
   {
     const auto& def = cameraDef();
@@ -763,8 +775,12 @@ void Camera::tick(uint64_t dt) {
   arpgDlg.on = false;
 
   {
-    // gothic-diablo: the dialog shots are filmed with a narrower lens
-    const float fov = isArpgDialogShot() ? 50.f : Gothic::options().cameraFov;
+    // gothic-diablo: the dialog shots are filmed with a narrower lens (and the way back up widens it again)
+    float fov = isArpgDialogShot() ? 50.f : Gothic::options().cameraFov;
+    if(arpgDlg.exitOn) {
+      const float s = std::clamp(arpgDlg.exitT/0.8f, 0.f, 1.f);
+      fov = 50.f + (fov-50.f)*(s*s*(3.f-2.f*s));
+      }
     if(fov!=fovNow && vpWidth>0 && vpHeight>0) {
       proj.perspective(fov, float(vpWidth)/float(vpHeight), zNear(), zFar());
       fovNow = fov;
@@ -1171,6 +1187,20 @@ void Camera::tickArpg(float dtF) {
   // no collision: geometry between camera and player is hidden in shaders instead
   origin = target + dir*range;
   angles = calcLookAtAngles(origin, target, Vec3(0), spin);
+
+  // after a talk: from the last shot back up to this view
+  if(arpgDlg.exitOn) {
+    if(dtF>0.f)
+      arpgDlg.exitT += dtF;
+    const float s = std::clamp(arpgDlg.exitT/0.8f, 0.f, 1.f);
+    const float e = s*s*(3.f-2.f*s);
+    const Vec3  o = arpgDlg.exitFrom + (origin-arpgDlg.exitFrom)*e;
+    const Vec3  l = arpgDlg.exitLook + (target-arpgDlg.exitLook)*e;
+    origin = o;
+    angles = calcLookAtAngles(origin, l, Vec3(0), spin);
+    if(s>=1.f)
+      arpgDlg.exitOn = false;
+    }
   }
 
 void Camera::tickArpgDialog(float dtF) {
@@ -1203,17 +1233,56 @@ void Camera::tickArpgDialog(float dtF) {
     return;
     }
 
-  // ... and cuts to the shots of the director
+  // ... and cuts to the shots of the director; the cut hides that the hero is put in his place
   if(!arpgDlg.cutDone) {
     arpgDlg.cutDone = true;
+    arpgDlg.exitOn  = false;
     arpgDir.reset();
+    arpgPlaceHero(in);
     }
   arpgDlg.keepView = false;
   ArpgDialogCam::Input din = in;
   din.viewFrom = arpgDlg.viewFrom;
   const auto shot = arpgDir.tick(std::max(0.f, dtF), din, *world);
-  origin = shot.origin;
+  origin        = shot.origin;
+  arpgDlg.look  = shot.target;
+  arpgDlg.focus = shot.focus;
   angles = calcLookAtAngles(origin, shot.target, Vec3(0), state.spin);
+  }
+
+void Camera::arpgPlaceHero(const ArpgDialogCam::Input& in) {
+  // the hero turns to the one he talks with and stands at the distance of a talk (1.3 - 1.7 m)
+  auto hero = Gothic::inst().player();
+  if(hero==nullptr || hero!=in.pl || in.other==nullptr || hero==in.other)
+    return;
+  if(hero->interactive()!=nullptr || hero->bodyStateMasked()!=BS_STAND)
+    return;
+  Vec3 d = in.other->position()-hero->position();
+  d.y = 0;
+  const float l = d.length();
+  if(l<1.f)
+    return;
+  const Vec3  dir  = d/l;
+  const float want = std::clamp(l, 130.f, 170.f);
+  if(std::abs(l-want)>5.f) {
+    const Vec3 dp = dir*(l-want);
+    if(!hero->tryMove(dp))
+      hero->tryMove(dp*0.5f);
+    }
+  hero->setDirection(in.other->position()-hero->position());
+  }
+
+bool Camera::arpgDialogLight(Vec3& pos, float& range) const {
+  if(!isArpgDialogShot())
+    return false;
+  // a little above the camera and in front of it, towards the face
+  const Vec3 view = arpgDlg.look-origin;
+  const float l   = view.length();
+  if(l<1.f)
+    return false;
+  pos   = origin + Vec3(0, 45.f, 0) + view*(std::min(40.f, l*0.3f)/l);
+  range = l+180.f;
+  return true;
   }
 
 void Camera::updateArpgView(float dtF) {

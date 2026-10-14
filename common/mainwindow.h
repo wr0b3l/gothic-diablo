@@ -165,6 +165,11 @@ class MainWindow : public Tempest::Window {
     InventoryMenu             inventory;
     InventoryRenderer         arpgBarItems;        // gothic-diablo: item models on the skill bar and in the ARPG window
     ArpgMenu                  arpgMenu;            // gothic-diablo: equipment / character / skill trees (I, C, T)
+    LightGroup::Light         arpgDlgLight;        // gothic-diablo: soft light on the faces in dialog shots
+    const World*              arpgDlgLightWorld = nullptr;
+    bool                      arpgDlgLightOn    = false;
+    void                      updateArpgDialogLight(const Camera& camera);
+    void                      dropArpgDialogLight();
     Tempest::KeyEvent::KeyType arpgMenuKey = Tempest::KeyEvent::K_NoKey; // pressed: acted on when released
     DialogMenu                dialogs;
     DocumentMenu              document;
