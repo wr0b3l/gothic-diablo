@@ -246,12 +246,14 @@ class PlayerControl final {
       int                        blockCount  = 0;      // path planning: checks in a row with a blocked straight line
       Tempest::Vec3              pathDest    = {};     // destination the current path was planned for
       int                        swings      = 0;
+      bool                       swingCheck  = false;  // a swing was started: does its animation really play?
       float                      actTimer    = 0;      // s, waiting in range for the action to succeed
       };
     enum ArpgStep : uint8_t {
       ArpgStop,
       ArpgTurn,
       ArpgMove,
+      ArpgAttack, // a swing plays: no other animation over it (a swing from a run goes on as Gothic's run attack)
       };
 
     ArpgCursor     arpgCursor;

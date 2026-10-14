@@ -196,6 +196,7 @@ class Npc final {
     void       arpgHoldParade();         // gothic-diablo: block held
     void       arpgHoldAttack();         // gothic-diablo: charged attack held in its wind-up
     void       arpgStartSpecial(float mul); // gothic-diablo: the next swing is a special attack
+    bool       arpgInReach(const Npc& tg, float mul) const; // gothic-diablo: in reach of a swing (flat, height tolerant)
     void       arpgSetShotMul(float mul) { arpgShotMul = mul; } // gothic-diablo: the next arrow: damage x mul, always hits
     bool       arpgKnockBack(Npc& from, float speed);  // gothic-diablo: push away without damage
     bool       arpgUseItem(size_t cls);                // gothic-diablo: use an item like in the inventory

@@ -558,7 +558,8 @@ void Renderer::draw(Attachment& result, Encoder<CommandBuffer>& cmd, uint8_t fId
   cmd.setDebugMarker("UI");
   uiLayer.draw(cmd);
 
-  if(inventory.isOpen()!=InventoryMenu::State::Closed) {
+  // gothic-diablo: trade / chest / looting in the ARPG book: InventoryMenu draws nothing, the book's models are in hudItems
+  if(inventory.isOpen()!=InventoryMenu::State::Closed && !(hudItems!=nullptr && inventory.isArpgBook())) {
     auto& zb = (zbufferUi.isEmpty() ? zbuffer : zbufferUi);
     cmd.setFramebuffer({{result, Tempest::Preserve, Tempest::Preserve}},{zb, 1.f, Tempest::Preserve});
     cmd.setDebugMarker("Inventory");

@@ -2095,7 +2095,7 @@ bool Npc::commitDamageArpg() {
                         (n.isEnemy(*this) && !owner.script().isFriendlyFire(*this,n));
     if(!wanted)
       return;
-    if(!fghAlgo.isInAttackRange(*this,n,owner.script()))
+    if(!arpgInReach(n, special ? 1.2f : 1.f))
       return;
     if(!inArc(n) && !(&n==currentTarget && fghAlgo.isInFocusAngle(*this,n)))
       return;
@@ -2114,6 +2114,15 @@ void Npc::arpgHoldParade() {
 
 void Npc::arpgHoldAttack() {
   visual.holdAttack(owner.tickCount());
+  }
+
+bool Npc::arpgInReach(const Npc& tg, float mul) const {
+  // gothic-diablo: Gothic's fight range (bases of both guilds + weapon), measured flat: up to 1.2 m up or down
+  // does not count (slopes, steps, a wolf lower than the hero); Gothic measures it in 3D, so a small step was a miss
+  const auto  d  = fightDistanceTo(tg);
+  const float dy = std::max(0.f, std::abs(d.y)-120.f);
+  const float pd = fghAlgo.prefferedAttackDistance(*this,tg,owner.script())*mul;
+  return d.x*d.x + d.z*d.z + dy*dy <= pd*pd;
   }
 
 void Npc::arpgStartSpecial(float mul) {

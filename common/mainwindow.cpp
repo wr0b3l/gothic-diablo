@@ -18,6 +18,7 @@
 #include "utils/string_frm.h"
 #include "world/triggers/abstracttrigger.h"
 #include "world/objects/npc.h"
+#include "world/objects/interactive.h"
 #include "game/serialize.h"
 #include "game/globaleffects.h"
 #include "utils/gthfont.h"
@@ -1407,8 +1408,27 @@ void MainWindow::tickCamera(uint64_t dt) {
      (pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() ||
       document.isActive() || rootMenu.isActive() || video.isActive() || !pcamera->isArpgActive()))
     arpgMenu.close();
-  // in front of the hero for his own windows; a trade from a dialog keeps the dialog's camera, a chest the ARPG view
+  // in front of the hero for his own windows
   pcamera->setArpgPortrait(arpgMenu.isOpen() && arpgMenu.current()!=ArpgMenu::P_Trade && !dialogs.isActive());
+  {
+    // trade, chest, looting: the trader (the chest, the body) in the middle between the pages
+    Camera::ArpgBookShot bk;
+    if(arpgMenu.current()==ArpgMenu::P_Trade && pl!=nullptr) {
+      if(auto ch = inventory.arpgChest()) {
+        bk.on       = true;
+        bk.standing = false;
+        bk.subject  = ch->position()+Vec3(0,45.f,0);
+        }
+      else if(auto o = inventory.arpgOther(); o!=nullptr && o!=pl) {
+        bk.on       = true;
+        bk.standing = !o->isDown();
+        if(bk.standing)
+          bk.subject = o->position()+Vec3(0,100.f,0); else
+          bk.subject = (o->position()+o->mapHeadBone())*0.5f+Vec3(0,20.f,0); // the body on the ground
+        }
+      }
+    pcamera->setArpgBook(bk);
+  }
 
   auto&      camera       = *pcamera;
   const auto ws           = pl!=nullptr ? pl->weaponState() : WeaponState::NoWeapon;
