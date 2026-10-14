@@ -2675,6 +2675,22 @@ float PlayerControl::arpgPushLeft() const {
   return std::clamp(arpgPushCd/PushCooldown, 0.f, 1.f);
   }
 
+void PlayerControl::arpgStop() {
+  arpgClick      = ArpgClick();
+  arpgDodgeReq   = false;
+  arpgPotionReq  = 0;
+  arpgSpellSlot  = 0;
+  arpgPushReq    = false;
+  arpgBlocking   = false;
+  arpgChargeHeld = false;
+  if(arpgCharge!=ChargeNone) {
+    auto w = Gothic::inst().world();
+    if(auto pl = (w!=nullptr ? w->player() : nullptr))
+      arpgChargeCancel(*pl);
+    arpgCharge = ChargeNone;
+    }
+  }
+
 void PlayerControl::arpgPush() {
   if(arpgPushCd>0.f)
     return;

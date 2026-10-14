@@ -1086,6 +1086,19 @@ void Camera::arpgRotate(float deltaDeg) {
   arpg.yawDest += deltaDeg;
   }
 
+void Camera::setArpgPortrait(bool on) {
+  if(arpg.portraitOn==on)
+    return;
+  arpg.portraitOn = on;
+  if(on) {
+    arpg.yawSaved = arpg.yawDest;
+    if(auto pl = Gothic::inst().player())
+      arpg.yawDest = pl->rotation()+180.f; // in front of the hero, looking at his face
+    } else {
+    arpg.yawDest = arpg.yawSaved;
+    }
+  }
+
 void Camera::tickArpg(float dtF) {
   if(!arpg.init) {
     const auto pl = Gothic::inst().player();
@@ -1103,10 +1116,29 @@ void Camera::tickArpg(float dtF) {
     arpg.range += (arpg.rangeDest-arpg.range)*std::min(1.f, 6.f*dtF);
     }
 
-  const Vec3 spin = Vec3(arpg.elevation, arpg.yaw, 0);
+  // portrait (equipment / character window): low and close, in front of the hero
+  {
+    const float dst = arpg.portraitOn ? 1.f : 0.f;
+    if(dtF<0.f)
+      arpg.portrait = dst; else
+      arpg.portrait += std::clamp(dst-arpg.portrait, -2.5f*dtF, 2.5f*dtF);
+  }
+  const float pk    = arpg.portrait*arpg.portrait*(3.f-2.f*arpg.portrait); // smoothstep
+  const float elev  = arpg.elevation + (8.f-arpg.elevation)*pk;
+  const float range = arpg.range     + (290.f-arpg.range)*pk;
+
+  const Vec3 spin = Vec3(elev, arpg.yaw, 0);
   state.spin      = spin;
   inter.rotOffset = Vec3(0);
   inter.target    = followTarget(inter.target, state.target, dtF);
+
+  Vec3 target = inter.target;
+  if(pk>0.f) {
+    if(auto pl = Gothic::inst().player()) {
+      const Vec3 body = pl->position()+Vec3(0,100.f,0); // the whole hero in the picture
+      target = target + (body-target)*pk;
+      }
+    }
 
   // direction from target to camera, same math as in tickThirdPerson
   auto rot = mkRotation(spin);
@@ -1115,8 +1147,8 @@ void Camera::tickArpg(float dtF) {
   rot.project(dir);
 
   // no collision: geometry between camera and player is hidden in shaders instead
-  origin = inter.target + dir*arpg.range;
-  angles = calcLookAtAngles(origin, inter.target, Vec3(0), spin);
+  origin = target + dir*range;
+  angles = calcLookAtAngles(origin, target, Vec3(0), spin);
   }
 
 void Camera::updateArpgView(float dtF) {

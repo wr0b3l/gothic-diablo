@@ -105,3 +105,16 @@ Dachy i ściany dalej rzucają cienie (ukrywanie działa tylko w widoku kamery).
 | Ataki bohatera o 20% szybsze (animacje ataku przesuwane do przodu, zdarzenia trafienia i dźwięki nie giną) | `Npc::tick`, `Pose::warpAttack` |
 | Liczby obrażeń nad trafionymi (białe = zadane, czerwone = otrzymane, „Blok”), paski życia nad wrogami w walce | `World::arpgPopup`, `MainWindow::paintArpgCombat` |
 | Dojście do celu bez pętli: prosta linia ↔ waynet z histerezą (2 sprawdzenia z rzędu), pierwszy waypoint za plecami pomijany, ścieżka skracana do najdalszego widocznego punktu | `arpgNextPoint`, `arpgPlanPath`, `arpgPullPath` |
+
+## Faza 5 — interfejs: ekwipunek, postać, drzewka umiejętności
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Okno ARPG pod I (ekwipunek), C (postać), T (drzewka); ten sam klawisz albo Esc zamyka, klik w zakładkę przełącza; Backspace dalej otwiera ekwipunek Gothica (handel i skrzynie też zostają po staremu) | `ArpgMenu`, `MainWindow::keyDownEvent` / `keyUpEvent` |
+| Bohater w środku ekranu: kamera ARPG po otwarciu okna objeżdża go od przodu, zniża się i podjeżdża (8°, 2,9 m, cel na wysokości 1 m), więc widać prawdziwego Bezimiennego w animacji spoczynku i od razu każdą zmianę pancerza i broni; Q/E obracają kamerę wokół niego; po zamknięciu kamera wraca na swój kąt | `Camera::setArpgPortrait`, `Camera::tickArpg` |
+| Grafiki z gry: panele MENU_INGAME, zakładki MENU_CHOICE_BACK, sloty INV_SLOT / INV_SLOT_EQUIPPED, najechany slot w ramce INV_SLOT_FOCUS / INV_SLOT_EQUIPPED_FOCUS, opis INV_DESC, aktywny rodzaj przedmiotów INV_TITEL, paski BAR_BACK + BAR_HEALTH / BAR_MANA / BAR_MISC, czcionki Gothica, modele przedmiotów jak w ekwipunku | `ArpgMenu::drawPanel`, `drawSlot`, `drawBar` |
+| Ekwipunek: po lewej to, co bohater nosi (broń biała, dystansowa, pancerz, amulet, 2 pierścienie, pas) z nazwami, paski życia i many, runy i zwoje pod klawiszami 3–0; po prawej plecak 6 kolumn z rodzajami (Wszystko, Broń, Pancerze, Magia, Mikstury, Jedzenie, Dokumenty, Inne), liczby sztuk, kółko myszy przewija, złoto; opis najechanego przedmiotu jak w Gothicu (teksty i wartości ze skryptów + model) | `ArpgMenu::paintEquip`, `paintInfo`, `Inventory::equippedIn` |
+| LPM na przedmiocie = jak w ekwipunku Gothica (załóż / wypij / przeczytaj), na założonym = zdejmij; najechana runa lub zwój + klawisz 3–0 = przypisanie do klawisza | `ArpgMenu::mouseDown`, `spellKey` |
+| Postać: poziom, doświadczenie (pasek), punkty nauki, punkty umiejętności (0, później od nauczycieli w zamian za punkty nauki), atrybuty, ochrona; umiejętności Gothica z nazwami i poziomami ze skryptów (TXT_TALENTS, TXT_TALENTS_SKILLS, procenty broni); walka ARPG (obrażenia wręcz i strzałą, szybkość ataku, atak ładowany, fikołek) | `ArpgMenu::paintStats` |
+| Drzewka (na razie same opisy): Cios, Atak ładowany, Fikołek — gałęzie, węzły z limitem punktów, węzeł kluczowy | `ArpgMenu::paintTrees`, `skillTrees()` |
+| Polskie litery w oknie: tekst UTF-8 zamieniany na Windows-1250, gdy gra jest polska (sprawdzane po NAME_VALUE = „Wartość:” w skryptach), inaczej litery bez ogonków | `ArpgMenu::gtxt` |

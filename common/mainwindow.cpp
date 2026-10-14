@@ -213,7 +213,13 @@ void MainWindow::paintEvent(PaintEvent& event) {
       drawMsg(p);
 
       auto focus = world->validateFocus(player.focus());
-      if(isArpgMouse()) {
+      if(arpgMenu.isOpen()) {
+        // gothic-diablo: equipment / character window; the hero stands in the middle (camera in front of him)
+        arpgLabels.clear();
+        if(auto pl = Gothic::inst().player())
+          arpgMenu.paint(p, w(), h(), Gothic::interfaceScale(this), arpgBarItems, *pl);
+        }
+      else if(isArpgMouse()) {
         // gothic-diablo: labels like in Diablo; Z = labels of everything in sight
         if(arpgShowAll)
           paintArpgLabels(p,vp,focus); else
@@ -230,7 +236,7 @@ void MainWindow::paintEvent(PaintEvent& event) {
         }
 
       if(auto pl = Gothic::inst().player()){
-        if (!Gothic::inst().isDesktop()) {
+        if (!Gothic::inst().isDesktop() && !arpgMenu.isOpen()) {
           auto& opt = Gothic::options();
           float hp  = float(pl->attribute(ATR_HITPOINTS))/float(pl->attribute(ATR_HITPOINTSMAX));
           float mp  = float(pl->attribute(ATR_MANA))     /float(pl->attribute(ATR_MANAMAX));
@@ -319,6 +325,12 @@ void MainWindow::resizeEvent(SizeEvent&) {
   }
 
 void MainWindow::mouseDownEvent(MouseEvent &event) {
+  if(arpgMenu.isOpen()) {
+    // gothic-diablo: the ARPG window takes the mouse
+    if(auto pl = Gothic::inst().player())
+      arpgMenu.mouseDown(event.pos(), event.button==Event::ButtonRight, *pl);
+    return;
+    }
   if(event.button==Event::ButtonLeft && isArpgMouse()) {
     // gothic-diablo: left button = move / interact / attack under the cursor
     arpgCursor      = event.pos();
@@ -378,6 +390,8 @@ void MainWindow::mouseDownEvent(MouseEvent &event) {
   }
 
 void MainWindow::mouseUpEvent(MouseEvent &event) {
+  if(arpgMenu.isOpen() && !arpgLeftDown && !arpgRightDown && !arpgMidDown && !arpgMidBlock && !arpgMidPush)
+    return;
   if(event.button==Event::ButtonLeft && arpgLeftDown) {
     arpgLeftDown = false;
     player.arpgMouseUp();
@@ -426,6 +440,7 @@ void MainWindow::mouseDragEvent(MouseEvent &event) {
         }
       arpgMidLast = event.pos();
       }
+    arpgMenu.mouseMove(event.pos());
     arpgCursor      = event.pos();
     arpgCursorValid = true;
     return;
@@ -445,6 +460,7 @@ void MainWindow::mouseMoveEvent(MouseEvent &event) {
 void MainWindow::processMouse(MouseEvent& event, bool enable) {
   if(Camera::isArpgEnabled()) {
     // gothic-diablo: free, visible cursor; the hero turns towards it
+    arpgMenu.mouseMove(event.pos());
     arpgCursor      = event.pos();
     arpgCursorValid = true;
     return;
@@ -538,7 +554,7 @@ bool MainWindow::isArpgMouse() const {
   auto camera = Gothic::inst().camera();
   return Camera::isArpgEnabled() && camera!=nullptr && camera->isArpgActive() &&
          Gothic::inst().player()!=nullptr &&
-         !dialogs.isActive() && !inventory.isActive() && !document.isActive();
+         !dialogs.isActive() && !inventory.isActive() && !document.isActive() && !arpgMenu.isOpen();
   }
 
 void MainWindow::onSettings() {
@@ -551,6 +567,10 @@ void MainWindow::onSettings() {
   }
 
 void MainWindow::mouseWheelEvent(MouseEvent &event) {
+  if(arpgMenu.isOpen()) {
+    arpgMenu.mouseWheel(event.delta); // backpack rows
+    return;
+    }
   if(arpgMinimap && arpgMapRect.w>0 && arpgMapRect.contains(event.pos()) && isArpgMouse()) {
     // gothic-diablo: wheel over the minimap zooms the minimap (20..100 m across)
     const float k = event.delta>0 ? 1.f/1.2f : 1.2f;
@@ -620,8 +640,33 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
   if(event.key==Event::K_Z && Camera::isArpgEnabled())
     arpgShowAll = true; // gothic-diablo: hold Z to show all items / usable objects in sight
 
+  if(arpgMenu.isOpen()) {
+    // gothic-diablo: the ARPG window is open: I / C / T switch or close it, Esc closes it,
+    // 3-0 put the rune / scroll under the cursor on that key, the camera turn keys still turn the camera
+    event.accept();
+    if(event.key==Event::K_ESCAPE || event.key==Event::K_I || event.key==Event::K_C || event.key==Event::K_T) {
+      arpgMenuKey = event.key;
+      return;
+      }
+    if((event.key>=Event::K_3 && event.key<=Event::K_9) || event.key==Event::K_0) {
+      if(auto pl = Gothic::inst().player())
+        arpgMenu.spellKey(event.key==Event::K_0 ? uint8_t(10) : uint8_t(event.key-Event::K_0), *pl);
+      return;
+      }
+    auto act = keycodec.tr(event);
+    if(act==KeyCodec::RotateL || act==KeyCodec::RotateR)
+      player.onKeyPressed(act,event.key,keycodec.mapping(event));
+    return;
+    }
+
   if(Camera::isArpgEnabled() && Gothic::inst().player()!=nullptr) {
-    // gothic-diablo: Tab = minimap, I = inventory (Backspace keeps working too)
+    // gothic-diablo: C / T = character / skill trees (with I = equipment: ArpgMenu, acted on key-up)
+    if((event.key==Event::K_C || event.key==Event::K_T) && isArpgMouse()) {
+      arpgMenuKey = event.key;
+      event.accept();
+      return;
+      }
+    // gothic-diablo: Tab = minimap, I = equipment window (Backspace = Gothic's inventory)
     if(event.key==Event::K_Tab) {
       arpgMinimap = !arpgMinimap;
       arpgTabDown = true;
@@ -685,9 +730,24 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
     }
   if(event.key==Event::K_I && arpgIDown) {
     arpgIDown = false;
-    if(!dialogs.isActive() && !inventory.isActive()) {
-      if(auto pl = Gothic::inst().player())
-        inventory.open(*pl);
+    if(!dialogs.isActive() && !inventory.isActive() && Gothic::inst().player()!=nullptr) {
+      arpgMenu.toggle(ArpgMenu::P_Equip); // gothic-diablo: the ARPG equipment window
+      player.arpgStop();
+      clearInput();
+      }
+    return;
+    }
+  if(arpgMenuKey!=Event::K_NoKey && event.key==arpgMenuKey) {
+    arpgMenuKey = Event::K_NoKey;
+    switch(event.key) {
+      case Event::K_ESCAPE: arpgMenu.close();                        break;
+      case Event::K_I:      arpgMenu.toggle(ArpgMenu::P_Equip);      break;
+      case Event::K_C:      arpgMenu.toggle(ArpgMenu::P_Character);  break;
+      case Event::K_T:      arpgMenu.toggle(ArpgMenu::P_Skills);     break;
+      default: break;
+      }
+    if(arpgMenu.isOpen()) {
+      player.arpgStop();
       clearInput();
       }
     return;
@@ -1323,6 +1383,14 @@ void MainWindow::tickCamera(uint64_t dt) {
   if(pcamera==nullptr)
     return;
 
+  // gothic-diablo: the ARPG window closes for dialogs, Gothic's menus, documents, death...;
+  // while it is open the camera stands in front of the hero
+  if(arpgMenu.isOpen() && (pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() ||
+                           document.isActive() || rootMenu.isActive() || video.isActive() ||
+                           !pcamera->isArpgActive()))
+    arpgMenu.close();
+  pcamera->setArpgPortrait(arpgMenu.isOpen());
+
   auto&      camera       = *pcamera;
   const auto ws           = pl!=nullptr ? pl->weaponState() : WeaponState::NoWeapon;
   const bool meleeFocus   = (ws==WeaponState::Fist ||
@@ -1647,7 +1715,12 @@ void MainWindow::render(){
       inventory.paintNumOverlay(p);
       if(!inventory.isActive()) {
         Painter pn(p);
-        paintArpgBarOverlay(pn);
+        if(arpgMenu.isOpen()) {
+          if(auto pl = Gothic::inst().player())
+            arpgMenu.paintOverlay(pn, Gothic::interfaceScale(this), *pl);
+          } else {
+          paintArpgBarOverlay(pn);
+          }
         }
       }
     uiMesh [cmdId].update(device,uiLayer);

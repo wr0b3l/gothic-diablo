@@ -30,6 +30,7 @@
 #include "graphics/renderer.h"
 #include "ui/dialogmenu.h"
 #include "ui/inventorymenu.h"
+#include "ui/arpgmenu.h"
 #include "ui/chapterscreen.h"
 #include "ui/documentmenu.h"
 #include "ui/videowidget.h"
@@ -162,7 +163,9 @@ class MainWindow : public Tempest::Window {
     MenuRoot                  rootMenu;
     VideoWidget               video;
     InventoryMenu             inventory;
-    InventoryRenderer         arpgBarItems;        // gothic-diablo: item models on the skill bar
+    InventoryRenderer         arpgBarItems;        // gothic-diablo: item models on the skill bar and in the ARPG window
+    ArpgMenu                  arpgMenu;            // gothic-diablo: equipment / character / skill trees (I, C, T)
+    Tempest::KeyEvent::KeyType arpgMenuKey = Tempest::KeyEvent::K_NoKey; // pressed: acted on when released
     DialogMenu                dialogs;
     DocumentMenu              document;
     ChapterScreen             chapter;

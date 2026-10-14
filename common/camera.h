@@ -144,6 +144,8 @@ class Camera final {
     bool               isArpgActive() const;
     float              arpgYaw() const { return arpg.yaw; }
     void               arpgRotate(float deltaDeg);
+    // gothic-diablo: equipment / character window: the camera goes round to the front of the hero, close to him
+    void               setArpgPortrait(bool on);
     const ArpgView&    arpgView() const { return arpgV; }
     // gothic-diablo: creatures that glow a little (enemy under the cursor, current target): xyz = center, w = radius
     void               arpgSetHighlight(size_t i, const Tempest::Vec4& v) { if(i<arpgHi.size()) arpgHi[i] = v; }
@@ -165,6 +167,9 @@ class Camera final {
       std::array<float,ArpgView::LosRays> losDst = {}; // last measured
       uint32_t losPhase = 0;
       bool     losInit  = false;
+      bool     portraitOn = false;
+      float    portrait   = 0;   // 0..1 blend to the portrait view
+      float    yawSaved   = 0;   // yaw before the portrait view
       };
     Arpg                  arpg;
     ArpgView              arpgV;

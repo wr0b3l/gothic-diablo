@@ -71,6 +71,7 @@ class PlayerControl final {
     void  arpgChargeRelease();                   // right mouse button up: release it
     float arpgSpecialLeft() const;               // 0..1 of the cooldown left
     void  arpgPush();                            // middle mouse button with a bow: push the enemies in front away
+    void  arpgStop();                            // a window opened: drop every mouse order / charge / request
     bool  arpgCanPush() const;                   // a bow / crossbow is drawn
     float arpgPushLeft() const;                  // 0..1 of the push cooldown left
     static constexpr float SpecialCooldown = 5.f; // s
