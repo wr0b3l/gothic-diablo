@@ -2064,6 +2064,8 @@ bool Npc::arpgUseItem(size_t cls) {
   return invent.use(cls,*this,Item::NSLOT,false);
   }
 
+static constexpr float ArpgWhirlRadius = 300.f; // gothic-diablo: Wir, cm (also the ring drawn)
+
 bool Npc::commitDamageArpg() {
   if(!isPlayer() || !Camera::isArpgEnabled())
     return false;
@@ -2106,6 +2108,13 @@ bool Npc::commitDamageArpg() {
   owner.detectNpc(position(), std::max(600.f, waveR+100.f), [&](Npc& n) {
     if(!wanted(n))
       return;
+    if(whirl) {
+      // Wir: everyone inside the ring (ArpgWhirlRadius, the same as the drawn ring), up and down like a swing
+      const auto d = n.position()-position();
+      if(d.x*d.x+d.z*d.z <= ArpgWhirlRadius*ArpgWhirlRadius && std::abs(d.y)<200.f)
+        hit.push_back(&n);
+      return;
+      }
     if(arpgInReach(n, special ? 1.2f : 1.f) &&
        (inArc(n, cosHalf) || (&n==currentTarget && fghAlgo.isInFocusAngle(*this,n)))) {
       hit.push_back(&n);
@@ -2133,7 +2142,7 @@ bool Npc::commitDamageArpg() {
     arpgFxLast.pos   = position();
     arpgFxLast.ang   = angle;
     arpgFxLast.arc   = 360.f;
-    arpgFxLast.reach = 300.f;
+    arpgFxLast.reach = ArpgWhirlRadius;
     arpgFxLast.kind  = 3;
     arpgSpinUntil    = owner.tickCount()+300; // the hero turns round once with the swing
     owner.arpgPopup(position()+Tempest::Vec3(0,230.f,0), 1, 5);

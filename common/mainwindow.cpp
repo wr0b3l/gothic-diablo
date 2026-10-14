@@ -2279,8 +2279,9 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
     if((fx.kind==3 || fx.kind==4) && fx.time!=0 && now>=fx.time && now<fx.time+len) {
       const float k    = float(now-fx.time)/float(len);
       const float fade = 1.f-k*k;
-      const float r1   = (fx.kind==3) ? 90.f+fx.reach*std::sqrt(k) : 80.f+fx.reach*std::sqrt(k);
-      const float r0   = std::max(30.f, r1-(fx.kind==3 ? 60.f : 160.f));
+      // the ring of Wir ends where its hit ends (fx.reach); the wave runs out to its reach
+      const float r1   = (fx.kind==3) ? 60.f+(fx.reach-60.f)*std::sqrt(k) : 80.f+fx.reach*std::sqrt(k);
+      const float r0   = std::max(30.f, r1-(fx.kind==3 ? 70.f : 160.f));
       const int   N    = (fx.kind==3) ? 32 : 16;
       for(int i=0; i<N; ++i) {
         const float a0 = fx.ang - fx.arc*0.5f + fx.arc*float(i)/float(N);
