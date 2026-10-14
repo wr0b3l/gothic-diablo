@@ -1314,6 +1314,9 @@ bool GameScript::aiOutput(Npc &npc, std::string_view outputname, bool overlay) {
 
   world().addDlgSound(name, npc.mapHeadBone(), WorldSound::talkRange, dt);
   npc.setAiOutputBarrier(messageTime(outputname),overlay);
+  // gothic-diablo: the ARPG view shows it (over the head, or in the subtitles of a cinematic talk)
+  if(CommandLine::inst().isArpgMode())
+    Gothic::inst().onArpgSpeech(npc, messageByName(outputname), messageTime(outputname), !arpgSvmOut);
 
   return true;
   }
@@ -1325,8 +1328,12 @@ bool GameScript::aiOutputSvm(Npc &npc, std::string_view outputname, bool overlay
     svmBarrier = tickCount()+messageTime(outputname);
     }
 
-  if(!outputname.empty())
-    return aiOutput(npc,outputname,overlay);
+  if(!outputname.empty()) {
+    arpgSvmOut = true;
+    const bool ret = aiOutput(npc,outputname,overlay);
+    arpgSvmOut = false;
+    return ret;
+    }
   return true;
   }
 

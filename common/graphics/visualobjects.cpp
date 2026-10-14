@@ -390,6 +390,10 @@ void VisualObjects::startMMAnim(size_t i, std::string_view animName, float inten
   objectsMorph.insert(i);
 
   auto& m = anim[id];
+  if(timeUntil==uint64_t(-2)) {
+    // gothic-diablo: one cycle of the animation (R_EYESBLINK has no duration: it would loop forever, eyes closed)
+    timeUntil = scene.tickCount + (m.duration>0 ? m.duration : uint64_t(m.numFrames*m.tickPerFrame));
+    }
   if(timeUntil==uint64_t(-1) && m.duration>0)
     timeUntil = scene.tickCount + m.duration;
 

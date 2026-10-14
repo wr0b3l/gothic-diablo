@@ -80,6 +80,14 @@ void DialogMenu::tick(uint64_t dt) {
   if(remPrint>0 || choiceAnimTime>0 || current.time>0 || pscreen.size()>0)
     update();
 
+  if(thirdLeft>0) {
+    thirdLeft = (thirdLeft>dt) ? thirdLeft-dt : 0;
+    if(thirdLeft==0 && third!=nullptr) {
+      third->arpgLookAtHead(nullptr, 0);
+      third = nullptr;
+      }
+    update();
+    }
   tickActing(dt);
   {
     // gothic-diablo: the letterbox comes in and goes out in 0.3 s
@@ -367,6 +375,8 @@ void DialogMenu::onDoneText() {
 
 void DialogMenu::close() {
   stopActing();
+  third     = nullptr;
+  thirdLeft = 0;
   auto prevPl  = pl;
   auto prevNpc = other;
 
@@ -555,7 +565,7 @@ void DialogMenu::paintChoice(PaintEvent &e) {
   }
 
 bool DialogMenu::isChoiceMenuActive() const {
-  return choice.size()!=0 && current.time==0 && !haveToWaitOutput() && trade.isOpen()==InventoryMenu::State::Closed;
+  return choice.size()!=0 && current.time==0 && thirdLeft==0 && !haveToWaitOutput() && trade.isOpen()==InventoryMenu::State::Closed;
   }
 
 void DialogMenu::onSelect() {
@@ -696,6 +706,11 @@ ArpgDialogCam::Input DialogMenu::arpgDialogInput() const {
   in.speaker  = current.time>0 ? (curentIsPl ? pl : other) : nullptr;
   in.line     = lineId;
   in.lineLen  = float(current.msgTime)/1000.f;
+  in.third    = (thirdLeft>0) ? third : nullptr;
+  if(current.time==0 && thirdLeft>0) {
+    in.speaker = third;
+    in.lineLen = float(thirdTime)/1000.f;
+    }
   in.choosing = isChoiceMenuActive();
   return in;
   }
@@ -773,10 +788,15 @@ void DialogMenu::paintArpg(Painter& p) {
   // the subtitle (not while choosing): name of the one who speaks, the line under it
   std::string_view name;
   int subH = 0, textW = std::min(int(float(w())*0.62f), int(1150*k));
-  const bool subOn = current.time>0 && !listOn && trade.isOpen()==InventoryMenu::State::Closed && haveToShowSubtitles(curentIsPl);
+  const bool thirdOn = current.time==0 && thirdLeft>0 && third!=nullptr;
+  const std::string& subTxt = thirdOn ? thirdTxt : current.txt;
+  const bool subOn = (current.time>0 || thirdOn) && !listOn && trade.isOpen()==InventoryMenu::State::Closed &&
+                     haveToShowSubtitles(curentIsPl && !thirdOn);
   if(subOn) {
-    name = curentIsPl ? std::string_view("Bezimienny") : (other!=nullptr ? std::string_view(other->displayName()) : std::string_view());
-    const int lines = std::max(1, int(fText.lineCount(textW, current.txt)));
+    if(thirdOn)
+      name = third->displayName(); else
+      name = curentIsPl ? std::string_view("Bezimienny") : (other!=nullptr ? std::string_view(other->displayName()) : std::string_view());
+    const int lines = std::max(1, int(fText.lineCount(textW, subTxt)));
     subH = 2*pad + (name.empty() ? 0 : fName.pixelSize()+int(6*k)) + lines*fText.pixelSize();
     lowH = std::max(lowH, int(float(subH)*std::max(bk, 0.f)));
     }
@@ -799,7 +819,7 @@ void DialogMenu::paintArpg(Painter& p) {
       fName.drawText(p, (w()-sz.w)/2, y+fName.pixelSize(), name);
       y += fName.pixelSize()+int(6*k);
       }
-    fText.drawText(p, (w()-textW)/2, y+fText.pixelSize(), textW, 0, current.txt, AlignHCenter);
+    fText.drawText(p, (w()-textW)/2, y+fText.pixelSize(), textW, 0, subTxt, AlignHCenter);
     const auto hint = std::string_view("LPM / Spacja - dalej");
     fSmall.drawText(p, w()-fSmall.textSize(hint).w-int(30*k), h()-int(14*k), hint);
     }
@@ -854,30 +874,40 @@ void DialogMenu::tickActing(uint64_t dt) {
   acting.t += dt;
   const uint64_t t = acting.t;
 
-  // looks: both keep their eyes on each other
-  pl   ->arpgLookAtHead(other, dt);
-  other->arpgLookAtHead(pl,    dt);
+  // looks: both keep their eyes on each other (on the third one while he speaks)
+  if(third!=nullptr && thirdLeft>0 && current.time==0) {
+    pl   ->arpgLookAtHead(third, dt);
+    other->arpgLookAtHead(third, dt);
+    third->arpgLookAtHead(pl,    dt);
+    } else {
+    pl   ->arpgLookAtHead(other, dt);
+    other->arpgLookAtHead(pl,    dt);
+    }
 
   // blinking: every 2.5 - 5.5 s (close-ups show the faces)
   if(t>=acting.blinkPl) {
-    pl->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-1));
+    pl->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-2)); // one blink
     acting.blinkPl = t+rnd(2500, 5500);
     }
   if(t>=acting.blinkOther) {
-    other->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-1));
+    other->startFaceAnim("R_EYESBLINK", 1.f, uint64_t(-2));
     acting.blinkOther = t+rnd(2500, 5500);
     }
 
   // the mood of the other one, from his attitude to the hero (kept fresh while the talk goes on)
   if(t>=acting.moodAt) {
-    const char* mood = "S_NEUTRAL";
+    const char* mood = nullptr; // neutral: the face as it is
     switch(other->world().script().personAttitude(*other, *pl)) {
       case ATT_FRIENDLY: mood = "S_FRIENDLY"; break;
       case ATT_ANGRY:    mood = "S_ANGRY";    break;
       case ATT_HOSTILE:  mood = "S_HOSTILE";  break;
-      default:           mood = "S_NEUTRAL";  break;
+      default:           mood = nullptr;      break;
       }
-    other->startFaceAnim(mood, 0.8f, 4000);
+    if(acting.mood!=nullptr && acting.mood!=mood)
+      other->startFaceAnim(acting.mood, 1.f, 0);   // stops the old one
+    if(mood!=nullptr)
+      other->startFaceAnim(mood, 0.45f, 4000);     // a hint of it, not a mask
+    acting.mood   = mood;
     acting.moodAt = t+2000;
     }
 
@@ -910,8 +940,29 @@ void DialogMenu::stopActing() {
   if(pl!=nullptr) {
     pl->arpgLookAtHead(nullptr, 0);
     }
+  if(third!=nullptr)
+    third->arpgLookAtHead(nullptr, 0);
   if(other!=nullptr && other!=pl) {
     other->arpgLookAtHead(nullptr, 0);
-    other->startFaceAnim("S_NEUTRAL", 1.f, 300);
+    if(acting.mood!=nullptr)
+      other->startFaceAnim(acting.mood, 1.f, 0);
     }
+  acting.mood = nullptr;
+  }
+
+bool DialogMenu::arpgThirdLine(Npc& npc, std::string_view text, uint64_t ms) {
+  // a third one near the two (Lord Hagen's hall, a guard who cuts in): his line becomes part of the film
+  if(!isArpgCinema() || &npc==pl || &npc==other || text.empty())
+    return false;
+  if(npc.qDistTo(*pl)>1500.f*1500.f)
+    return false;
+  if(third!=nullptr && third!=&npc)
+    third->arpgLookAtHead(nullptr, 0);
+  third     = &npc;
+  thirdTxt  = std::string(text);
+  thirdTime = ms;
+  thirdLeft = ms+(dlgAnimation ? ANIM_TIME : 0);
+  lineId++;
+  update();
+  return true;
   }

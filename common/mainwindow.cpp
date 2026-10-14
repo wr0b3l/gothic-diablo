@@ -70,6 +70,7 @@ MainWindow::MainWindow(Device& device)
   Gothic::inst().onSessionExit .bind(this,&MainWindow::onSessionExit);
 
   Gothic::inst().onVideo       .bind(this,&MainWindow::onVideo);
+  Gothic::inst().onArpgSpeech  .bind(this,&MainWindow::onArpgSpeech);
 
   Gothic::inst().onBenchmarkFinished.bind(this,&MainWindow::onBenchmarkFinished);
 
@@ -228,6 +229,7 @@ void MainWindow::paintEvent(PaintEvent& event) {
         if(!arpgShowAll || focus.npc!=nullptr)
           paintArpgFocus(p,focus,vp);
         paintArpgCombat(p,vp);
+        paintArpgRemarks(p,vp);
         paintArpgCombo(p,vp);
         paintArpgMinimap(p);
         paintArpgBar(p);
@@ -1585,6 +1587,7 @@ void MainWindow::onVideo(std::string_view fname) {
 
 void MainWindow::onStartLoading() {
   dropArpgDialogLight();
+  arpgRemarks.clear();
   player   .clearInput();
   inventory.onWorldChanged();
   dialogs  .onWorldChanged();
@@ -1661,6 +1664,7 @@ void MainWindow::onBenchmarkFinished() {
 void MainWindow::setGameImpl(std::unique_ptr<GameSession> &&w) {
   // clear pointers to outdated game-state
   dropArpgDialogLight();
+  arpgRemarks.clear();
   inventory.onWorldChanged();
   dialogs  .onWorldChanged();
   Gothic::inst().setGame(std::move(w));
@@ -2423,5 +2427,90 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
     char key[4] = {};
     std::snprintf(key, sizeof(key), "%d", (k+3)%10);
     label(r, key, itm==nullptr);
+    }
+  }
+
+void MainWindow::onArpgSpeech(Npc& npc, std::string_view text, uint64_t ms, bool scripted) {
+  // gothic-diablo: a third one in a cinematic talk goes to its subtitles, anything else near the hero over the head
+  auto world = Gothic::inst().world();
+  auto pl    = Gothic::inst().player();
+  if(world==nullptr || pl==nullptr || text.empty())
+    return;
+  if(scripted && dialogs.arpgThirdLine(npc, text, ms))
+    return; // remarks (SVM) of people around do not cut into the film
+  if(npc.qDistTo(*pl)>2500.f*2500.f)
+    return;
+  const uint64_t now = world->tickCount();
+  for(auto& r:arpgRemarks)
+    if(r.npc==&npc) {
+      r.text  = std::string(text);
+      r.start = now;
+      r.until = now+ms+600;
+      return;
+      }
+  if(arpgRemarks.size()>=4)
+    arpgRemarks.erase(arpgRemarks.begin());
+  ArpgRemark r;
+  r.npc   = &npc;
+  r.text  = std::string(text);
+  r.start = now;
+  r.until = now+ms+600;
+  arpgRemarks.push_back(std::move(r));
+  }
+
+void MainWindow::paintArpgRemarks(Painter& p, const Matrix4x4& vp) {
+  auto world = Gothic::inst().world();
+  auto pl    = Gothic::inst().player();
+  if(world==nullptr || pl==nullptr) {
+    arpgRemarks.clear();
+    return;
+    }
+  if(arpgRemarks.empty())
+    return;
+  const uint64_t now = world->tickCount();
+
+  // only creatures that are still here (around the hero)
+  std::vector<const Npc*> alive;
+  world->detectNpc(pl->position(), 3000.f, [&](Npc& n) { alive.push_back(&n); });
+  for(size_t i=0; i<arpgRemarks.size();) {
+    auto& r = arpgRemarks[i];
+    const bool here = std::find(alive.begin(), alive.end(), r.npc)!=alive.end();
+    if(now>r.until || !here || r.npc->isDead())
+      arpgRemarks.erase(arpgRemarks.begin()+int(i)); else
+      ++i;
+    }
+
+  const float k   = std::max(0.5f, float(h())/1080.f);
+  auto&       fnt = Resources::font("font_old_10_white.tga", Resources::FontType::Hi, 1.15f*k);
+  const int   tw  = int(380*k);
+  const int   pad = int(8*k);
+  for(auto& r:arpgRemarks) {
+    Vec3  pos = r.npc->mapHeadBone()+Vec3(0, 45.f, 0);
+    float pw  = 1.f;
+    vp.project(pos.x, pos.y, pos.z, pw);
+    if(pw<=0.f)
+      continue;
+    pos /= pw;
+    if(pos.x<-1.1f || pos.x>1.1f || pos.y<-1.1f || pos.y>1.1f)
+      continue;
+    const int cx = int((0.5f*pos.x+0.5f)*float(w()));
+    const int cy = int((0.5f*pos.y+0.5f)*float(h()));
+
+    // in 0.15 s, out in the last 0.3 s
+    float a = 1.f;
+    if(now-r.start<150)
+      a = float(now-r.start)/150.f;
+    if(r.until-now<300)
+      a = std::min(a, float(r.until-now)/300.f);
+
+    const auto  sz = fnt.textSize(tw, r.text);
+    const int   bw = std::min(tw, sz.w)+2*pad;
+    const int   bh = sz.h+2*pad;
+    const Rect  box(cx-bw/2, cy-bh, bw, bh);
+    p.setBrush(Brush(Color(0.f, 0.f, 0.f, 0.55f*a), Painter::Alpha));
+    p.drawRect(box.x, box.y, box.w, box.h);
+    GthFont f = fnt;
+    f.setColor(Color(1.f, 1.f, 1.f, a));
+    f.drawText(p, box.x+pad, box.y+pad+f.pixelSize(), bw-2*pad, 0, r.text, AlignHCenter);
     }
   }

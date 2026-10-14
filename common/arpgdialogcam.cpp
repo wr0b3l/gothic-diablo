@@ -54,7 +54,7 @@ bool ArpgDialogCam::showsFace(const Npc* who) const {
       return false;
     case K_Wide:
     case K_Two:
-      return true;
+      return who==nullptr || who!=thirdSeen; // a third one is not in the shots of the two
     case K_OverShoulder:
     case K_Medium:
     case K_Close:
@@ -63,26 +63,46 @@ bool ArpgDialogCam::showsFace(const Npc* who) const {
   return false;
   }
 
+// the subject's face (x), the one he speaks to (y) and the side of their line the camera stays on (n)
+void ArpgDialogCam::pair(const Npc* who, const Input& in, Vec3& x, Vec3& y, Vec3& n) const {
+  const Vec3 fwdPl = norm2(faceOther-facePl, Vec3(1, 0, 0));
+  n = Vec3(-fwdPl.z, 0, fwdPl.x)*side;
+  if(who!=nullptr && who==in.third && who!=in.pl && who!=in.other) {
+    // a third one: filmed against the hero, from the same side of the world as the main line
+    x = faceThird;
+    y = facePl;
+    const Vec3 f  = norm2(x-y, fwdPl);
+    Vec3       n3 = Vec3(-f.z, 0, f.x);
+    if(Vec3::dotProduct(n3, n)<0.f)
+      n3 = n3*-1.f;
+    n = n3;
+    return;
+    }
+  x = (who==in.pl ? facePl    : faceOther);
+  y = (who==in.pl ? faceOther : facePl);
+  }
+
 ArpgDialogCam::Shot ArpgDialogCam::base(Kind k, const Npc* who, const Input& in) const {
   const Vec3  up    = Vec3(0, 1, 0);
   const Vec3  fwdPl = norm2(faceOther-facePl, Vec3(1, 0, 0));
   // the side of the line between the two where the camera stays (180 degree rule)
-  const Vec3  n     = Vec3(-fwdPl.z, 0, fwdPl.x)*side;
+  const Vec3  nMain = Vec3(-fwdPl.z, 0, fwdPl.x)*side;
   const float sep   = flat(faceOther-facePl).length();
   const Vec3  mid   = (facePl+faceOther)*0.5f;
 
   Shot s;
   if(k==K_Wide) {
-    s.origin = mid + n*(sep*1.6f+260.f) + up*55.f;
+    s.origin = mid + nMain*(sep*1.6f+260.f) + up*55.f;
     s.target = mid - up*25.f;
     }
   else if(k==K_Two || who==nullptr) {
-    s.origin = mid + n*(sep*1.15f+90.f) - up*12.f;
+    s.origin = mid + nMain*(sep*1.15f+90.f) - up*12.f;
     s.target = mid - up*18.f;
     }
   else {
-    const Vec3 x = (who==in.pl ? facePl    : faceOther); // the subject
-    const Vec3 y = (who==in.pl ? faceOther : facePl);    // the other one
+    Vec3 x, y, nn;
+    pair(who, in, x, y, nn);                 // the subject, the other one, the side
+    const Vec3 n = nn;
     const Vec3 u = norm2(y-x, who==in.pl ? fwdPl : fwdPl*-1.f); // from the subject towards the other
     switch(k) {
       case K_OverShoulder:
@@ -111,7 +131,11 @@ ArpgDialogCam::Shot ArpgDialogCam::film(const Take& tk, const Input& in, World& 
   const Vec3 n     = Vec3(-fwdPl.z, 0, fwdPl.x)*side;
 
   Shot s = base(tk.kind, tk.subject, in);
-  s.origin = s.origin + n*tk.extraSide;
+  {
+    Vec3 x, y, ns;
+    pair(tk.subject, in, x, y, ns);
+    s.origin = s.origin + ns*tk.extraSide;
+  }
 
   // every take moves a little in its own way; always away from the line between the two
   const float t = tk.t;
@@ -217,12 +241,10 @@ void ArpgDialogCam::cut(Kind k, const Npc* who, const Input& in, World& world) {
   // His head and shoulders keep 58 cm from the line of sight, else the camera goes further to his side.
   // Measured once at the cut: the take keeps its place (no jumps while it moves).
   if(who!=nullptr && tk.kind!=K_Two && tk.kind!=K_Wide) {
-    const Vec3 up    = Vec3(0, 1, 0);
-    const Vec3 fwdPl = norm2(faceOther-facePl, Vec3(1, 0, 0));
-    const Vec3 n     = Vec3(-fwdPl.z, 0, fwdPl.x)*side;
-    const Vec3 x     = (who==in.pl ? facePl    : faceOther);
-    const Vec3 y     = (who==in.pl ? faceOther : facePl);
-    const Shot b     = base(tk.kind, who, in);
+    const Vec3 up = Vec3(0, 1, 0);
+    Vec3 x, y, n;
+    pair(who, in, x, y, n);
+    const Shot b  = base(tk.kind, who, in);
     for(int i=0; i<14; ++i) {
       const Vec3 o   = b.origin + n*tk.extraSide;
       const Vec3 eye = x+up*4.f;
@@ -267,6 +289,15 @@ ArpgDialogCam::Shot ArpgDialogCam::tick(float dt, const Input& in, World& world)
       faceOther = faceOther + (b-faceOther)*f;
       }
   }
+  if(in.third!=nullptr) {
+    const Vec3 c = face(*in.third);
+    if(in.third!=thirdSeen) {
+      faceThird = c;
+      thirdSeen = in.third;
+      } else {
+      faceThird = faceThird + (c-faceThird)*std::min(1.f, 5.f*dt);
+      }
+    }
   if(side==0.f) {
     pickSide(in, world);
     cut(K_Wide, nullptr, in, world); // the talk opens with the place
@@ -289,7 +320,8 @@ ArpgDialogCam::Shot ArpgDialogCam::tick(float dt, const Input& in, World& world)
     reactDone   = false;
     if(in.speaker!=nullptr) {
       const bool newSpeaker = (in.speaker!=lineSpeaker);
-      const bool fast       = newSpeaker && lineSpeaker!=nullptr && lineLen<ShortLine && prevLineLen<ShortLine;
+      const bool thirdIn    = (in.third!=nullptr && (in.speaker==in.third || lineSpeaker==in.third));
+      const bool fast       = newSpeaker && lineSpeaker!=nullptr && lineLen<ShortLine && prevLineLen<ShortLine && !thirdIn;
       if(opening) {
         pendingSpeaker = in.speaker;  // after the opening shot
         }

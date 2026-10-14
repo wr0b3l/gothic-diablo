@@ -234,6 +234,7 @@ class GameScript final {
 
     bool aiOutput   (Npc &from, std::string_view name, bool overlay);
     bool aiOutputSvm(Npc &from, std::string_view name, bool overlay);
+    bool arpgSvmOut = false; // gothic-diablo: the line being said is an SVM (a remark), not a scripted dialog line
 
     bool searchScheme(std::string_view sc, std::string_view listName);
 

@@ -169,6 +169,16 @@ class MainWindow : public Tempest::Window {
     const World*              arpgDlgLightWorld = nullptr;
     bool                      arpgDlgLightOn    = false;
     void                      updateArpgDialogLight(const Camera& camera);
+    // gothic-diablo: remarks in passing (a line said outside a talk): a subtitle over the head
+    struct ArpgRemark {
+      const Npc*  npc   = nullptr;
+      std::string text;
+      uint64_t    start = 0;
+      uint64_t    until = 0;
+      };
+    std::vector<ArpgRemark>   arpgRemarks;
+    void                      onArpgSpeech(Npc& npc, std::string_view text, uint64_t ms, bool scripted);
+    void                      paintArpgRemarks(Tempest::Painter& p, const Tempest::Matrix4x4& vp);
     void                      dropArpgDialogLight();
     Tempest::KeyEvent::KeyType arpgMenuKey = Tempest::KeyEvent::K_NoKey; // pressed: acted on when released
     DialogMenu                dialogs;

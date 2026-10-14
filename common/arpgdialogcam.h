@@ -22,6 +22,7 @@ class ArpgDialogCam final {
       uint32_t      line     = 0;       // changes with every new line
       float         lineLen  = 0;       // seconds
       bool          choosing = false;   // the player picks an answer
+      const Npc*    third    = nullptr; // a third one who speaks in the talk
       Tempest::Vec3 viewFrom = {};      // where the camera was before the talk (picks the side)
       };
 
@@ -74,10 +75,13 @@ class ArpgDialogCam final {
     bool          faceInit    = false;
     Tempest::Vec3 facePl      = {};       // smoothed head positions
     Tempest::Vec3 faceOther   = {};
+    Tempest::Vec3 faceThird   = {};
+    const Npc*    thirdSeen   = nullptr;
     Shot          last;
 
     void  cut      (Kind k, const Npc* who, const Input& in, World& world);
     Shot  base     (Kind k, const Npc* who, const Input& in) const;
+    void  pair     (const Npc* who, const Input& in, Tempest::Vec3& x, Tempest::Vec3& y, Tempest::Vec3& n) const;
     Shot  film     (const Take& tk, const Input& in, World& world, float* quality) const;
     void  pickSide (const Input& in, World& world);
     bool  showsFace(const Npc* who) const;

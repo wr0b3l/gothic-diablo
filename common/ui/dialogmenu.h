@@ -32,6 +32,8 @@ class DialogMenu : public Tempest::Widget {
     // (letterbox, subtitles and the answers in the lower bar, nothing else over the picture)
     bool                 isArpgCinema() const;
     ArpgDialogCam::Input arpgDialogInput() const;
+    // a third one speaks in a cinematic talk (his line comes outside the dialog): subtitles, the camera goes to him
+    bool                 arpgThirdLine(Npc& npc, std::string_view text, uint64_t ms);
 
     void openPipe(Npc &player, Npc& npc, AiOuputPipe*& out);
     bool isNpcInDialog(const Npc* npc) const;
@@ -170,10 +172,15 @@ class DialogMenu : public Tempest::Widget {
       uint64_t lastNodPl = 0, lastNodOther = 0;
       uint64_t blinkPl   = 0, blinkOther   = 0;
       uint64_t moodAt    = 0;
+      const char* mood   = nullptr;
       };
     Acting                              acting;
     void tickActing(uint64_t dt);
     void stopActing();
     float                               barsK               = 0; // gothic-diablo: 0..1 letterbox
     std::vector<Tempest::Rect>          choiceRects;             // gothic-diablo: the answers on the screen (mouse)
+    Npc*                                third     = nullptr;     // gothic-diablo: a third one who speaks in the talk
+    std::string                         thirdTxt;
+    uint64_t                            thirdTime = 0;
+    uint64_t                            thirdLeft = 0;
   };
