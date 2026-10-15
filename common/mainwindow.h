@@ -164,6 +164,10 @@ class MainWindow : public Tempest::Window {
     VideoWidget               video;
     InventoryMenu             inventory;
     InventoryRenderer         arpgBarItems;        // gothic-diablo: item models on the skill bar and in the ARPG window
+    InventoryRenderer         arpgCursorItem;      // Diathic: the sword cursor
+    static constexpr const char* ArpgCursorModel = "ItMw_030_1h_PAL_Sword_02.3DS"; // Miecz paladyna (ITMW_1H_PAL_SWORD)
+    static constexpr bool     ArpgCursorFlip = false;  // true: the other end of the model is the tip
+    void                      paintArpgCursor();
     ArpgMenu                  arpgMenu;            // gothic-diablo: equipment / character / skill trees (I, C, T)
     LightGroup::Light         arpgDlgLight;        // gothic-diablo: soft light on the faces in dialog shots
     const World*              arpgDlgLightWorld = nullptr;

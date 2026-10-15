@@ -2513,6 +2513,11 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
     });
   }
 
+bool PlayerControl::arpgCursorOnEnemy() const {
+  auto n = arpgHover.npc;
+  return n!=nullptr && !n->isDead() && !n->isDown() && arpgIsEnemy(*n);
+  }
+
 bool PlayerControl::arpgIsEnemy(const Npc& npc) const {
   auto w  = Gothic::inst().world();
   auto pl = w!=nullptr ? w->player() : nullptr;

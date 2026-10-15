@@ -165,6 +165,7 @@ void MainWindow::setupUi() {
 void MainWindow::paintEvent(PaintEvent& event) {
   Painter p(event);
   arpgBarItems.reset(); // gothic-diablo: skill bar models, added again below when the bar is shown
+  arpgCursorItem.reset();
   auto world = Gothic::inst().world();
   auto st    = Gothic::inst().checkLoading();
 
@@ -313,6 +314,27 @@ void MainWindow::paintEvent(PaintEvent& event) {
   if(auto wx = Gothic::inst().worldView()) {
     wx->dbgClusters(p, Vec2(float(w()), float(h())));
     }
+
+  paintArpgCursor();
+  }
+
+// Diathic: in the ARPG mode the cursor is a sword from the game (Miecz paladyna), red over an enemy;
+// the tip is the hot spot, the hilt goes down to the right; the system cursor is hidden meanwhile
+void MainWindow::paintArpgCursor() {
+  const bool show = Camera::isArpgEnabled() && arpgCursorValid && Gothic::inst().world()!=nullptr &&
+                    !video.isActive() && Gothic::inst().checkLoading()==Gothic::LoadState::Idle;
+  const CursorShape want = show ? CursorShape::Hidden
+                                : ((SystemApi::isFullscreen(hwnd()) && !Camera::isArpgEnabled()) ? CursorShape::Hidden : CursorShape::Arrow);
+  if(cursorShape()!=want)
+    setCursorShape(want);
+  if(!show)
+    return;
+
+  const float k     = float(h())/1080.f;
+  const int   sz    = std::max(24, int(56.f*k)); // the blade is about as long as the box
+  const bool  enemy = isArpgMouse() && !rootMenu.isActive() && player.arpgCursorOnEnemy();
+  const Vec4  tint  = enemy ? Vec4(1.35f, 0.32f, 0.28f, 1.f) : Vec4(1.f, 1.f, 1.f, 0.f);
+  arpgCursorItem.drawPointer(arpgCursor.x, arpgCursor.y, sz, ArpgCursorModel, tint, ArpgCursorFlip);
   }
 
 void MainWindow::resizeEvent(SizeEvent&) {
@@ -1839,7 +1861,7 @@ void MainWindow::render(){
     CommandBuffer& cmd = commands[cmdId];
     {
     auto enc = cmd.startEncoding(device);
-    renderer.draw(swapchain[swapchain.currentImage()],enc,cmdId,uiMesh[cmdId],numMesh[cmdId],inventory,video,&arpgBarItems);
+    renderer.draw(swapchain[swapchain.currentImage()],enc,cmdId,uiMesh[cmdId],numMesh[cmdId],inventory,video,&arpgBarItems,&arpgCursorItem);
     }
     sync = device.submit(cmd);
     device.present(swapchain);
