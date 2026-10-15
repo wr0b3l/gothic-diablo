@@ -228,6 +228,7 @@ class MainWindow : public Tempest::Window {
     ArpgWorldMap              arpgWorldMap;
     bool                      arpgTabDown     = false;
     bool                      arpgIDown       = false;
+    bool                      arpgLogDown     = false;  // Diathic: the diary key (ArpgKeys::Log)
     std::string               arpgMapWorld;
     std::string               arpgMapTex;
     Tempest::Rect             arpgMapBounds;

@@ -1,3 +1,4 @@
+#include "game/arpgkeys.h"
 #include "gamescript.h"
 
 #include <Tempest/Log>
@@ -3528,6 +3529,11 @@ void GameScript::arpgRaiseFightTalent(Npc& npc, int talent, int32_t delta) {
   vm.call_function<void>(fn, npc.handlePtr(), int32_t(talent), delta);
   }
 
+// Diathic: the key of the skill trees (ArpgKeys) for the messages
+static std::string skillsKey() {
+  return ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills));
+  }
+
 void GameScript::arpgScanTeachers() {
   // which choice functions teach: calls of B_Teach* (and for weapons the constant arguments of B_TeachFightTalentPercent:
   // talent, percent, the teacher's maximum)
@@ -3690,7 +3696,7 @@ void GameScript::arpgExec(const DlgChoice& dlg, Npc& player, Npc& /*npc*/) {
         }
       hp.lp     -= ArpgConvertLp;
       pr.bought += 1;
-      std::snprintf(buf, sizeof(buf), "Punkt umiejętności +1 (drzewka pod T), zostało punktów nauki: %d", int(hp.lp));
+      std::snprintf(buf, sizeof(buf), "Punkt umiejętności +1 (drzewka pod %s), zostało punktów nauki: %d", skillsKey().c_str(), int(hp.lp));
       say(buf);
       break;
       }
@@ -3709,7 +3715,7 @@ void GameScript::arpgExec(const DlgChoice& dlg, Npc& player, Npc& /*npc*/) {
       hp.lp -= cost;
       pr.setCap(talent, max);
       erase();
-      std::snprintf(buf, sizeof(buf), "Biegłość - %s: możesz uczyć się do %d%% (drzewko pod T)", ArpgSkills::weaponName(talent), max);
+      std::snprintf(buf, sizeof(buf), "Biegłość - %s: możesz uczyć się do %d%% (drzewko pod %s)", ArpgSkills::weaponName(talent), max, skillsKey().c_str());
       say(buf);
       break;
       }
@@ -3724,7 +3730,7 @@ void GameScript::arpgExec(const DlgChoice& dlg, Npc& player, Npc& /*npc*/) {
       player.delItem(gold, uint32_t(cost));
       resetTrees();
       erase();
-      say("Drzewka umiejętności wyczyszczone: punkty do wydania od nowa (T)");
+      say("Drzewka umiejętności wyczyszczone: punkty do wydania od nowa ("+skillsKey()+")");
       break;
       }
     case A_ChMenu: {
@@ -3740,7 +3746,7 @@ void GameScript::arpgExec(const DlgChoice& dlg, Npc& player, Npc& /*npc*/) {
       }
     case A_ChPoints:
       pr.bought += 10;
-      say("+10 punktów umiejętności (drzewka pod T)");
+      say("+10 punktów umiejętności (drzewka pod "+skillsKey()+")");
       break;
     case A_ChUnlock:
       for(int t=1; t<=4; ++t)
@@ -3799,7 +3805,7 @@ void GameScript::arpgUseItem(Npc& npc, std::string_view fn, const std::function<
   arpgRaiseFightTalent(npc, talent, -delta);
   owner.arpgProgress().found[ArpgSkills::branchKey(wt, talent-1)] += level;
   char buf[160] = {};
-  std::snprintf(buf, sizeof(buf), "Kamienna tablica: +%d do Biegłości (%s), drzewko pod T", int(level), ArpgSkills::weaponName(talent));
+  std::snprintf(buf, sizeof(buf), "Kamienna tablica: +%d do Biegłości (%s), drzewko pod %s", int(level), ArpgSkills::weaponName(talent), skillsKey().c_str());
   Gothic::inst().onPrint(ArpgMenu::gtxt(buf));
   }
 

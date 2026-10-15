@@ -129,7 +129,8 @@ bool MenuRoot::hasVersionLine() const {
 void MenuRoot::mouseDownEvent(MouseEvent& event) {
   if(current!=nullptr) {
     if(event.button==Event::ButtonRight) {
-      popMenu();
+      if(!current->modernBack())
+        popMenu();
       }
     else if(current->isModern()) {
       current->modernMouse(event.pos(), true); // Diathic: a click acts only on an item
@@ -204,6 +205,8 @@ void MenuRoot::keyDownEvent(KeyEvent &e) {
     }
 
   if(current!=nullptr) {
+    if(current->isModern() && current->modernKeyDown(e))
+      return; // Diathic: "Sterowanie" (a new key, Esc = back)
     if(e.key==Event::K_W || e.key==Event::K_Up)
       current->onKeyboard(KeyCodec::Forward);
     else if(e.key==Event::K_S || e.key==Event::K_Down)

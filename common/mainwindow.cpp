@@ -3,6 +3,8 @@
 #include <Tempest/MemReader>
 #include <diathicassets.h>
 
+#include "game/arpgkeys.h"
+
 #include <Tempest/Except>
 #include <Tempest/Painter>
 
@@ -774,19 +776,21 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
     event.accept();
     if(arpgWorldMap.keyDown(event))
       return;
-    if(event.key==Event::K_ESCAPE || event.key==Event::K_M)
+    if(event.key==Event::K_ESCAPE || ArpgKeys::is(ArpgKeys::Map, event.key))
       arpgMapKey = event.key;
     return;
     }
 
-  if(event.key==Event::K_Z && Camera::isArpgEnabled())
-    arpgShowAll = true; // gothic-diablo: hold Z to show all items / usable objects in sight
+  // Diathic: the keys of the ARPG mode (ArpgKeys; "Sterowanie" in the main menu)
+  const int ak = Camera::isArpgEnabled() ? ArpgKeys::actionOf(event.key) : -1;
+  if(ak==ArpgKeys::Labels)
+    arpgShowAll = true; // gothic-diablo: hold to show all items / usable objects in sight
 
   if(arpgMenu.isOpen()) {
     // gothic-diablo: the ARPG window is open: I / C / T switch or close it, Esc closes it,
     // 3-0 put the rune / scroll under the cursor on that key, the camera turn keys still turn the camera
     event.accept();
-    if(event.key==Event::K_ESCAPE || event.key==Event::K_I || event.key==Event::K_C || event.key==Event::K_T) {
+    if(event.key==Event::K_ESCAPE || ak==ArpgKeys::Equipment || ak==ArpgKeys::Character || ak==ArpgKeys::Skills) {
       arpgMenuKey = event.key;
       return;
       }
@@ -802,14 +806,14 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
     }
 
   if(Camera::isArpgEnabled() && Gothic::inst().player()!=nullptr) {
-    // gothic-diablo: C / T = character / skill trees (with I = equipment: ArpgMenu, acted on key-up)
-    if((event.key==Event::K_C || event.key==Event::K_T) && isArpgMouse()) {
+    // gothic-diablo: character / skill trees (with the equipment: ArpgMenu, acted on key-up)
+    if((ak==ArpgKeys::Character || ak==ArpgKeys::Skills) && isArpgMouse()) {
       arpgMenuKey = event.key;
       event.accept();
       return;
       }
-    // gothic-diablo: Tab = minimap -> map over the game (Diathic) -> nothing, I = equipment window (Backspace = Gothic's inventory)
-    if(event.key==Event::K_Tab) {
+    // gothic-diablo: minimap -> map over the game (Diathic) -> nothing; equipment window (Backspace = Gothic's inventory)
+    if(ak==ArpgKeys::Minimap) {
       if(!arpgMinimap && !arpgOverlay)
         arpgMinimap = true;
       else if(arpgMinimap) {
@@ -822,14 +826,23 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
       event.accept();
       return;
       }
-    // Diathic: M = the big map (instead of Gothic's map document)
-    if(event.key==Event::K_M && isArpgMouse()) {
+    // Diathic: the big map (instead of Gothic's map document)
+    if(ak==ArpgKeys::Map && isArpgMouse()) {
       arpgMapKey = event.key;
       event.accept();
       return;
       }
-    if(event.key==Event::K_I) {
+    if(ak==ArpgKeys::Equipment) {
       arpgIDown = true;
+      event.accept();
+      return;
+      }
+    if(ak==ArpgKeys::Log && isArpgMouse()) {
+      arpgLogDown = true; // the diary (Gothic's MENU_LOG) on key-up
+      event.accept();
+      return;
+      }
+    if(ak==ArpgKeys::Labels) {
       event.accept();
       return;
       }
@@ -877,12 +890,13 @@ void MainWindow::keyRepeatEvent(KeyEvent& event) {
   }
 
 void MainWindow::keyUpEvent(KeyEvent &event) {
-  if(event.key==Event::K_Z)
+  const int ak = Camera::isArpgEnabled() ? ArpgKeys::actionOf(event.key) : -1;
+  if(ak==ArpgKeys::Labels)
     arpgShowAll = false;
   if(arpgMapKey!=Event::K_NoKey && event.key==arpgMapKey) {
     // Diathic: M opens / closes the big map, Esc closes it
     arpgMapKey = Event::K_NoKey;
-    arpgWorldMap.setOpen(event.key==Event::K_M ? !arpgWorldMap.isOpen() : false);
+    arpgWorldMap.setOpen(event.key!=Event::K_ESCAPE ? !arpgWorldMap.isOpen() : false);
     if(arpgWorldMap.isOpen()) {
       player.arpgStop();
       clearInput();
@@ -891,11 +905,21 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
     }
   if(arpgWorldMap.isOpen())
     return;
-  if(event.key==Event::K_Tab && arpgTabDown) {
+  if(ak==ArpgKeys::Minimap && arpgTabDown) {
     arpgTabDown = false;
     return;
     }
-  if(event.key==Event::K_I && arpgIDown) {
+  if(ak==ArpgKeys::Log && arpgLogDown) {
+    arpgLogDown = false;
+    if(!dialogs.isActive() && !inventory.isActive()) {
+      rootMenu.setMenu("MENU_LOG", KeyCodec::Log);
+      if(auto pl = Gothic::inst().player())
+        rootMenu.setPlayer(*pl);
+      clearInput();
+      }
+    return;
+    }
+  if(ak==ArpgKeys::Equipment && arpgIDown) {
     arpgIDown = false;
     if(!dialogs.isActive() && !inventory.isActive() && Gothic::inst().player()!=nullptr) {
       arpgMenu.toggle(ArpgMenu::P_Equip); // gothic-diablo: the ARPG equipment window
@@ -906,13 +930,14 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
     }
   if(arpgMenuKey!=Event::K_NoKey && event.key==arpgMenuKey) {
     arpgMenuKey = Event::K_NoKey;
-    switch(event.key) {
-      case Event::K_ESCAPE: arpgMenu.close();                        break;
-      case Event::K_I:      arpgMenu.toggle(ArpgMenu::P_Equip);      break;
-      case Event::K_C:      arpgMenu.toggle(ArpgMenu::P_Character);  break;
-      case Event::K_T:      arpgMenu.toggle(ArpgMenu::P_Skills);     break;
-      default: break;
-      }
+    if(event.key==Event::K_ESCAPE)
+      arpgMenu.close();
+    else if(ak==ArpgKeys::Equipment)
+      arpgMenu.toggle(ArpgMenu::P_Equip);
+    else if(ak==ArpgKeys::Character)
+      arpgMenu.toggle(ArpgMenu::P_Character);
+    else if(ak==ArpgKeys::Skills)
+      arpgMenu.toggle(ArpgMenu::P_Skills);
     if(arpgMenu.isOpen()) {
       player.arpgStop();
       clearInput();
@@ -952,6 +977,12 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
 
   auto act     = keycodec.tr(event);
   auto mapping = keycodec.mapping(event);
+
+  if(ak>=0 && act!=KeyCodec::Escape) {
+    // Diathic: a key of the ARPG mode does not also do what Gothic binds to it (status, log, inventory...)
+    player.onKeyReleased(act, mapping);
+    return;
+    }
 
   std::string_view menuEv;
   if(act==KeyCodec::Escape)
@@ -1549,7 +1580,7 @@ uint64_t MainWindow::tick() {
       }
     else if(pl!=nullptr && pl->level()>arpgLevelSeen) {
       arpgLevelSeen = pl->level();
-      Gothic::inst().onPrint(ArpgMenu::gtxt("Nowy punkt umiejętności - drzewka pod T"));
+      Gothic::inst().onPrint(ArpgMenu::gtxt("Nowy punkt umiejętności - drzewka pod "+ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills))));
       }
     // the first time with Biegłość (a new game, a save from before it): the weapon percents learned so far become ranks
     if(auto gs = Gothic::inst().gameSession(); gs!=nullptr && pl!=nullptr && !gs->arpgProgress().weaponsReady()) {
@@ -2747,9 +2778,11 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
 
   for(int k=0; k<2; ++k) {
     const Rect r = arpgBarSlot(3+k);
-    char key[4] = {};
-    std::snprintf(key, sizeof(key), "%d", k+1);
-    label(r, key, bar.potions[k]==0);
+    // Diathic: the key of the potion from ArpgKeys (cut to fit the slot)
+    std::string key = ArpgKeys::keyName(ArpgKeys::key(k==0 ? ArpgKeys::PotionHealth : ArpgKeys::PotionMana));
+    if(key.size()>3)
+      key = key.substr(0,3);
+    label(r, ArpgMenu::gtxt(key), bar.potions[k]==0);
     char cnt[16] = {};
     std::snprintf(cnt, sizeof(cnt), "%d", int(bar.potions[k]));
     auto& f  = bar.potions[k]==0 ? fntD : fnt;
@@ -2789,7 +2822,8 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
     const int32_t pts = gs->arpgProgress().freePoints(pl->level());
     if(pts>0) {
       char txt[96] = {};
-      std::snprintf(txt, sizeof(txt), "Punkty umiejętności do wydania: %d  (T)", int(pts));
+      std::snprintf(txt, sizeof(txt), "Punkty umiejętności do wydania: %d  (%s)", int(pts),
+                    ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills)).c_str());
       GthFont f = Resources::font(Resources::FontType::Hi, scale*0.8f);
       f.setColor(Color(1.f, 0.82f, 0.42f, 1.f)); // gold
       f.drawText(p, rL.x, rL.y-int(16.f*scale), ArpgMenu::gtxt(txt)); // over the experience bar

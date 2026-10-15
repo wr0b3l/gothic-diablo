@@ -22,6 +22,8 @@
 #include "game/savegameheader.h"
 #include "gothic.h"
 #include "resources.h"
+#include "game/arpgkeys.h"
+#include "ui/arpgmenu.h"
 #include "build.h"
 
 using namespace Tempest;
@@ -422,6 +424,29 @@ void GameMenu::paintEvent(PaintEvent &e) {
     }
   }
 
+// Diathic: the items of the modern main menu from top to bottom; -2 = "Sterowanie" (ours, after the options)
+std::vector<int> GameMenu::modernOrder() {
+  std::vector<int> ret;
+  for(int i=0; i<zenkit::IMenu::item_count; ++i) {
+    auto& it = hItems[i];
+    if(!it.visible || it.name.empty() || it.handle==nullptr || isHidden(it.handle))
+      continue;
+    if(!isSelectable(it.handle) || !isEnabled(it.handle))
+      continue;
+    ret.push_back(i);
+    }
+  std::stable_sort(ret.begin(), ret.end(), [this](int a, int b){ return hItems[a].handle->pos_y<hItems[b].handle->pos_y; });
+  size_t at = ret.size();
+  for(size_t i=0; i<ret.size(); ++i) {
+    if(hItems[ret[i]].name=="MENUITEM_MAIN_OPTIONS")
+      at = i+1;
+    if(hItems[ret[i]].name=="MENUITEM_MAIN_EXIT" && at==ret.size())
+      at = i;
+    }
+  ret.insert(ret.begin()+std::ptrdiff_t(at), -2);
+  return ret;
+  }
+
 void GameMenu::paintModern(Painter& p) {
   const int   W = w(), H = h();
   const float k = float(H)/1080.f;
@@ -434,7 +459,7 @@ void GameMenu::paintModern(Painter& p) {
     }
   // a dark band on the left, fading to the right
   {
-    const int panelW = int(float(W)*0.48f);
+    const int panelW = int(float(W)*(modernPage==1 ? 0.62f : 0.48f));
     const int steps  = 32;
     for(int i=0; i<steps; ++i) {
       const float t = float(i)/float(steps);
@@ -444,20 +469,6 @@ void GameMenu::paintModern(Painter& p) {
       }
   }
 
-  // the logo (MENU_GOTHIC.TGA = the Diathic logo), top left
-  int lx = int(float(W)*0.05f), ly = int(float(H)*0.05f), lw = 0, lh = 0;
-  if(auto logo = Resources::loadTexture("MENU_GOTHIC.TGA")) {
-    const float aspect = float(logo->w())/float(std::max(1,logo->h()));
-    lw = int(float(W)*0.32f);
-    lh = int(float(lw)/aspect);
-    if(lh>int(float(H)*0.30f)) {
-      lh = int(float(H)*0.30f);
-      lw = int(float(lh)*aspect);
-      }
-    p.setBrush(Brush(*logo, Painter::Alpha));
-    p.drawRect(lx, ly, lw, lh, 0, 0, logo->w(), logo->h());
-    }
-
   // fonts: the old Gothic font, about 36 px at 1080 lines
   const float base  = float(std::max(1, Resources::font(1.f).pixelSize()));
   GthFont     fItem = Resources::font(Resources::FontType::Normal, 36.f*k/base);
@@ -466,60 +477,84 @@ void GameMenu::paintModern(Painter& p) {
   fItem.setColor(Color(0.90f, 0.85f, 0.76f, 1.f));
   fSel .setColor(Color(1.00f, 0.82f, 0.45f, 1.f));
   fInfo.setColor(Color(0.78f, 0.70f, 0.58f, 1.f));
-
-  // subtitle under the logo
-  {
-    const std::string_view sub = "Gothic II  -  Noc Kruka";
-    const auto ts = fInfo.textSize(sub);
-    fInfo.drawText(p, lx+(lw-ts.w)/2, ly+lh+int(6.f*k), sub);
-  }
-
-  // the items in their script order (top to bottom), headlines (pictures) and items not usable now left out
-  std::vector<Item*> list;
-  for(auto& it:hItems) {
-    it.modernRect = Rect();
-    if(!it.visible || it.name.empty() || it.handle==nullptr || isHidden(it.handle))
-      continue;
-    if(!isSelectable(it.handle) || !isEnabled(it.handle))
-      continue;
-    list.push_back(&it);
-    }
-  std::stable_sort(list.begin(), list.end(), [](const Item* a, const Item* b){ return a->handle->pos_y<b->handle->pos_y; });
-
-  const int x0    = lx + int(18.f*k);
-  const int itemH = int(56.f*k);
-  const int itemW = int(float(W)*0.30f);
-  int       y     = std::max(ly+lh+int(70.f*k), int(float(H)*0.42f));
-  const auto sel  = selectedItem();
   const uint64_t now = Application::tickCount();
-  for(auto it:list) {
-    const bool hi = (it==sel);
-    it->modernRect = Rect(x0-int(14.f*k), y, itemW, itemH);
-    if(hi) {
-      // a glowing band fading to the right, a bright edge on the left
-      const int steps = 20;
-      const float pulse = 0.85f + 0.15f*std::sin(float(now%100000)*0.004f);
-      for(int i=0; i<steps; ++i) {
-        const float t = float(i)/float(steps);
-        p.setBrush(Brush(Color(0.75f,0.22f,0.06f, 0.42f*(1.f-t)*pulse), Painter::Alpha));
-        p.drawRect(it->modernRect.x+int(float(itemW)*t), y+int(6.f*k), itemW/steps+1, itemH-int(12.f*k));
-        }
-      p.setBrush(Brush(Color(1.f,0.72f,0.30f,1.f), Painter::Alpha));
-      p.drawRect(it->modernRect.x, y+int(6.f*k), std::max(2,int(4.f*k)), itemH-int(12.f*k));
+
+  auto band = [&](const Rect& r) {
+    // the selected line: a glowing band fading to the right, a bright edge on the left
+    const int   steps = 20;
+    const float pulse = 0.85f + 0.15f*std::sin(float(now%100000)*0.004f);
+    for(int i=0; i<steps; ++i) {
+      const float t = float(i)/float(steps);
+      p.setBrush(Brush(Color(0.75f,0.22f,0.06f, 0.42f*(1.f-t)*pulse), Painter::Alpha));
+      p.drawRect(r.x+int(float(r.w)*t), r.y+int(4.f*k), r.w/steps+1, r.h-int(8.f*k));
       }
-    getText(*it, textBuf);
-    auto& f  = hi ? fSel : fItem;
-    const int tx = x0 + (hi ? int(10.f*k) : 0);
-    const int ty = y + itemH/2 + f.pixelSize()/3;
-    f.drawText(p, tx, ty, textBuf.data());
-    y += itemH;
+    p.setBrush(Brush(Color(1.f,0.72f,0.30f,1.f), Painter::Alpha));
+    p.drawRect(r.x, r.y+int(4.f*k), std::max(2,int(4.f*k)), r.h-int(8.f*k));
+    };
+
+  for(auto& it:hItems)
+    it.modernRect = Rect();
+  keysItemRect = Rect();
+  keysRows.clear();
+
+  if(modernPage==1) {
+    paintModernKeys(p, fItem, fSel, fInfo, band);
+    } else {
+    // the logo (MENU_GOTHIC.TGA = the Diathic logo), top left
+    int lx = int(float(W)*0.05f), ly = int(float(H)*0.05f), lw = 0, lh = 0;
+    if(auto logo = Resources::loadTexture("MENU_GOTHIC.TGA")) {
+      const float aspect = float(logo->w())/float(std::max(1,logo->h()));
+      lw = int(float(W)*0.32f);
+      lh = int(float(lw)/aspect);
+      if(lh>int(float(H)*0.30f)) {
+        lh = int(float(H)*0.30f);
+        lw = int(float(lh)*aspect);
+        }
+      p.setBrush(Brush(*logo, Painter::Alpha));
+      p.drawRect(lx, ly, lw, lh, 0, 0, logo->w(), logo->h());
+      }
+    {
+      const std::string_view sub = "Gothic II  -  Noc Kruka";
+      const auto ts = fInfo.textSize(sub);
+      fInfo.drawText(p, lx+(lw-ts.w)/2, ly+lh+int(6.f*k), sub);
     }
 
-  // what the selected item does (the second text of the script), bottom left
-  if(sel!=nullptr && sel->handle!=nullptr && sel->handle->text->size()>0) {
-    std::string_view info = sel->handle->text[1];
-    if(!info.empty())
-      fInfo.drawText(p, x0, H-int(36.f*k), info);
+    const int x0    = lx + int(18.f*k);
+    const int itemH = int(56.f*k);
+    const int itemW = int(float(W)*0.30f);
+    int       y     = std::max(ly+lh+int(70.f*k), int(float(H)*0.40f));
+    const auto sel  = selectedItem();
+    for(int idx:modernOrder()) {
+      const Rect r(x0-int(14.f*k), y, itemW, itemH);
+      bool        hi  = false;
+      std::string txt;
+      if(idx==-2) {
+        keysItemRect = r;
+        hi  = keysItemSel;
+        txt = ArpgMenu::gtxt("Sterowanie");
+        } else {
+        auto& it = hItems[idx];
+        it.modernRect = r;
+        hi = (&it==sel) && !keysItemSel;
+        getText(it, textBuf);
+        txt = textBuf.data();
+        }
+      if(hi)
+        band(r);
+      auto& f = hi ? fSel : fItem;
+      f.drawText(p, x0 + (hi ? int(10.f*k) : 0), y + itemH/2 + f.pixelSize()/3, txt);
+      y += itemH;
+      }
+
+    // what the selected item does (the second text of the script), bottom left
+    if(keysItemSel) {
+      fInfo.drawText(p, x0, H-int(36.f*k), ArpgMenu::gtxt("Klawisze trybu ARPG: zobacz i zmień"));
+      }
+    else if(sel!=nullptr && sel->handle!=nullptr && sel->handle->text->size()>0) {
+      std::string_view info = sel->handle->text[1];
+      if(!info.empty())
+        fInfo.drawText(p, x0, H-int(36.f*k), info);
+      }
     }
 
   // the version of the game, bottom right
@@ -529,14 +564,156 @@ void GameMenu::paintModern(Painter& p) {
     }
   }
 
+// "Sterowanie": the keys of the ARPG mode (click / Enter = press a new key), the fixed ones below
+void GameMenu::paintModernKeys(Painter& p, GthFont& fItem, GthFont& fSel, GthFont& fInfo,
+                               const std::function<void(const Rect&)>& band) {
+  const int   W = w(), H = h();
+  const float k = float(H)/1080.f;
+  const float base = float(std::max(1, Resources::font(1.f).pixelSize()));
+  GthFont fRow  = Resources::font(Resources::FontType::Normal, 26.f*k/base);
+  GthFont fRowH = Resources::font(Resources::FontType::Hi,     26.f*k/base);
+  GthFont fKey  = Resources::font(Resources::FontType::Hi,     26.f*k/base);
+  fRow .setColor(Color(0.90f, 0.85f, 0.76f, 1.f));
+  fRowH.setColor(Color(1.00f, 0.82f, 0.45f, 1.f));
+  fKey .setColor(Color(1.00f, 0.90f, 0.62f, 1.f));
+
+  const int x0 = int(float(W)*0.06f);
+  int       y  = int(float(H)*0.06f);
+  fSel.drawText(p, x0, y+fSel.pixelSize(), ArpgMenu::gtxt("Sterowanie"));
+  y += fSel.pixelSize() + int(10.f*k);
+  fInfo.drawText(p, x0, y+fInfo.pixelSize(), ArpgMenu::gtxt("Kliknij albo Enter, potem naciśnij nowy klawisz (Esc - bez zmiany)"));
+  y += fInfo.pixelSize() + int(22.f*k);
+
+  const int rowH  = int(38.f*k);
+  const int rowW  = int(float(W)*0.46f);
+  const int keyX  = x0 + int(float(rowW)*0.62f);
+  const int count = int(ArpgKeys::Count);
+  for(int i=0; i<count+2; ++i) {
+    const Rect r(x0-int(14.f*k), y, rowW, rowH);
+    keysRows.push_back(r);
+    const bool hi = (keysSel==i);
+    if(hi)
+      band(r);
+    auto& f = hi ? fRowH : fRow;
+    const int ty = y + rowH/2 + f.pixelSize()/3;
+    if(i<count) {
+      auto a = ArpgKeys::Action(i);
+      f.drawText(p, x0 + (hi ? int(8.f*k) : 0), ty, ArpgMenu::gtxt(ArpgKeys::info(a).name));
+      const std::string key = (hi && keysCapture) ? std::string("Naciśnij klawisz...") : ArpgKeys::keyName(ArpgKeys::key(a));
+      fKey.drawText(p, keyX, ty, ArpgMenu::gtxt(key));
+      } else {
+      if(i==count)
+        y += int(10.f*k);
+      const char* txt = (i==count) ? "Przywróć domyślne" : "Wróć";
+      keysRows.back().y = y;
+      f.drawText(p, x0 + (hi ? int(8.f*k) : 0), y + rowH/2 + f.pixelSize()/3, ArpgMenu::gtxt(txt));
+      }
+    y += rowH;
+    }
+
+  // the fixed ones
+  y += int(18.f*k);
+  static const char* fixed[] = {
+    "Lewy przycisk myszy - ruch, rozmowa, podnoszenie, atak",
+    "Prawy przycisk - atak ładowany (przytrzymaj)",
+    "Środkowy przycisk - blok, z łukiem odepchnięcie, bez broni obrót kamery",
+    "Ctrl + lewy przycisk - atak w miejscu / na każdego",
+    "Kółko myszy - przybliżenie kamery",
+    "3 - 0 - runy i zwoje (przypisanie w ekwipunku)",
+    "Ruch klawiaturą, obrót kamery, skok - z ustawień Gothica (Opcje)",
+    };
+  for(auto t:fixed) {
+    fInfo.drawText(p, x0, y+fInfo.pixelSize(), ArpgMenu::gtxt(t));
+    y += fInfo.pixelSize() + int(8.f*k);
+    }
+  (void)fItem;
+  }
+
+void GameMenu::modernActivate() {
+  const int count = int(ArpgKeys::Count);
+  if(keysSel<count) {
+    keysCapture = true;
+    }
+  else if(keysSel==count) {
+    ArpgKeys::resetDefaults();
+    Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+    }
+  else {
+    modernPage  = 0;
+    keysCapture = false;
+    }
+  update();
+  }
+
+bool GameMenu::modernKeyDown(KeyEvent& e) {
+  if(!modern || modernPage!=1)
+    return false;
+  if(keysCapture) {
+    if(e.key!=Event::K_ESCAPE && keysSel<int(ArpgKeys::Count)) {
+      if(!ArpgKeys::canBind(e.key))
+        return true; // 3-0 are the spell slots: wait for another key
+      ArpgKeys::setKey(ArpgKeys::Action(keysSel), e.key);
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+      }
+    keysCapture = false;
+    update();
+    return true;
+    }
+  if(e.key==Event::K_ESCAPE || e.key==Event::K_Back) {
+    modernPage = 0;
+    update();
+    return true;
+    }
+  return false;
+  }
+
+bool GameMenu::modernBack() {
+  if(!modern || modernPage!=1)
+    return false;
+  if(keysCapture)
+    keysCapture = false; else
+    modernPage = 0;
+  update();
+  return true;
+  }
+
 bool GameMenu::modernMouse(const Point& pos, bool click) {
   if(!modern)
     return false;
+  auto inside = [&](const Rect& r) { return r.w>0 && pos.x>=r.x && pos.y>=r.y && pos.x<r.x+r.w && pos.y<r.y+r.h; };
+  if(modernPage==1) {
+    if(keysCapture)
+      return true;
+    for(size_t i=0; i<keysRows.size(); ++i) {
+      if(!inside(keysRows[i]))
+        continue;
+      if(keysSel!=int(i)) {
+        keysSel = int(i);
+        Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+        update();
+        }
+      if(click)
+        modernActivate();
+      return true;
+      }
+    return false;
+    }
+  if(inside(keysItemRect)) {
+    if(!keysItemSel) {
+      keysItemSel = true;
+      curItem     = uint32_t(-1);
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      update();
+      }
+    if(click)
+      onKeyboard(KeyCodec::ActionGeneric);
+    return true;
+    }
   for(int i=0; i<zenkit::IMenu::item_count; ++i) {
-    auto& r = hItems[i].modernRect;
-    if(r.w<=0 || pos.x<r.x || pos.y<r.y || pos.x>=r.x+r.w || pos.y>=r.y+r.h)
+    if(!inside(hItems[i].modernRect))
       continue;
-    if(curItem!=uint32_t(i)) {
+    if(curItem!=uint32_t(i) || keysItemSel) {
+      keysItemSel = false;
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
       setSelection(i, 1);
       if(auto s = selectedItem())
@@ -744,6 +921,50 @@ void GameMenu::resizeEvent(SizeEvent &) {
   }
 
 void GameMenu::onKeyboard(KeyCodec::Action key) {
+  if(modern && modernPage==1) {
+    // Diathic: "Sterowanie"
+    const int rows = int(ArpgKeys::Count)+2;
+    if(key==KeyCodec::Forward || key==KeyCodec::Back) {
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      keysSel = (keysSel + (key==KeyCodec::Forward ? rows-1 : 1)) % rows;
+      update();
+      }
+    if(key==KeyCodec::ActionGeneric)
+      modernActivate();
+    return;
+    }
+  if(modern && (key==KeyCodec::Forward || key==KeyCodec::Back)) {
+    // Diathic: up / down in the order of the modern list, "Sterowanie" included
+    auto order = modernOrder();
+    if(!order.empty()) {
+      int at = -1;
+      for(size_t i=0; i<order.size(); ++i)
+        if((order[i]==-2 && keysItemSel) || (order[i]>=0 && !keysItemSel && uint32_t(order[i])==curItem))
+          at = int(i);
+      const int n  = int(order.size());
+      const int nx = at<0 ? 0 : (at + (key==KeyCodec::Forward ? n-1 : 1)) % n;
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      if(order[size_t(nx)]==-2) {
+        keysItemSel = true;
+        curItem     = uint32_t(-1);
+        } else {
+        keysItemSel = false;
+        setSelection(order[size_t(nx)], 1);
+        if(auto s = selectedItem())
+          updateSavThumb(*s);
+        }
+      update();
+      }
+    return;
+    }
+  if(modern && keysItemSel && key==KeyCodec::ActionGeneric) {
+    Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+    modernPage  = 1;
+    keysSel     = 0;
+    keysCapture = false;
+    update();
+    return;
+    }
   auto sel = selectedItem();
   if(sel!=nullptr && isHorSelectable(sel->handle)) {
     if(key==KeyCodec::Left)
