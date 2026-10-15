@@ -3803,7 +3803,10 @@ void GameScript::arpgUseItem(Npc& npc, std::string_view fn, const std::function<
   Gothic::inst().onPrint(ArpgMenu::gtxt(buf));
   }
 
-std::vector<GameScript::WorldMap> GameScript::arpgWorldMaps() {
+const std::vector<GameScript::WorldMap>& GameScript::arpgAllMaps() {
+  if(arpgMapsScanned)
+    return arpgMapsAll;
+  arpgMapsScanned = true;
   struct Arg {
     enum Kind : uint8_t { Unknown, Int, Str } kind = Unknown;
     int32_t     i = 0;
@@ -3828,8 +3831,21 @@ std::vector<GameScript::WorldMap> GameScript::arpgWorldMaps() {
     return "";
     };
 
+  std::vector<std::pair<uint32_t,uint32_t>> fns; // address -> function symbol (instances only end them)
+  for(auto& sym:vm.symbols()) {
+    const auto tp = sym.type();
+    if(tp==zenkit::DaedalusDataType::FUNCTION && sym.is_const() && !sym.is_external())
+      fns.emplace_back(sym.address(), sym.index());
+    else if((tp==zenkit::DaedalusDataType::INSTANCE || tp==zenkit::DaedalusDataType::PROTOTYPE) && sym.address()>0)
+      fns.emplace_back(sym.address(), uint32_t(-1));
+    }
+  std::sort(fns.begin(), fns.end());
+  size_t cur = 0;
+
   const uint32_t size = vm.size();
   for(uint32_t pc=0; pc<size;) {
+    while(cur+1<fns.size() && fns[cur+1].first<=pc)
+      ++cur;
     zenkit::DaedalusInstruction inst;
     try {
       inst = vm.instruction_at(pc);
@@ -3892,6 +3908,7 @@ std::vector<GameScript::WorldMap> GameScript::arpgWorldMaps() {
               m.top     = args[args.size()-3].i;
               m.right   = args[args.size()-2].i;
               m.bottom  = args[args.size()-1].i;
+              m.fn      = fns.empty() ? uint32_t(-1) : fns[cur].second;
               ret.push_back(m);
               }
             }
@@ -3911,22 +3928,125 @@ std::vector<GameScript::WorldMap> GameScript::arpgWorldMaps() {
     }
 
   // per level: the map covering the largest area (the whole world, not a city detail or a treasure map)
-  std::vector<WorldMap> best;
-  for(auto& m:ret) {
+  std::vector<size_t> best;
+  for(size_t i=0; i<ret.size(); ++i) {
+    auto&         m    = ret[i];
     const int64_t area = std::abs(int64_t(m.right-m.left)*int64_t(m.bottom-m.top));
     bool found = false;
-    for(auto& b:best) {
+    for(auto& bi:best) {
+      auto& b = ret[bi];
       if(b.level!=m.level)
         continue;
       found = true;
       const int64_t areaB = std::abs(int64_t(b.right-b.left)*int64_t(b.bottom-b.top));
       if(area>areaB || (area==areaB && m.texture.size()<b.texture.size()))
-        b = m;
+        bi = i;
       }
     if(!found)
-      best.push_back(m);
+      best.push_back(i);
     }
-  for(auto& b:best)
+  for(auto bi:best) {
+    auto& b = ret[bi];
+    b.whole = true;
     Log::i("gothic-diablo: world map \"", b.texture, "\" for ", b.level, " (", b.left, ", ", b.top, ", ", b.right, ", ", b.bottom, ")");
-  return best;
+    }
+  arpgMapsAll = std::move(ret);
+  return arpgMapsAll;
+  }
+
+std::vector<GameScript::WorldMap> GameScript::arpgWorldMaps() {
+  std::vector<WorldMap> ret;
+  for(auto& m:arpgAllMaps())
+    if(m.whole)
+      ret.push_back(m);
+  return ret;
+  }
+
+void GameScript::arpgScanLog() {
+  // B_LogEntry(TOPIC_<...>TEACHER / TRADER, "text") / Log_AddEntry(...) in the dialogs: text -> the dialog's NPC
+  if(arpgLogScanned)
+    return;
+  arpgLogScanned = true;
+
+  std::vector<std::pair<uint32_t,uint32_t>> fns;
+  for(auto& sym:vm.symbols()) {
+    const auto tp = sym.type();
+    if(tp==zenkit::DaedalusDataType::FUNCTION && sym.is_const() && !sym.is_external())
+      fns.emplace_back(sym.address(), sym.index());
+    else if((tp==zenkit::DaedalusDataType::INSTANCE || tp==zenkit::DaedalusDataType::PROTOTYPE) && sym.address()>0)
+      fns.emplace_back(sym.address(), uint32_t(-1));
+    }
+  std::sort(fns.begin(), fns.end());
+
+  std::unordered_map<uint32_t,uint32_t> infoNpc; // dialog function -> npc instance
+  for(auto& i:dialogsInfo)
+    if(i!=nullptr && i->information>0 && i->npc>0)
+      infoNpc[uint32_t(i->information)] = uint32_t(i->npc);
+
+  auto kindOf = [](std::string_view name, bool& teacher) {
+    if(name.substr(0,6)!="TOPIC_" || name=="TOPIC_ADDON_BANDITTRADER") // the weapon dealer quest, not a list
+      return false;
+    auto ends = [&](std::string_view e) { return name.size()>=e.size() && name.substr(name.size()-e.size())==e; };
+    if(ends("TEACHER") || ends("TEACHER_OC")) { teacher = true;  return true; }
+    if(ends("TRADER")  || ends("TRADER_OC"))  { teacher = false; return true; }
+    return false;
+    };
+
+  auto logEntry = vm.find_symbol_by_name("B_LOGENTRY");
+  std::vector<const zenkit::DaedalusSymbol*> args;
+  size_t cur = 0;
+  const uint32_t size = vm.size();
+  for(uint32_t pc=0; pc<size;) {
+    while(cur+1<fns.size() && fns[cur+1].first<=pc) {
+      ++cur;
+      args.clear();
+      }
+    zenkit::DaedalusInstruction inst;
+    try {
+      inst = vm.instruction_at(pc);
+      }
+    catch(...) {
+      break;
+      }
+    if(inst.size==0)
+      break;
+    pc += inst.size;
+
+    if(inst.op==zenkit::DaedalusOpcode::PUSHV || inst.op==zenkit::DaedalusOpcode::PUSHVI) {
+      args.push_back(vm.find_symbol_by_index(inst.symbol));
+      continue;
+      }
+    bool isLog = false;
+    if(inst.op==zenkit::DaedalusOpcode::BL && logEntry!=nullptr && inst.address==logEntry->address())
+      isLog = true;
+    if(inst.op==zenkit::DaedalusOpcode::BE) {
+      auto sym = vm.find_symbol_by_index(inst.symbol);
+      isLog = (sym!=nullptr && sym->name()=="LOG_ADDENTRY");
+      }
+    if(isLog && args.size()>=2 && !fns.empty()) {
+      auto topic = args[args.size()-2];
+      auto text  = args[args.size()-1];
+      bool teacher = false;
+      if(topic!=nullptr && text!=nullptr && topic->is_const() && text->is_const() &&
+         topic->type()==zenkit::DaedalusDataType::STRING && text->type()==zenkit::DaedalusDataType::STRING &&
+         kindOf(topic->name(), teacher)) {
+        arpgMarkerTopicMap[topic->get_string()] = teacher;
+        auto npc = infoNpc.find(fns[cur].second);
+        if(npc!=infoNpc.end())
+          arpgLogNpcMap[text->get_string()] = ArpgLogNpc{npc->second, teacher};
+        }
+      }
+    args.clear();
+    }
+  Log::i("Diathic: ", arpgLogNpcMap.size(), " diary entries about teachers / traders");
+  }
+
+const std::unordered_map<std::string, GameScript::ArpgLogNpc>& GameScript::arpgLogNpcs() {
+  arpgScanLog();
+  return arpgLogNpcMap;
+  }
+
+const std::unordered_map<std::string, bool>& GameScript::arpgMarkerTopics() {
+  arpgScanLog();
+  return arpgMarkerTopicMap;
   }

@@ -56,7 +56,8 @@ V                       skradanie
 1 / 2                   mikstura zdrowia / many
 3 – 0                   runy i zwoje (przypisanie w ekwipunku: najedź i naciśnij klawisz)
 I / C / T               ekwipunek / postać / drzewka umiejętności
-Tab                     mapa
+Tab                     minimapa -> mapa na grze -> wyłączona
+M                       duża mapa (pinezki: prawy przycisk myszy)
 Q / E                   obrót kamery
 Esc                     menu gry (zapis, wczytanie, ustawienia)
 

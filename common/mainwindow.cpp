@@ -217,13 +217,25 @@ void MainWindow::paintEvent(PaintEvent& event) {
       drawMsg(p);
 
       auto focus = world->validateFocus(player.focus());
-      if(arpgMenu.isOpen()) {
+      auto pl0   = Gothic::inst().player();
+      if(arpgWorldMap.isOpen() && pl0!=nullptr) {
+        // Diathic: the big map over the whole screen
+        arpgLabels.clear();
+        ArpgWorldMap::Ctx ctx{*world, *pl0, camera, player, w(), h(), Gothic::interfaceScale(this)};
+        arpgWorldMap.paint(p, ctx);
+        }
+      else if(arpgMenu.isOpen()) {
         // gothic-diablo: equipment / character window; the hero stands in the middle (camera in front of him)
         arpgLabels.clear();
         if(auto pl = Gothic::inst().player())
           arpgMenu.paint(p, w(), h(), Gothic::interfaceScale(this), arpgBarItems, *pl);
         }
       else if(isArpgMouse()) {
+        // Diathic: Tab (second time) = the explored map over the game, like Diablo II
+        if(arpgOverlay && pl0!=nullptr) {
+          ArpgWorldMap::Ctx ctx{*world, *pl0, camera, player, w(), h(), Gothic::interfaceScale(this)};
+          arpgWorldMap.paintOverlay(p, ctx);
+          }
         // gothic-diablo: labels like in Diablo; Z = labels of everything in sight
         if(arpgShowAll)
           paintArpgLabels(p,vp,focus); else
@@ -242,7 +254,7 @@ void MainWindow::paintEvent(PaintEvent& event) {
         }
 
       if(auto pl = Gothic::inst().player()){
-        if (!Gothic::inst().isDesktop() && !arpgMenu.isOpen() && !dialogs.isArpgCinema()) {
+        if (!Gothic::inst().isDesktop() && !arpgMenu.isOpen() && !dialogs.isArpgCinema() && !arpgWorldMap.isOpen()) {
           auto& opt = Gothic::options();
           float hp  = float(pl->attribute(ATR_HITPOINTS))/float(pl->attribute(ATR_HITPOINTSMAX));
           float mp  = float(pl->attribute(ATR_MANA))     /float(pl->attribute(ATR_MANAMAX));
@@ -251,6 +263,11 @@ void MainWindow::paintEvent(PaintEvent& event) {
           bool showManaBar   = (opt.showManaBar==2) || (opt.showManaBar==1 && (pl->weaponState()==WeaponState::Mage || inventory.isActive()));
           bool showSwimBar   = (opt.showSwimBar==2) || (opt.showSwimBar==1 && pl->isDive());
 
+          if(arpgBarVisible()) {
+            paintArpgVitals(p); // Diathic: life and mana next to the skill bar, experience over it
+            showHealthBar = false;
+            showManaBar   = false;
+            }
           if(showHealthBar)
             drawBar(p,barHp, 10, h()-10, hp, AlignLeft | AlignBottom);
           if(showManaBar)
@@ -352,6 +369,12 @@ void MainWindow::resizeEvent(SizeEvent&) {
   }
 
 void MainWindow::mouseDownEvent(MouseEvent &event) {
+  if(arpgWorldMap.isOpen()) {
+    arpgCursor      = event.pos();
+    arpgCursorValid = true;
+    arpgWorldMap.mouseDown(event); // Diathic: the big map takes the mouse
+    return;
+    }
   if(arpgMenu.isOpen()) {
     // gothic-diablo: the ARPG window takes the mouse
     if(auto pl = Gothic::inst().player())
@@ -417,6 +440,10 @@ void MainWindow::mouseDownEvent(MouseEvent &event) {
   }
 
 void MainWindow::mouseUpEvent(MouseEvent &event) {
+  if(arpgWorldMap.isOpen()) {
+    arpgWorldMap.mouseUp(event);
+    return;
+    }
   if(arpgMenu.isOpen()) {
     // gothic-diablo: end of a click or of dragging an item in the ARPG window
     if(auto pl = Gothic::inst().player())
@@ -462,6 +489,12 @@ void MainWindow::mouseUpEvent(MouseEvent &event) {
   }
 
 void MainWindow::mouseDragEvent(MouseEvent &event) {
+  if(arpgWorldMap.isOpen()) {
+    arpgCursor      = event.pos();
+    arpgCursorValid = true;
+    arpgWorldMap.mouseMove(event);
+    return;
+    }
   if(Camera::isArpgEnabled()) {
     if(arpgMidDown) {
       if(!arpgMidRotating && std::abs(event.x-arpgMidStart.x)>6)
@@ -492,6 +525,7 @@ void MainWindow::mouseMoveEvent(MouseEvent &event) {
 void MainWindow::processMouse(MouseEvent& event, bool enable) {
   if(Camera::isArpgEnabled()) {
     // gothic-diablo: free, visible cursor; the hero turns towards it
+    arpgWorldMap.mouseMove(event);
     arpgMenu.mouseMove(event.pos());
     arpgCursor      = event.pos();
     arpgCursorValid = true;
@@ -586,7 +620,8 @@ bool MainWindow::isArpgMouse() const {
   auto camera = Gothic::inst().camera();
   return Camera::isArpgEnabled() && camera!=nullptr && camera->isArpgActive() &&
          Gothic::inst().player()!=nullptr &&
-         !dialogs.isActive() && !inventory.isActive() && !document.isActive() && !arpgMenu.isOpen();
+         !dialogs.isActive() && !inventory.isActive() && !document.isActive() && !arpgMenu.isOpen() &&
+         !arpgWorldMap.isOpen();
   }
 
 void MainWindow::onSettings() {
@@ -599,6 +634,10 @@ void MainWindow::onSettings() {
   }
 
 void MainWindow::mouseWheelEvent(MouseEvent &event) {
+  if(arpgWorldMap.isOpen()) {
+    arpgWorldMap.mouseWheel(event);
+    return;
+    }
   if(arpgMenu.isOpen()) {
     arpgMenu.mouseWheel(event.delta); // backpack rows
     return;
@@ -669,6 +708,16 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
     }
   uiKeyUp=nullptr;
 
+  if(arpgWorldMap.isOpen()) {
+    // Diathic: the big map: the note of a pin, M / Esc close it (on key-up), nothing else reaches the game
+    event.accept();
+    if(arpgWorldMap.keyDown(event))
+      return;
+    if(event.key==Event::K_ESCAPE || event.key==Event::K_M)
+      arpgMapKey = event.key;
+    return;
+    }
+
   if(event.key==Event::K_Z && Camera::isArpgEnabled())
     arpgShowAll = true; // gothic-diablo: hold Z to show all items / usable objects in sight
 
@@ -698,10 +747,23 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
       event.accept();
       return;
       }
-    // gothic-diablo: Tab = minimap, I = equipment window (Backspace = Gothic's inventory)
+    // gothic-diablo: Tab = minimap -> map over the game (Diathic) -> nothing, I = equipment window (Backspace = Gothic's inventory)
     if(event.key==Event::K_Tab) {
-      arpgMinimap = !arpgMinimap;
+      if(!arpgMinimap && !arpgOverlay)
+        arpgMinimap = true;
+      else if(arpgMinimap) {
+        arpgMinimap = false;
+        arpgOverlay = true;
+        }
+      else
+        arpgOverlay = false;
       arpgTabDown = true;
+      event.accept();
+      return;
+      }
+    // Diathic: M = the big map (instead of Gothic's map document)
+    if(event.key==Event::K_M && isArpgMouse()) {
+      arpgMapKey = event.key;
       event.accept();
       return;
       }
@@ -756,6 +818,18 @@ void MainWindow::keyRepeatEvent(KeyEvent& event) {
 void MainWindow::keyUpEvent(KeyEvent &event) {
   if(event.key==Event::K_Z)
     arpgShowAll = false;
+  if(arpgMapKey!=Event::K_NoKey && event.key==arpgMapKey) {
+    // Diathic: M opens / closes the big map, Esc closes it
+    arpgMapKey = Event::K_NoKey;
+    arpgWorldMap.setOpen(event.key==Event::K_M ? !arpgWorldMap.isOpen() : false);
+    if(arpgWorldMap.isOpen()) {
+      player.arpgStop();
+      clearInput();
+      }
+    return;
+    }
+  if(arpgWorldMap.isOpen())
+    return;
   if(event.key==Event::K_Tab && arpgTabDown) {
     arpgTabDown = false;
     return;
@@ -1342,6 +1416,23 @@ uint64_t MainWindow::tick() {
     return 0;
   lastTick  = time;
   GameMusic::inst().tick(); // Diathic: the menu track loops
+  if(arpgWorldMap.isOpen()) {
+    // Diathic: a talk, a window or the end of the hero closes the big map
+    auto pl = Gothic::inst().player();
+    if(pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() || document.isActive() ||
+       arpgMenu.isOpen() || Gothic::inst().checkLoading()!=Gothic::LoadState::Idle)
+      arpgWorldMap.setOpen(false);
+    }
+  if(Camera::isArpgEnabled()) {
+    // Diathic: what the hero sees becomes explored (minimap, big map; saved with the game)
+    auto wx = Gothic::inst().world();
+    auto pl = Gothic::inst().player();
+    auto cm = Gothic::inst().camera();
+    if(wx!=nullptr && pl!=nullptr && cm!=nullptr) {
+      const float fow = cm->arpgView().fowRadius;
+      arpgWorldMap.tick(*wx, *pl, std::min(fow>0.f ? fow : 1500.f, 2000.f));
+      }
+    }
 
   auto st = Gothic::inst().checkLoading();
   if(st==Gothic::LoadState::Finalize || st==Gothic::LoadState::FailedLoad || st==Gothic::LoadState::FailedSave) {
@@ -1942,27 +2033,16 @@ void MainWindow::paintArpgMinimap(Painter& p) {
       arpgMapValid  = (m.right!=m.left && m.bottom!=m.top);
       }
     }
-  const Texture2d* tex = arpgMapValid ? Resources::loadTexture(arpgMapTex) : nullptr;
+  const Texture2d* tex = arpgMapValid ? arpgWorldMap.wholeMap(*world, *pl) : nullptr;
 
   const Vec3  hero = pl->position();
   const auto& view = cam->arpgView();
 
-  // explored cells: everything around the hero within the sight range
-  constexpr float cell = 400.f;
-  auto& explored = arpgExplored[arpgMapWorld];
-  auto  key      = [](int i, int j) { return (int64_t(i)<<32) ^ int64_t(uint32_t(j)); };
-  {
-    const float rr = std::min(view.fowRadius>0.f ? view.fowRadius : 1500.f, 2000.f);
-    const int   ci = int(std::floor(hero.x/cell)), cj = int(std::floor(hero.z/cell));
-    const int   n  = int(std::ceil(rr/cell));
-    for(int j=-n; j<=n; ++j)
-      for(int i=-n; i<=n; ++i) {
-        const float x = (float(ci+i)+0.5f)*cell - hero.x;
-        const float z = (float(cj+j)+0.5f)*cell - hero.z;
-        if(x*x+z*z<=rr*rr)
-          explored.insert(key(ci+i, cj+j));
-        }
-  }
+  // explored cells (Diathic: ArpgMapData of the session, updated in tick, saved with the game)
+  constexpr float cell = ArpgMapData::Cell;
+  auto gs = Gothic::inst().gameSession();
+  const std::unordered_set<int64_t>* explored = gs!=nullptr ? gs->arpgMap().explored(arpgMapWorld) : nullptr;
+  auto  key      = [](int i, int j) { return ArpgMapData::key(i,j); };
 
   const float scale = Gothic::interfaceScale(this);
   const int   S     = int(220.f*scale);
@@ -2014,7 +2094,7 @@ void MainWindow::paintArpgMinimap(Painter& p) {
     const int   j0 = int(std::floor((hero.z-reach)/cell)), j1 = int(std::floor((hero.z+reach)/cell));
     for(int j=j0; j<=j1; ++j)
       for(int i=i0; i<=i1; ++i) {
-        if(explored.find(key(i,j))!=explored.end())
+        if(explored!=nullptr && explored->find(key(i,j))!=explored->end())
           continue;
         const Vec2 a = toScreen(float(i)*cell,   float(j)*cell);
         const Vec2 b = toScreen(float(i+1)*cell, float(j)*cell);
@@ -2352,6 +2432,91 @@ Tempest::Rect MainWindow::arpgBarSlot(int i) const {
   return Rect(x0 + i*(s+gap) + grp*group, y, s, s);
   }
 
+// Diathic: Gothic's bars, nicer: life left of the skill bar, mana right of it, as tall as half a slot, with the
+// numbers, a pale trail of what was just lost (shrinks after 0.5 s), life under 25% pulses red;
+// a thin experience bar over the slots (level to level)
+void MainWindow::paintArpgVitals(Painter& p) {
+  auto pl = Gothic::inst().player();
+  if(pl==nullptr || barBack==nullptr)
+    return;
+  const float    scale = Gothic::interfaceScale(this);
+  const Rect     s0    = arpgBarSlot(0), sN = arpgBarSlot(ArpgBarSlots-1);
+  const int      gap   = int(14.f*scale);
+  const int      H     = int(float(s0.h)*0.62f);
+  const int      W     = std::min(int(300.f*scale), s0.x-gap-int(12.f*scale));
+  const int      y     = s0.y + (s0.h-H)/2;
+  const uint64_t now   = Application::tickCount();
+  const float    dt    = arpgVitalsAt==0 ? 0.f : float(std::min<uint64_t>(now-arpgVitalsAt, 200))/1000.f;
+  arpgVitalsAt = now;
+
+  GthFont fnt = Resources::font(scale*0.85f);
+  fnt.setColor(Color(1.f, 0.96f, 0.88f, 1.f));
+
+  auto vital = [&](const Texture2d* fill, int x, int32_t cur, int32_t mx, float& ghost, uint64_t& hitAt, bool life) {
+    if(fill==nullptr || W<40)
+      return;
+    const float v = mx>0 ? std::clamp(float(cur)/float(mx), 0.f, 1.f) : 0.f;
+    if(ghost<0.f || v>=ghost) {
+      ghost = v;
+      hitAt = 0;
+      } else {
+      if(hitAt==0)
+        hitAt = now;
+      if(now>hitAt+500)
+        ghost = std::max(v, ghost - 0.6f*dt);
+      }
+    // frame and the inside like Gothic's drawBar (9 / 4 texels of the frame texture)
+    const float kx = float(W)/float(std::max(1,barBack->w()));
+    const int   ix = int(9.f*kx), iy = H/8;
+    if(life && v<0.25f && cur>0) {
+      const float a = 0.35f + 0.25f*std::sin(float(now%100000)*0.008f);
+      p.setBrush(Brush(Color(0.9f, 0.05f, 0.02f, a), Painter::Alpha));
+      const int g = std::max(2, int(4.f*scale));
+      p.drawRect(x-g, y-g, W+2*g, H+2*g);
+      }
+    p.setBrush(*barBack);
+    p.drawRect(x, y, W, H, 0, 0, barBack->w(), barBack->h());
+    const int iw = W-2*ix, ih = H-2*iy;
+    if(ghost>v) {
+      p.setBrush(Brush(Color(1.f, 0.93f, 0.75f, 0.55f), Painter::Alpha));
+      p.drawRect(x+ix+int(float(iw)*v), y+iy, std::max(1, int(float(iw)*(ghost-v))), ih);
+      }
+    p.setBrush(*fill);
+    p.drawRect(x+ix, y+iy, int(float(iw)*v), ih, 0, 0, fill->w(), fill->h());
+    char txt[48] = {};
+    std::snprintf(txt, sizeof(txt), "%d / %d", int(cur), int(mx));
+    const auto ts = fnt.textSize(txt);
+    fnt.drawText(p, x+(W-ts.w)/2, y+H/2+ts.h/3, txt);
+    };
+  vital(barHp,   s0.x-gap-W,        pl->attribute(ATR_HITPOINTS), pl->attribute(ATR_HITPOINTSMAX), arpgHpGhost, arpgHpHit, true);
+  vital(barMana, sN.x+sN.w+gap,     pl->attribute(ATR_MANA),      pl->attribute(ATR_MANAMAX),      arpgMpGhost, arpgMpHit, false);
+
+  // experience: from this level's threshold to the next one (Gothic: next = previous + (level+1)*500)
+  {
+    const int32_t lvl  = pl->level();
+    const int32_t next = pl->experienceNext();
+    const int32_t prev = std::max(0, next - (lvl+1)*500);
+    const float   v    = next>prev ? std::clamp(float(pl->experience()-prev)/float(next-prev), 0.f, 1.f) : 0.f;
+    const int     xh   = std::max(3, int(5.f*scale));
+    const int     x0   = s0.x, x1 = sN.x+sN.w;
+    const int     xy   = s0.y - xh - int(4.f*scale);
+    p.setBrush(Brush(Color(0.f, 0.f, 0.f, 0.65f), Painter::Alpha));
+    p.drawRect(x0-1, xy-1, x1-x0+2, xh+2);
+    if(barMisc!=nullptr) {
+      p.setBrush(*barMisc);
+      p.drawRect(x0, xy, int(float(x1-x0)*v), xh, 0, 0, barMisc->w(), barMisc->h());
+      }
+    if(isArpgMouse() && arpgCursor.y>=xy-int(6.f*scale) && arpgCursor.y<=xy+xh+int(6.f*scale) &&
+       arpgCursor.x>=x0 && arpgCursor.x<=x1) {
+      char txt[96] = {};
+      std::snprintf(txt, sizeof(txt), "Poziom %d   doświadczenie %d / %d", int(lvl), int(pl->experience()), int(next));
+      const std::string t  = ArpgMenu::gtxt(txt);
+      const auto        ts = fnt.textSize(t);
+      fnt.drawText(p, (x0+x1-ts.w)/2, xy-int(6.f*scale), t);
+      }
+  }
+  }
+
 void MainWindow::paintArpgBar(Painter& p) {
   if(!arpgBarVisible())
     return;
@@ -2564,7 +2729,7 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
       std::snprintf(txt, sizeof(txt), "Punkty umiejętności do wydania: %d  (T)", int(pts));
       GthFont f = Resources::font(Resources::FontType::Hi, scale*0.8f);
       f.setColor(Color(1.f, 0.82f, 0.42f, 1.f)); // gold
-      f.drawText(p, rL.x, rL.y-int(8.f*scale), ArpgMenu::gtxt(txt));
+      f.drawText(p, rL.x, rL.y-int(16.f*scale), ArpgMenu::gtxt(txt)); // over the experience bar
       }
   }
   }
