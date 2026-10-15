@@ -1,5 +1,8 @@
 #include "mainwindow.h"
 
+#include <Tempest/MemReader>
+#include <diathicassets.h>
+
 #include <Tempest/Except>
 #include <Tempest/Painter>
 
@@ -170,18 +173,28 @@ void MainWindow::paintEvent(PaintEvent& event) {
   auto st    = Gothic::inst().checkLoading();
 
   if(!Gothic::inst().isInGame() && st==Gothic::LoadState::Idle && background.isEmpty()) {
-    background = Resources::loadTextureUncached("STARTSCREEN.TGA");
+    // Diathic: our picture behind the main menu (the game's STARTSCREEN when it is missing)
+    auto bg = DiathicAsset::get("menu_bg.jpg");
+    if(!bg.empty()) {
+      try {
+        Tempest::MemReader rd(bg.data, bg.len);
+        Tempest::Pixmap    pm(rd);
+        background = Resources::loadTexturePm(pm);
+        }
+      catch(...) {
+        Log::e("unable to load the Diathic menu background");
+        }
+      }
+    if(background.isEmpty())
+      background = Resources::loadTextureUncached("STARTSCREEN.TGA");
     }
 
   if(world==nullptr && !background.isEmpty()) {
     p.setBrush(Color(0.0));
     p.drawRect(0,0,w(),h());
 
-    if(st==Gothic::LoadState::Idle) {
-      p.setBrush(Brush(background,Painter::NoBlend));
-      p.drawRect(0,0,w(),h(),
-                 0,0,background.w(),background.h());
-      }
+    if(st==Gothic::LoadState::Idle)
+      paintMenuBackground(p);
     }
 
   if(world!=nullptr) {
@@ -333,6 +346,54 @@ void MainWindow::paintEvent(PaintEvent& event) {
     }
 
   paintArpgCursor();
+  }
+
+// Diathic: the picture of the main menu fills the screen (cut, not stretched), very slowly drifting closer and back,
+// with embers rising over it
+void MainWindow::paintMenuBackground(Painter& p) {
+  const float    W = float(w()), H = float(h());
+  const float    tw = float(background.w()), th = float(background.h());
+  const uint64_t now = Application::tickCount();
+  const float    t   = float(now%120000)/120000.f;               // 2 minutes there and back
+  const float    zoom = 1.03f + 0.04f*(0.5f-0.5f*std::cos(t*2.f*3.14159265f));
+
+  float sw = tw, sh = tw*H/W;
+  if(sh>th) {
+    sh = th;
+    sw = th*W/H;
+    }
+  sw /= zoom;
+  sh /= zoom;
+  const float sx = (tw-sw)*0.55f, sy = (th-sh)*0.45f;
+  p.setBrush(Brush(background, Painter::NoBlend));
+  p.drawRect(0, 0, w(), h(), int(sx), int(sy), int(sx+sw), int(sy+sh));
+
+  // embers: small sparks rising and fading (additive)
+  const float dt = menuEmbersAt==0 ? 0.f : float(std::min<uint64_t>(now-menuEmbersAt, 100))/1000.f;
+  menuEmbersAt = now;
+  while(menuEmbers.size()<70) {
+    MenuEmber e;
+    e.x    = float(std::rand()%1000)/1000.f;
+    e.y    = 1.02f + float(std::rand()%300)/1000.f;
+    e.vy   = 0.03f + float(std::rand()%100)/1000.f*0.06f;
+    e.vx   = (float(std::rand()%100)/100.f-0.5f)*0.02f;
+    e.size = 1.5f + float(std::rand()%100)/100.f*2.5f;
+    e.life = 0.f;
+    menuEmbers.push_back(e);
+    }
+  const float k = H/1080.f;
+  for(auto& e:menuEmbers) {
+    e.life += dt;
+    e.y    -= e.vy*dt;
+    e.x    += (e.vx + 0.01f*std::sin(e.life*1.7f + e.size))*dt;
+    const float a = std::clamp(1.f-(1.02f-e.y)/0.9f, 0.f, 1.f) * std::clamp(e.life*2.f, 0.f, 1.f);
+    const int   s = std::max(1, int(e.size*k));
+    p.setBrush(Brush(Color(1.f, 0.55f, 0.18f, 0.85f*a), Painter::Add));
+    p.drawRect(int(e.x*W), int(e.y*H), s, s);
+    }
+  menuEmbers.erase(std::remove_if(menuEmbers.begin(), menuEmbers.end(),
+                                  [](const MenuEmber& e){ return e.y<0.08f || e.x<-0.05f || e.x>1.05f; }),
+                   menuEmbers.end());
   }
 
 // Diathic: in the ARPG mode the cursor is a sword from the game (Miecz paladyna), red over an enemy;
@@ -1895,7 +1956,9 @@ void MainWindow::render(){
 
     static bool once=true;
     if(once) {
-      Gothic::inst().emitGlobalSoundWav("GAMESTART.WAV");
+      // GAMESTART.WAV = the menu music of Noc Kruka (a sound, not a music theme); Diathic has its own track
+      if(DiathicAsset::get("menu.ogg").empty())
+        Gothic::inst().emitGlobalSoundWav("GAMESTART.WAV");
       once=false;
       }
 

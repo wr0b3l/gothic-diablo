@@ -4,6 +4,9 @@
 #include <Tempest/Log>
 #include <Tempest/TextCodec>
 #include <Tempest/Dialog>
+#include <Tempest/Application>
+
+#include <cmath>
 
 #include <algorithm>
 
@@ -282,6 +285,11 @@ GameMenu::GameMenu(MenuRoot &owner, KeyCodec& keyCodec, zenkit::DaedalusVm& vm, 
 
   back = Resources::loadTexture(menu->back_pic);
 
+  // Diathic: the main menu gets the modern layout
+  modern = (menuSection.size()==9);
+  for(size_t i=0; modern && i<menuSection.size(); ++i)
+    modern = (std::toupper(uint8_t(menuSection[i]))==uint8_t("MENU_MAIN"[i]));
+
   initItems();
   float infoX = 1000.0f/scriptDiv;
   float infoY = 7500.0f/scriptDiv;
@@ -381,6 +389,11 @@ void GameMenu::paintEvent(PaintEvent &e) {
   Painter p(e);
   p.setScissor(-x(),-y(),owner.w(),owner.h());
 
+  if(modern) {
+    paintModern(p);
+    return;
+    }
+
   if(back) {
     p.setBrush(*back);
     p.drawRect(0,0,w(),h(),
@@ -407,6 +420,134 @@ void GameMenu::paintEvent(PaintEvent &e) {
     auto&       fnt   = Resources::font(scale);
     fnt.drawText(p, w()-fnt.textSize(appBuild).w-int(25*scale), h()-int(25*scale), appBuild);
     }
+  }
+
+void GameMenu::paintModern(Painter& p) {
+  const int   W = w(), H = h();
+  const float k = float(H)/1080.f;
+  const bool  inGame = Gothic::inst().isInGame();
+
+  // in the game: the game darkened behind the menu
+  if(inGame) {
+    p.setBrush(Brush(Color(0.f,0.f,0.f,0.45f), Painter::Alpha));
+    p.drawRect(0, 0, W, H);
+    }
+  // a dark band on the left, fading to the right
+  {
+    const int panelW = int(float(W)*0.48f);
+    const int steps  = 32;
+    for(int i=0; i<steps; ++i) {
+      const float t = float(i)/float(steps);
+      const float a = 0.82f*std::pow(1.f-t, 1.6f);
+      p.setBrush(Brush(Color(0.02f,0.01f,0.01f,a), Painter::Alpha));
+      p.drawRect(int(float(panelW)*t), 0, panelW/steps+1, H);
+      }
+  }
+
+  // the logo (MENU_GOTHIC.TGA = the Diathic logo), top left
+  int lx = int(float(W)*0.05f), ly = int(float(H)*0.05f), lw = 0, lh = 0;
+  if(auto logo = Resources::loadTexture("MENU_GOTHIC.TGA")) {
+    const float aspect = float(logo->w())/float(std::max(1,logo->h()));
+    lw = int(float(W)*0.32f);
+    lh = int(float(lw)/aspect);
+    if(lh>int(float(H)*0.30f)) {
+      lh = int(float(H)*0.30f);
+      lw = int(float(lh)*aspect);
+      }
+    p.setBrush(Brush(*logo, Painter::Alpha));
+    p.drawRect(lx, ly, lw, lh, 0, 0, logo->w(), logo->h());
+    }
+
+  // fonts: the old Gothic font, about 36 px at 1080 lines
+  const float base  = float(std::max(1, Resources::font(1.f).pixelSize()));
+  GthFont     fItem = Resources::font(Resources::FontType::Normal, 36.f*k/base);
+  GthFont     fSel  = Resources::font(Resources::FontType::Hi,     36.f*k/base);
+  GthFont     fInfo = Resources::font(Resources::FontType::Normal, 22.f*k/base);
+  fItem.setColor(Color(0.90f, 0.85f, 0.76f, 1.f));
+  fSel .setColor(Color(1.00f, 0.82f, 0.45f, 1.f));
+  fInfo.setColor(Color(0.78f, 0.70f, 0.58f, 1.f));
+
+  // subtitle under the logo
+  {
+    const std::string_view sub = "Gothic II  -  Noc Kruka";
+    const auto ts = fInfo.textSize(sub);
+    fInfo.drawText(p, lx+(lw-ts.w)/2, ly+lh+int(6.f*k), sub);
+  }
+
+  // the items in their script order (top to bottom), headlines (pictures) and items not usable now left out
+  std::vector<Item*> list;
+  for(auto& it:hItems) {
+    it.modernRect = Rect();
+    if(!it.visible || it.name.empty() || it.handle==nullptr || isHidden(it.handle))
+      continue;
+    if(!isSelectable(it.handle) || !isEnabled(it.handle))
+      continue;
+    list.push_back(&it);
+    }
+  std::stable_sort(list.begin(), list.end(), [](const Item* a, const Item* b){ return a->handle->pos_y<b->handle->pos_y; });
+
+  const int x0    = lx + int(18.f*k);
+  const int itemH = int(56.f*k);
+  const int itemW = int(float(W)*0.30f);
+  int       y     = std::max(ly+lh+int(70.f*k), int(float(H)*0.42f));
+  const auto sel  = selectedItem();
+  const uint64_t now = Application::tickCount();
+  for(auto it:list) {
+    const bool hi = (it==sel);
+    it->modernRect = Rect(x0-int(14.f*k), y, itemW, itemH);
+    if(hi) {
+      // a glowing band fading to the right, a bright edge on the left
+      const int steps = 20;
+      const float pulse = 0.85f + 0.15f*std::sin(float(now%100000)*0.004f);
+      for(int i=0; i<steps; ++i) {
+        const float t = float(i)/float(steps);
+        p.setBrush(Brush(Color(0.75f,0.22f,0.06f, 0.42f*(1.f-t)*pulse), Painter::Alpha));
+        p.drawRect(it->modernRect.x+int(float(itemW)*t), y+int(6.f*k), itemW/steps+1, itemH-int(12.f*k));
+        }
+      p.setBrush(Brush(Color(1.f,0.72f,0.30f,1.f), Painter::Alpha));
+      p.drawRect(it->modernRect.x, y+int(6.f*k), std::max(2,int(4.f*k)), itemH-int(12.f*k));
+      }
+    getText(*it, textBuf);
+    auto& f  = hi ? fSel : fItem;
+    const int tx = x0 + (hi ? int(10.f*k) : 0);
+    const int ty = y + itemH/2 + f.pixelSize()/3;
+    f.drawText(p, tx, ty, textBuf.data());
+    y += itemH;
+    }
+
+  // what the selected item does (the second text of the script), bottom left
+  if(sel!=nullptr && sel->handle!=nullptr && sel->handle->text->size()>0) {
+    std::string_view info = sel->handle->text[1];
+    if(!info.empty())
+      fInfo.drawText(p, x0, H-int(36.f*k), info);
+    }
+
+  // the version of the game, bottom right
+  if(owner.hasVersionLine()) {
+    const auto ts = fInfo.textSize(appBuild);
+    fInfo.drawText(p, W-ts.w-int(28.f*k), H-int(28.f*k), appBuild);
+    }
+  }
+
+bool GameMenu::modernMouse(const Point& pos, bool click) {
+  if(!modern)
+    return false;
+  for(int i=0; i<zenkit::IMenu::item_count; ++i) {
+    auto& r = hItems[i].modernRect;
+    if(r.w<=0 || pos.x<r.x || pos.y<r.y || pos.x>=r.x+r.w || pos.y>=r.y+r.h)
+      continue;
+    if(curItem!=uint32_t(i)) {
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      setSelection(i, 1);
+      if(auto s = selectedItem())
+        updateSavThumb(*s);
+      update();
+      }
+    if(click)
+      onKeyboard(KeyCodec::ActionGeneric);
+    return true;
+    }
+  return false;
   }
 
 void GameMenu::drawItem(Painter& p, Item& hItem) {
@@ -646,7 +787,10 @@ void GameMenu::onTick() {
   const float wy = float(owner.h());
 
   Size size = {0, 0};
-  if(menu->flags & zenkit::MenuFlag::DONT_SCALE_DIMENSION) {
+  if(modern) {
+    size = {owner.w(), owner.h()}; // Diathic: the modern main menu covers the screen
+    }
+  else if(menu->flags & zenkit::MenuFlag::DONT_SCALE_DIMENSION) {
     size = {int(float(menu->dim_x)*fx/scriptDiv),int(float(menu->dim_y)*fy/scriptDiv)};
     } else {
     size = {int(float(menu->dim_x)*wx/scriptDiv),int(float(menu->dim_y)*wy/scriptDiv)};

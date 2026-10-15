@@ -33,6 +33,11 @@ class GameMenu : public Tempest::Widget {
 
     KeyCodec::Action keyClose() const { return kClose; }
 
+    // Diathic: the main menu in a modern layout (full screen: logo top left, items in a column on a dark band,
+    // the mouse selects what it is over); false for every other menu
+    bool isModern() const { return modern; }
+    bool modernMouse(const Tempest::Point& pos, bool click); // true: over an item (click: executed)
+
   protected:
     void paintEvent (Tempest::PaintEvent& event) override;
     void resizeEvent(Tempest::SizeEvent&  event) override;
@@ -58,6 +63,7 @@ class GameMenu : public Tempest::Widget {
       int32_t                             value   = 0;
       int32_t                             scroll  = 0;
       bool                                visible = true;
+      Tempest::Rect                       modernRect;  // Diathic: where the modern main menu drew it
       };
 
     MenuRoot&                             owner;
@@ -82,6 +88,8 @@ class GameMenu : public Tempest::Widget {
     KeyCodec::Action                      kClose = KeyCodec::Escape;
 
     void                                  drawItem(Tempest::Painter& p, Item& it);
+    void                                  paintModern(Tempest::Painter& p);
+    bool                                  modern = false;
     void                                  drawSlider(Tempest::Painter& p, Item& it, int x, int y, int w, int h);
     void                                  drawQuestList(Tempest::Painter& p, Item& it, int x, int y, int w, int h,
                                                         const QuestLog& log, QuestStat st);

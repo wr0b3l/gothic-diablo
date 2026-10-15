@@ -170,6 +170,10 @@ class MainWindow : public Tempest::Window {
     static constexpr const char* ArpgCursorModel = "ItMw_030_1h_PAL_Sword_02.3DS"; // Miecz paladyna (ITMW_1H_PAL_SWORD)
     static constexpr bool     ArpgCursorFlip = false;  // true: the other end of the model is the tip
     void                      paintArpgCursor();
+    void                      paintMenuBackground(Tempest::Painter& p); // Diathic: picture + embers
+    struct MenuEmber { float x = 0, y = 0, vx = 0, vy = 0, size = 1, life = 0; };
+    std::vector<MenuEmber>    menuEmbers;
+    uint64_t                  menuEmbersAt = 0;
     ArpgMenu                  arpgMenu;            // gothic-diablo: equipment / character / skill trees (I, C, T)
     LightGroup::Light         arpgDlgLight;        // gothic-diablo: soft light on the faces in dialog shots
     const World*              arpgDlgLightWorld = nullptr;
