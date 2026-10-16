@@ -19,6 +19,7 @@
 #include "world/world.h"
 #include "game/gamescript.h"
 #include "game/gamesession.h"
+#include "game/questlog.h"
 #include "utils/gthfont.h"
 #include "resources.h"
 #include "gothic.h"
@@ -212,11 +213,17 @@ static ArpgProgress* progress() {
   return gs!=nullptr ? &gs->arpgProgress() : nullptr;
   }
 
+// Diathic: percents from equipped weapons / rings (e.g. +3% of a knife) do not count for the limit of Biegłość
+static int32_t equipBonus(const Npc& pl, int talent) {
+  auto w = Gothic::inst().world();
+  return w!=nullptr ? w->script().arpgEquipFightBonus(pl, talent) : 0;
+  }
+
 static ArpgProgress::Hero heroOf(const Npc& pl) {
   ArpgProgress::Hero h;
   h.level = pl.level();
   for(int t=1; t<=4; ++t)
-    h.pct[t] = pl.hitChance(Talent(t));
+    h.pct[t] = pl.hitChance(Talent(t)) - equipBonus(pl, t);
   return h;
   }
 
@@ -280,6 +287,14 @@ const ArpgMenu::Hit* ArpgMenu::hitAt(const Point& pos) const {
   }
 
 void ArpgMenu::mouseWheel(int delta) {
+  if(page==P_Log) {
+    // the diary: over the list - the list, elsewhere the text
+    const int d = delta>0 ? -1 : 1;
+    if(pageL.contains(mouse))
+      logScrollL = std::clamp(logScrollL+d,   0, logMaxScrollL); else
+      logScrollR = std::clamp(logScrollR+3*d, 0, logMaxScrollR);
+    return;
+    }
   if(page==P_Trade && pageL.contains(mouse)) {
     scrollL = std::clamp(scrollL + (delta>0 ? -1 : 1), 0, maxScrollL);
     return;
@@ -352,6 +367,22 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
     case H_CatL:
       catL    = h->id;
       scrollL = 0;
+      return true;
+    case H_LogCat:
+      if(logCat!=h->id) {
+        logCat     = h->id;
+        logSel     = -1;
+        logScrollL = 0;
+        logScrollR = 0;
+        Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+        }
+      return true;
+    case H_Quest:
+      if(logSel!=h->id) {
+        logSel     = h->id;
+        logScrollR = 0;
+        Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+        }
       return true;
     case H_TakeAll: {
       // everything from the chest / the body
@@ -573,6 +604,31 @@ bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
   return false;
   }
 
+void ArpgMenu::logKey(int dy, bool pageKey) {
+  if(page!=P_Log)
+    return;
+  if(pageKey) {
+    logScrollR = std::clamp(logScrollR+dy*std::max(1, logRowsL), 0, logMaxScrollR);
+    return;
+    }
+  if(logList.empty())
+    return;
+  int at = 0;
+  for(size_t i=0; i<logList.size(); ++i)
+    if(logList[i]==logSel)
+      at = int(i);
+  const int nx = std::clamp(at+dy, 0, int(logList.size())-1);
+  if(logList[size_t(nx)]!=logSel) {
+    logSel     = logList[size_t(nx)];
+    logScrollR = 0;
+    Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+    }
+  if(nx<logScrollL)
+    logScrollL = nx;
+  if(nx>=logScrollL+logRowsL)
+    logScrollL = nx-logRowsL+1;
+  }
+
 // ---------------------------------------------------------------------------------------------------------------
 // drawing helpers: Gothic's own textures
 
@@ -635,23 +691,25 @@ int ArpgMenu::drawSection(Painter& p, const Fonts& f, const Rect& c, int y, std:
 
 void ArpgMenu::drawTabs(Painter& p, int w, const Fonts& f) {
   // Diathic: the keys from ArpgKeys ("Sterowanie" in the main menu)
-  const std::string names[3] = {
+  const std::string names[4] = {
     "Ekwipunek ("   + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Equipment)) + ")",
     "Postać ("      + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Character)) + ")",
-    "Umiejętności (" + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills))   + ")"};
+    "Umiejętności (" + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills))   + ")",
+    "Dziennik ("    + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Log))       + ")"};
+  const Page ids[4] = {P_Equip, P_Character, P_Skills, P_Log};
   const int gap = int(10*k);
   const int tw  = int(220*k);
   const int th  = int(46*k);
   const int y   = int(14*k);
-  const int x0  = (w-(3*tw+2*gap))/2;
-  for(int i=0; i<3; ++i) {
+  const int x0  = (w-(4*tw+3*gap))/2;
+  for(int i=0; i<4; ++i) {
     const Rect r(x0+i*(tw+gap), y, tw, th);
-    const bool on = (page==P_Equip+i);
+    const bool on = (page==ids[i]);
     const bool hv = r.contains(mouse);
     letter(p, r, (on || hv) ? 1.f : 0.78f);
     auto& fn = on ? *f.red : *f.ink;
     textCenter(p, fn, r.x+r.w/2, r.y+(r.h-fn.pixelSize())/2, gtxt(names[i]));
-    Hit h; h.r = r; h.kind = H_Tab; h.id = P_Equip+i;
+    Hit h; h.r = r; h.kind = H_Tab; h.id = ids[i];
     hits.push_back(h);
     }
   }
@@ -683,8 +741,8 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
   const int top = int(14*k)+int(46*k)+int(10*k);
   const int ph  = h-top-M;
   Rect left, right;
-  if(page==P_Skills) {
-    // one open book in the middle: the tree needs room
+  if(page==P_Skills || page==P_Log) {
+    // one open book in the middle: the tree (the diary's text) needs room
     const int pw = std::min(int(float(ph)*0.68f), (w-2*M)/2);
     left  = Rect(w/2-pw, top, pw, ph);
     right = Rect(w/2,    top, pw, ph);
@@ -708,9 +766,10 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
     case P_Character: paintStats(p, f, cl, cr, pl);        break;
     case P_Skills:    paintTrees(p, f, cl, cr, items, pl); break;
     case P_Trade:     paintTrade(p, f, cl, cr, items, pl); break;
+    case P_Log:       paintLog  (p, f, cl, cr);            break;
     }
 
-  if(page!=P_Skills)
+  if(page!=P_Skills && page!=P_Log)
     drawHint(p, w, h, f);
   if(page==P_Equip || page==P_Trade)
     paintDrag(p, f, items, pl);
@@ -1058,10 +1117,72 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
   row(cl, y, gtxt("Przed magią"), buf);
 
   // ---- right page: Gothic's talents (names from the scripts) and the ARPG fight ----
+  // Diathic: everything the skill trees give (only what the hero has), small rows under "Walka"
+  ArpgPerks pk;
+  if(auto pr = progress())
+    pk = pr->perks();
+  std::vector<std::pair<std::string,std::string>> perkRows;
+  {
+    auto num = [](float v, int prec) {
+      char b[32] = {};
+      std::snprintf(b, sizeof(b), "%.*f", prec, double(v));
+      std::string r = b;
+      if(r.find('.')!=std::string::npos) {
+        while(!r.empty() && r.back()=='0')
+          r.pop_back();
+        if(!r.empty() && r.back()=='.')
+          r.pop_back();
+        }
+      for(auto& c:r)
+        if(c=='.')
+          c = ',';
+      return r;
+      };
+    auto pc  = [&](float v) { return "+"+num(v*100.f, 0)+"%"; };
+    auto add = [&](const char* k, std::string v) { perkRows.emplace_back(k, std::move(v)); };
+    if(pk.meleeDmg>0)      add("Obrażenia ciosu", pc(pk.meleeDmg));
+    if(pk.critAdd>0)       add("Szansa na pełne obrażenia", "+"+std::to_string(pk.critAdd)+"%");
+    if(pk.bleed>0)         add("Krwawienie (3 s)", num(pk.bleed*100.f,0)+"% ciosu / s");
+    if(pk.comboWindow>0)   add("Dłuższe okno serii", pc(pk.comboWindow));
+    if(pk.fourthHit)       add("Czwarty cios serii", "x1,5");
+    if(pk.arc>120.f)       add("Szerokość zamachu", num(pk.arc,0)+"°");
+    if(pk.knockback>0)     add("Odrzut małych stworów", num(pk.knockback,1)+" m");
+    if(pk.vsDown>0)        add("Przeciw powalonym", pc(pk.vsDown));
+    if(pk.leech>0)         add("Pijawka (zdrowie z obrażeń)", num(pk.leech*100.f,0)+"%");
+    if(pk.hardSkin>0)      add("Twarda skóra (3 s po ciosie)", "+"+std::to_string(pk.hardSkin)+" ochrony");
+    if(pk.shotSpeed>0)     add("Szybszy naciąg", pc(pk.shotSpeed));
+    if(pk.pierce>0)        add("Strzała przebija", std::to_string(pk.pierce)+" wrog.");
+    if(pk.farAim>0)        add("Celność powyżej 15 m", pc(pk.farAim));
+    if(pk.whirl)           add("Wir (ostatni cios serii)", "wokół");
+    if(pk.chargeWindow>0.2f+1e-4f) add("Złote okno ładowania", num(pk.chargeWindow,1)+" s");
+    if(pk.sureHand)        add("Pewna ręka (późne puszczenie)", "x2");
+    if(pk.getUpDelay>0)    add("Wstrząs (powaleni dłużej)", "+"+num(pk.getUpDelay,1)+" s");
+    if(pk.guardBreak)      add("Łamacz gardy", "tak");
+    if(pk.waveRange>0)     add("Fala uderzeniowa", num(pk.waveRange/100.f,0)+" m");
+    if(pk.battleRush)      add("Pęd bitewny (zabójstwo = bez czekania)", "tak");
+    if(pk.piercingShot)    add("Strzała przeszywająca", "tak");
+    if(pk.volley>0)        add("Grad strzał", "+"+std::to_string(pk.volley));
+    if(pk.heavyHead>0)     add("Ciężki grot", pk.heavyHead>1 ? "powala" : "odpycha");
+    if(pk.innosWrath)      add("Gniew Innosa", "ogień 4 s");
+    if(pk.rollCdCut>0)     add("Krótsza przerwa fikołka", "-"+num(pk.rollCdCut,2)+" s");
+    if(pk.secondWind)      add("Drugi oddech", "2 fikołki");
+    if(pk.rollDist>0)      add("Dalszy przewrót", pc(pk.rollDist));
+    if(pk.rollThrough)     add("Przez szereg wrogów", "tak");
+    if(pk.counter>0)       add("Kontratak (2 s po fikołku)", pc(pk.counter));
+    if(pk.rollStrike)      add("Cios z przewrotu", "tak");
+    if(pk.sandEyes>0)      add("Piasek w oczy", num(pk.sandEyes,0)+" s");
+    if(pk.trip)            add("Podcięcie", "tak");
+    if(pk.acrobat)         add("Akrobata (upadki)", "bez obrażeń");
+    if(pk.arrowDodge>0)    add("Wyczucie strzał (1 s)", num(pk.arrowDodge*100.f,0)+"%");
+    if(pk.shadow)          add("Cień (po fikołku)", "1 s");
+  }
+  const int smallLine = f.small->pixelSize()+int(5*k);
+
   y = cr.y;
   text(p, *f.title, cr.x, y, gtxt("Umiejętności Gothica"));
   y += f.title->pixelSize()+int(2*k);
-  const int talentsEnd = cr.y+cr.h-(6*line+f.sub->pixelSize()+int(30*k)); // room for the fight below
+  const int perksH     = perkRows.empty() ? 0 : f.sub->pixelSize()+int(30*k)+int(perkRows.size())*smallLine;
+  const int talentsEnd = cr.y+cr.h-(6*line+f.sub->pixelSize()+int(30*k))-perksH; // room for the fight below
   if(w!=nullptr) {
     auto& sc   = w->script();
     auto* tal  = sc.findSymbol("TXT_TALENTS");
@@ -1073,6 +1194,9 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
       for(int i=0; i<max; ++i) {
         auto& name = tal->get_string(uint16_t(i));
         if(name.empty())
+          continue;
+        // Diathic: the weapons always, the other talents only when the hero has them (room for the trees below)
+        if(!(i>=TALENT_1H && i<=TALENT_CROSSBOW) && pl.talentSkill(Talent(i))<=0)
           continue;
         if(y+line>talentsEnd)
           break;
@@ -1109,10 +1233,7 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
       row(cr, y, gtxt("Obrażenia strzałą (x0,5)"), buf);
       }
     // with the skill trees
-    ArpgPerks pk;
-    if(auto pr = progress())
-      pk = pr->perks();
-    std::snprintf(buf, sizeof(buf), "+%d%%", int(std::lround((0.2f+pk.atkSpeed)*100.f)));
+    std::snprintf(buf, sizeof(buf), "+%d%%", int(std::lround(pk.atkSpeed*100.f)));
     row(cr, y, gtxt("Szybkość ataku"), buf);
     std::snprintf(buf, sizeof(buf), "x%.1f, %.1f s, co %.1f s", double(pk.chargeMul), double(pk.chargeTime), double(std::max(0.5f, pk.chargeCd)));
     for(auto& c:buf)
@@ -1125,6 +1246,19 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
         c = ',';
     row(cr, y, gtxt("Fikołek bez obrażeń"), buf);
   }
+  if(!perkRows.empty()) {
+    section(cr, y, gtxt("Z drzewek umiejętności"));
+    const int bottom = cr.y+cr.h;
+    for(size_t i=0; i<perkRows.size(); ++i) {
+      if(y+smallLine>bottom) {
+        text(p, *f.small, cr.x, y, "...");
+        break;
+        }
+      text(p, *f.small, cr.x, y, gtxt(perkRows[i].first));
+      textRight(p, *f.redS, cr.x+cr.w, y+(f.small->pixelSize()-f.redS->pixelSize())/2, gtxt(perkRows[i].second));
+      y += smallLine;
+      }
+    }
   }
 
 void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
@@ -1244,8 +1378,11 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     auto&      br = t.branches[size_t(b)];
     const Rect n0 = nodeRect(1, b);
     if(t.weapons && b<4 && pr!=nullptr) {
-      char buf[96] = {};
-      std::snprintf(buf, sizeof(buf), "%s   %d%%  (nauka do %d%%)", br.name, int(hero.pct[b+1]), int(pr->cap(b+1)));
+      char buf[128] = {};
+      const int32_t eb = Gothic::inst().player()!=nullptr ? equipBonus(*Gothic::inst().player(), b+1) : 0;
+      if(eb!=0)
+        std::snprintf(buf, sizeof(buf), "%s   %d%% %+d%% z broni  (nauka do %d%%)", br.name, int(hero.pct[b+1]), int(eb), int(pr->cap(b+1))); else
+        std::snprintf(buf, sizeof(buf), "%s   %d%%  (nauka do %d%%)", br.name, int(hero.pct[b+1]), int(pr->cap(b+1)));
       text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(buf));
       } else {
       text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(br.name));
@@ -1391,6 +1528,191 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     wrap(p, *f.small, nx, ny, nw, gtxt("Najedź na węzeł drzewka, żeby przeczytać jego opis."));
   text(p, *f.small, nx, nr.y+nr.h-pad-f.small->pixelSize(),
        gtxt(t.weapons ? "Biegłość działa od razu (procent Gothica)." : "Punkty działają od razu w walce."));
+  }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Diathic: the diary - Gothic's quest log as a book: the kinds and the quests on the left page, the chosen one on the
+// right (newest entry first)
+
+static int logKindOf(const QuestLog::Quest& q) {
+  if(q.section==QuestLog::Section::Note)
+    return 3;
+  switch(q.status) {
+    case QuestLog::Status::Running: return 0;
+    case QuestLog::Status::Success: return 1;
+    default:                        return 2; // failed, obsolete
+    }
+  }
+
+// a thin bar at the side: where in a long list / text we are
+static void scrollBar(Painter& p, const Rect& r, int pos, int max, int visible) {
+  if(max<=0 || r.h<=0)
+    return;
+  fill(p, r.x, r.y, r.w, r.h, RuleC);
+  const int total = max+visible;
+  const int th    = std::max(r.w*3, r.h*visible/std::max(1,total));
+  const int ty    = r.y + (r.h-th)*std::clamp(pos,0,max)/max;
+  fill(p, r.x, ty, r.w, th, LineC);
+  }
+
+void ArpgMenu::paintLog(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr) {
+  const QuestLog* ql = Gothic::inst().questLog();
+  static const char* kinds[4] = {"Bieżące", "Wykonane", "Nieudane", "Notatki"};
+
+  // the quests of the kind shown, newest first; how many of every kind
+  int count[4] = {};
+  logList.clear();
+  if(ql!=nullptr) {
+    for(size_t i=ql->questCount(); i>0; --i) {
+      const int kd = logKindOf(ql->quest(i-1));
+      count[kd]++;
+      if(kd==logCat)
+        logList.push_back(int(i-1));
+      }
+    }
+  if(std::find(logList.begin(), logList.end(), logSel)==logList.end()) {
+    logSel     = logList.empty() ? -1 : logList[0];
+    logScrollR = 0;
+    }
+  const int sbW = std::max(3, int(5*k));
+
+  // ---- left page: the date, the kinds, the list ----
+  int y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Dziennik"));
+  y += f.title->pixelSize()+int(2*k);
+  if(auto w = Gothic::inst().world()) {
+    const auto t = w->time();
+    char buf[64] = {};
+    std::snprintf(buf, sizeof(buf), "Dzień %d, godzina %d:%02d", int(t.day()), int(t.hour()), int(t.minute()));
+    text(p, *f.body, cl.x, y, gtxt(buf));
+    y += f.body->pixelSize()+int(8*k);
+    }
+  drawRule(p, cl.x, y, cl.w);
+  y += int(10*k);
+  {
+    const int cw = cl.w/2, ch = f.red->pixelSize()+int(16*k);
+    for(int i=0; i<4; ++i) {
+      const Rect r(cl.x + (i%2)*cw, y + (i/2)*ch, cw-int(6*k), ch-int(4*k));
+      const bool on = (logCat==i), hv = r.contains(mouse);
+      if(on)
+        fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.10f));
+      else if(hv)
+        fill(p, r.x, r.y, r.w, r.h, FaintC);
+      if(on)
+        fill(p, r.x, r.y+r.h-std::max(1,int(2*k)), r.w, std::max(1,int(2*k)), LineRedC);
+      char buf[64] = {};
+      std::snprintf(buf, sizeof(buf), "%s (%d)", kinds[i], count[i]);
+      auto& fn = on ? *f.red : *f.ink;
+      text(p, fn, r.x+int(8*k), r.y+(r.h-fn.pixelSize())/2, gtxt(buf));
+      Hit h; h.r = r; h.kind = H_LogCat; h.id = i;
+      hits.push_back(h);
+      }
+    y += 2*ch+int(6*k);
+  }
+  drawRule(p, cl.x, y, cl.w);
+  y += int(8*k);
+
+  const int rowH = f.body->pixelSize()+int(14*k);
+  const int rows = std::max(1, (cl.y+cl.h-y)/rowH);
+  logRowsL      = rows;
+  logMaxScrollL = std::max(0, int(logList.size())-rows);
+  logScrollL    = std::clamp(logScrollL, 0, logMaxScrollL);
+  if(logList.empty())
+    text(p, *f.small, cl.x, y+int(6*k), gtxt(logCat==3 ? "Nie ma jeszcze notatek." : "Nie ma tu jeszcze zadań."));
+  const int lw = cl.w-sbW-int(8*k);
+  for(int i=0; i<rows && logScrollL+i<int(logList.size()); ++i) {
+    const int   qi = logList[size_t(logScrollL+i)];
+    const auto& q  = ql->quest(size_t(qi));
+    const Rect  r(cl.x, y+i*rowH, lw, rowH);
+    const bool  on = (qi==logSel), hv = r.contains(mouse);
+    if(on)
+      fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.10f));
+    else if(hv)
+      fill(p, r.x, r.y, r.w, r.h, FaintC);
+    if(on)
+      fill(p, r.x, r.y+int(3*k), std::max(2,int(3*k)), r.h-int(6*k), LineRedC);
+    auto& fn = on ? *f.red : *f.body;
+    // a name too long for the row: cut, with "..."
+    std::string name = q.name;
+    const int   maxW = r.w-int(18*k);
+    if(fn.textSize(name).w>maxW) {
+      while(!name.empty() && fn.textSize(name+"...").w>maxW)
+        name.pop_back();
+      name += "...";
+      }
+    text(p, fn, r.x+int(12*k), r.y+(r.h-fn.pixelSize())/2, name);
+    Hit h; h.r = r; h.kind = H_Quest; h.id = qi;
+    hits.push_back(h);
+    }
+  scrollBar(p, Rect(cl.x+cl.w-sbW, y, sbW, rows*rowH), logScrollL, logMaxScrollL, rows);
+
+  // ---- right page: the chosen quest ----
+  int ry = cr.y;
+  if(logSel<0 || ql==nullptr || size_t(logSel)>=ql->questCount()) {
+    logMaxScrollR = 0;
+    wrap(p, *f.small, cr.x, ry, cr.w, gtxt("Wybierz zadanie z listy po lewej."));
+    return;
+    }
+  const auto& q = ql->quest(size_t(logSel));
+  ry += wrap(p, *f.title, cr.x, ry, cr.w, q.name)+int(4*k);
+  {
+    const char* st = "Notatka";
+    if(q.section!=QuestLog::Section::Note) {
+      switch(q.status) {
+        case QuestLog::Status::Running:  st = "Zadanie w toku"; break;
+        case QuestLog::Status::Success:  st = "Wykonane";       break;
+        case QuestLog::Status::Failed:   st = "Nieudane";       break;
+        case QuestLog::Status::Obsolete: st = "Nieaktualne";    break;
+        }
+      }
+    char buf[96] = {};
+    std::snprintf(buf, sizeof(buf), "%s  -  wpisów: %d (najnowszy u góry)", st, int(q.entry.size()));
+    text(p, *f.redS, cr.x, ry, gtxt(buf));
+    ry += f.redS->pixelSize()+int(8*k);
+  }
+  drawRule(p, cr.x, ry, cr.w);
+  ry += int(12*k);
+
+  // the entries, newest first, a short line between them; scrolled by lines
+  const int lineH = f.body->pixelSize();
+  const int tw    = cr.w-sbW-int(12*k);
+  const int vis   = std::max(1, (cr.y+cr.h-ry)/lineH);
+  const size_t n  = q.entry.size();
+  std::vector<int> lines(n);
+  int total = 0;
+  for(size_t e=0; e<n; ++e) {
+    lines[e] = std::max(1, int(f.body->lineCount(tw, q.entry[n-1-e])));
+    total   += lines[e] + (e+1<n ? 1 : 0);
+    }
+  logMaxScrollR = std::max(0, total-vis);
+  logScrollR    = std::clamp(logScrollR, 0, logMaxScrollR);
+
+  int       skip   = logScrollR;
+  int       yy     = ry;
+  const int bottom = ry+vis*lineH;
+  for(size_t e=0; e<n && yy+lineH<=bottom; ++e) {
+    const auto& txt = q.entry[n-1-e];
+    if(skip>=lines[e]) {
+      skip -= lines[e];
+      } else {
+      const int show = std::min(lines[e]-skip, (bottom-yy)/lineH);
+      if(show>0) {
+        f.body->drawText(p, cr.x, yy+lineH, tw, show*lineH, txt, AlignLeft, skip);
+        yy += show*lineH;
+        }
+      skip = 0;
+      }
+    if(e+1<n) {
+      if(skip>0) {
+        --skip;
+        } else {
+        if(yy+lineH<=bottom)
+          fill(p, cr.x+tw/3, yy+lineH/2, tw/3, std::max(1,int(2*k)), RuleC);
+        yy += lineH;
+        }
+      }
+    }
+  scrollBar(p, Rect(cr.x+cr.w-sbW, ry, sbW, vis*lineH), logScrollR, logMaxScrollR, vis);
   }
 
 void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {

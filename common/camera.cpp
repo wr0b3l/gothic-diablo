@@ -124,8 +124,10 @@ void Camera::load(Serialize &s, Npc* pl) {
 
 void Camera::changeZoom(int delta) {
   if(isArpgActive()) {
-    arpg.rangeDest += (delta>0 ? -100.f : 100.f);
-    arpg.rangeDest  = std::clamp(arpg.rangeDest, 500.f, 2200.f);
+    // Diathic: only 10% closer / further than the default distance (two steps each way)
+    const float def = Arpg::DefaultRange;
+    arpg.rangeDest += (delta>0 ? -0.05f*def : 0.05f*def);
+    arpg.rangeDest  = std::clamp(arpg.rangeDest, 0.9f*def, 1.1f*def);
     return;
     }
   if(fpEnable)
@@ -1415,10 +1417,10 @@ void Camera::updateArpgView(float dtF) {
   arpgV.cutHeight  = arpg.indoor ? 250.f : 0.f;
   arpgV.cutRadius  = 3000.f;
 
-  // see-through circle: fixed size in the world (~2.3 m around the hero's chest), so it does not change with zoom
+  // see-through circle: fixed size in the world (~3.9 m around the hero's chest), so it does not change with zoom
   {
     const float dist = std::max(100.f, (center-origin).length());
-    arpgV.fadeRadius = std::clamp(230.f/dist*std::fabs(proj.at(1,1)), 0.14f, 0.6f);
+    arpgV.fadeRadius = std::clamp(390.f/dist*std::fabs(proj.at(1,1)), 0.24f, 0.9f);
   }
 
   // ... and only while something actually hides the hero: rays camera -> head / chest / knees.

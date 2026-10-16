@@ -4,6 +4,7 @@
 #include <diathicassets.h>
 
 #include "game/arpgkeys.h"
+#include "game/savegameheader.h"
 
 #include <Tempest/Except>
 #include <Tempest/Painter>
@@ -64,8 +65,6 @@ MainWindow::MainWindow(Device& device)
 
   focusImg   = Resources::loadTexture("FOCUS_HIGHLIGHT.TGA");
 
-  loadBox    = Resources::loadTexture("PROGRESS.TGA");
-  loadVal    = Resources::loadTexture("PROGRESS_BAR.TGA");
 
   Gothic::inst().onStartGame   .bind(this,&MainWindow::startGame);
   Gothic::inst().onLoadGame    .bind(this,&MainWindow::loadGame);
@@ -204,24 +203,10 @@ void MainWindow::paintEvent(PaintEvent& event) {
     }
 
   if(st!=Gothic::LoadState::Idle && st!=Gothic::LoadState::Finalize) {
-    if(st==Gothic::LoadState::Saving) {
-      drawSaving(p);
-      } else {
-      if(auto back = Gothic::inst().loadingBanner()) {
-        p.setBrush(Brush(*back,Painter::NoBlend));
-        p.drawRect(0,0,this->w(),this->h(),
-                   0,0,back->w(),back->h());
-        }
-      if(loadBox!=nullptr && !loadBox->isEmpty()) {
-        if(Gothic::inst().version().game==1) {
-          int lw = int(w()*0.5);
-          int lh = int(h()*0.05);
-          drawLoading(p,(w()-lw)/2, int(h()*0.75), lw, lh);
-          } else {
-          drawLoading(p,int(w()*0.92)-loadBox->w(), int(h()*0.12), loadBox->w(),loadBox->h());
-          }
-        }
-      }
+    // Diathic: our loading screen and a small "saving" sign over the last frame
+    if(st==Gothic::LoadState::Saving)
+      drawSaving(p); else
+      drawLoadingScreen(p);
     } else {
     if(world!=nullptr && world->view()){
       auto& camera = *Gothic::inst().camera();
@@ -278,8 +263,10 @@ void MainWindow::paintEvent(PaintEvent& event) {
           bool showManaBar   = (opt.showManaBar==2) || (opt.showManaBar==1 && (pl->weaponState()==WeaponState::Mage || inventory.isActive()));
           bool showSwimBar   = (opt.showSwimBar==2) || (opt.showSwimBar==1 && pl->isDive());
 
-          if(arpgBarVisible()) {
+          if(arpgBarVisible())
             paintArpgVitals(p); // Diathic: life and mana next to the skill bar, experience over it
+          if(Camera::isArpgEnabled()) {
+            // Diathic: never Gothic's bars (in a pause, behind a menu, in Gothic's inventory)
             showHealthBar = false;
             showManaBar   = false;
             }
@@ -353,8 +340,14 @@ void MainWindow::paintEvent(PaintEvent& event) {
 // Diathic: the picture of the main menu fills the screen (cut, not stretched), very slowly drifting closer and back,
 // with embers rising over it
 void MainWindow::paintMenuBackground(Painter& p) {
+  paintCover(p, background);
+  paintEmbers(p, 70);
+  }
+
+// Diathic: a picture over the whole screen, cut to the screen's shape (not stretched), slowly drifting closer and back
+void MainWindow::paintCover(Painter& p, const Texture2d& tex) {
   const float    W = float(w()), H = float(h());
-  const float    tw = float(background.w()), th = float(background.h());
+  const float    tw = float(tex.w()), th = float(tex.h());
   const uint64_t now = Application::tickCount();
   const float    t   = float(now%120000)/120000.f;               // 2 minutes there and back
   const float    zoom = 1.03f + 0.04f*(0.5f-0.5f*std::cos(t*2.f*3.14159265f));
@@ -367,13 +360,17 @@ void MainWindow::paintMenuBackground(Painter& p) {
   sw /= zoom;
   sh /= zoom;
   const float sx = (tw-sw)*0.55f, sy = (th-sh)*0.45f;
-  p.setBrush(Brush(background, Painter::NoBlend));
+  p.setBrush(Brush(tex, Painter::NoBlend));
   p.drawRect(0, 0, w(), h(), int(sx), int(sy), int(sx+sw), int(sy+sh));
+  }
 
-  // embers: small sparks rising and fading (additive)
+// Diathic: embers, small sparks rising and fading (additive)
+void MainWindow::paintEmbers(Painter& p, size_t count) {
+  const float    W = float(w()), H = float(h());
+  const uint64_t now = Application::tickCount();
   const float dt = menuEmbersAt==0 ? 0.f : float(std::min<uint64_t>(now-menuEmbersAt, 100))/1000.f;
   menuEmbersAt = now;
-  while(menuEmbers.size()<70) {
+  while(menuEmbers.size()<count) {
     MenuEmber e;
     e.x    = float(std::rand()%1000)/1000.f;
     e.y    = 1.02f + float(std::rand()%300)/1000.f;
@@ -396,6 +393,25 @@ void MainWindow::paintMenuBackground(Painter& p) {
   menuEmbers.erase(std::remove_if(menuEmbers.begin(), menuEmbers.end(),
                                   [](const MenuEmber& e){ return e.y<0.08f || e.x<-0.05f || e.x>1.05f; }),
                    menuEmbers.end());
+  }
+
+// Diathic: our picture of the menu (assets/diathic/menu_bg.jpg), kept for the loading screens
+const Texture2d* MainWindow::diathicBackground() {
+  if(!diathicBgTried) {
+    diathicBgTried = true;
+    auto bg = DiathicAsset::get("menu_bg.jpg");
+    if(!bg.empty()) {
+      try {
+        Tempest::MemReader rd(bg.data, bg.len);
+        Tempest::Pixmap    pm(rd);
+        diathicBg = Resources::loadTexturePm(pm);
+        }
+      catch(...) {
+        Log::e("unable to load the Diathic menu background");
+        }
+      }
+    }
+  return diathicBg.isEmpty() ? nullptr : &diathicBg;
   }
 
 // Diathic: in the ARPG mode the cursor is a sword from the game (Miecz paladyna), red over an enemy;
@@ -790,9 +806,21 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
     // gothic-diablo: the ARPG window is open: I / C / T switch or close it, Esc closes it,
     // 3-0 put the rune / scroll under the cursor on that key, the camera turn keys still turn the camera
     event.accept();
-    if(event.key==Event::K_ESCAPE || ak==ArpgKeys::Equipment || ak==ArpgKeys::Character || ak==ArpgKeys::Skills) {
+    if(event.key==Event::K_ESCAPE || ak==ArpgKeys::Equipment || ak==ArpgKeys::Character || ak==ArpgKeys::Skills ||
+       ak==ArpgKeys::Log) {
       arpgMenuKey = event.key;
       return;
+      }
+    if(arpgMenu.current()==ArpgMenu::P_Log) {
+      // Diathic: the diary - arrows: the list, Page Up / Down: the text
+      if(event.key==Event::K_Up || event.key==Event::K_Down) {
+        arpgMenu.logKey(event.key==Event::K_Up ? -1 : 1, false);
+        return;
+        }
+      if(event.key==Event::K_PageUp || event.key==Event::K_PageDown) {
+        arpgMenu.logKey(event.key==Event::K_PageUp ? -1 : 1, true);
+        return;
+        }
       }
     if((event.key>=Event::K_3 && event.key<=Event::K_9) || event.key==Event::K_0) {
       if(auto pl = Gothic::inst().player())
@@ -838,7 +866,7 @@ void MainWindow::keyDownEvent(KeyEvent &event) {
       return;
       }
     if(ak==ArpgKeys::Log && isArpgMouse()) {
-      arpgLogDown = true; // the diary (Gothic's MENU_LOG) on key-up
+      arpgLogDown = true; // the diary (Diathic: a page of the ARPG book) on key-up
       event.accept();
       return;
       }
@@ -911,10 +939,9 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
     }
   if(ak==ArpgKeys::Log && arpgLogDown) {
     arpgLogDown = false;
-    if(!dialogs.isActive() && !inventory.isActive()) {
-      rootMenu.setMenu("MENU_LOG", KeyCodec::Log);
-      if(auto pl = Gothic::inst().player())
-        rootMenu.setPlayer(*pl);
+    if(!dialogs.isActive() && !inventory.isActive() && Gothic::inst().player()!=nullptr) {
+      arpgMenu.toggle(ArpgMenu::P_Log); // Diathic: the diary as a page of the ARPG book (instead of Gothic's MENU_LOG)
+      player.arpgStop();
       clearInput();
       }
     return;
@@ -938,6 +965,8 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
       arpgMenu.toggle(ArpgMenu::P_Character);
     else if(ak==ArpgKeys::Skills)
       arpgMenu.toggle(ArpgMenu::P_Skills);
+    else if(ak==ArpgKeys::Log)
+      arpgMenu.toggle(ArpgMenu::P_Log);
     if(arpgMenu.isOpen()) {
       player.arpgStop();
       clearInput();
@@ -981,6 +1010,15 @@ void MainWindow::keyUpEvent(KeyEvent &event) {
   if(ak>=0 && act!=KeyCodec::Escape) {
     // Diathic: a key of the ARPG mode does not also do what Gothic binds to it (status, log, inventory...)
     player.onKeyReleased(act, mapping);
+    return;
+    }
+
+  if(act==KeyCodec::Log && Camera::isArpgEnabled() && Gothic::inst().player()!=nullptr &&
+     !dialogs.isActive() && !inventory.isActive()) {
+    // Diathic: Gothic's own key of the diary opens our diary too
+    arpgMenu.toggle(ArpgMenu::P_Log);
+    player.arpgStop();
+    clearInput();
     return;
     }
 
@@ -1343,68 +1381,203 @@ void MainWindow::drawMsg(Tempest::Painter& p) {
   dialogs.drawMsg(p, y);
   }
 
-void MainWindow::drawProgress(Painter &p, int x, int y, int w, int h, float v) {
-  if(v<0.1f)
-    v=0.1f;
-  p.setBrush(*loadBox);
-  p.drawRect(x,y,w,h, 0,0,loadBox->w(),loadBox->h());
+// Diathic: a thin bar, dark red to gold, a bright leading edge, golden frame
+void MainWindow::drawDiathicBar(Painter& p, const Rect& r, float v) {
+  v = std::clamp(v, 0.f, 1.f);
+  p.setBrush(Brush(Color(0.f,0.f,0.f,0.65f), Painter::Alpha));
+  p.drawRect(r.x, r.y, r.w, r.h);
 
-  int paddL = int((float(w)*75.f)/float(loadBox->w()));
-  int paddT = int((float(h)*10.f)/float(loadBox->h()));
-
-  if(Gothic::inst().version().game==1) {
-    paddL = int((float(w)*30.f)/float(loadBox->w()));
-    paddT = int((float(h)* 5.f)/float(loadBox->h()));
+  const int fw    = int(float(r.w)*v);
+  const int steps = 32;
+  for(int i=0; i<steps && fw>0; ++i) {
+    const int   x0 = r.x + fw*i/steps, x1 = r.x + fw*(i+1)/steps;
+    const float u  = float(x0-r.x)/float(std::max(1,r.w));
+    p.setBrush(Brush(Color(0.50f+0.50f*u, 0.10f+0.56f*u, 0.03f+0.22f*u, 1.f), Painter::Alpha));
+    p.drawRect(x0, r.y, x1-x0+1, r.h);
+    }
+  if(fw>0) {
+    // a lighter upper half and the glowing edge
+    p.setBrush(Brush(Color(1.f,0.85f,0.6f,0.18f), Painter::Add));
+    p.drawRect(r.x, r.y, fw, std::max(1,r.h/2));
+    const int ex = r.x+fw;
+    for(int g=3; g>=1; --g) {
+      const int gw = std::max(2, r.h*g);
+      p.setBrush(Brush(Color(1.f,0.6f,0.2f,0.10f), Painter::Add));
+      p.drawRect(ex-gw/2, r.y-g, gw, r.h+2*g);
+      }
+    p.setBrush(Brush(Color(1.f,0.93f,0.7f,1.f), Painter::Alpha));
+    p.drawRect(ex-std::max(1,r.h/4), r.y, std::max(2,r.h/2), r.h);
     }
 
-  p.setBrush(*loadVal);
-  p.drawRect(x+paddL,y+paddT,int(float(w-2*paddL)*v),h-2*paddT,
-             0,0,loadVal->w(),loadVal->h());
+  const int bw = 1;
+  p.setBrush(Brush(Color(0.70f,0.54f,0.26f,0.9f), Painter::Alpha));
+  p.drawRect(r.x-bw,  r.y-bw,  r.w+2*bw, bw);
+  p.drawRect(r.x-bw,  r.y+r.h, r.w+2*bw, bw);
+  p.drawRect(r.x-bw,  r.y,     bw,       r.h);
+  p.drawRect(r.x+r.w, r.y,     bw,       r.h);
   }
 
-void MainWindow::drawLoading(Painter &p, int x, int y, int w, int h) {
-  float v = float(Gothic::inst().loadingProgress())/100.f;
-  drawProgress(p,x,y,w,h,v);
+// Diathic: what the loading screen says, where the hero goes (Gothic's picture of the place: LOADING_<WORLD>.TGA)
+static std::string_view loadingPlace(std::string_view banner) {
+  auto has = [&](std::string_view w) {
+    if(banner.size()<w.size())
+      return false;
+    for(size_t i=0; i+w.size()<=banner.size(); ++i) {
+      bool eq = true;
+      for(size_t j=0; j<w.size() && eq; ++j)
+        eq = std::toupper(uint8_t(banner[i+j]))==uint8_t(w[j]);
+      if(eq)
+        return true;
+      }
+    return false;
+    };
+  if(has("NEWWORLD"))     return "Khorinis";
+  if(has("OLDWORLD"))     return "Górnicza Dolina";
+  if(has("ADDONWORLD"))   return "Jarkendar";
+  if(has("DRAGONISLAND")) return "Wyspa Irdorath";
+  return "";
   }
 
+std::string MainWindow::loadingTip() const {
+  using A = ArpgKeys::Action;
+  auto key = [](A a) { return ArpgKeys::keyName(ArpgKeys::key(a)); };
+  const std::string tips[] = {
+    key(A::Dodge) + " - fikołek, najlepszy unik przed ciosem.",
+    "Przytrzymaj prawy przycisk myszy, by wykonać atak ładowany.",
+    "Środkowy przycisk myszy to blok, a z łukiem w ręku - odepchnięcie.",
+    key(A::Map) + " otwiera dużą mapę. Prawy przycisk na mapie stawia pinezkę z opisem.",
+    key(A::Minimap) + " przełącza minimapę, mapę na grze i nic.",
+    "Nauczyciele i handlarze zapisani w dzienniku są widoczni na mapie.",
+    key(A::Walk) + " przełącza chód i bieg, " + key(A::Sneak) + " - skradanie (trzeba się go nauczyć).",
+    key(A::PotionHealth) + " - mikstura zdrowia, " + key(A::PotionMana) + " - mikstura many.",
+    "Przytrzymaj " + key(A::Labels) + ", by zobaczyć nazwy przedmiotów leżących na ziemi.",
+    "Punkty umiejętności rozdasz w drzewkach (" + key(A::Skills) + ").",
+    "Klawisze zmienisz w menu głównym, w „Sterowaniu”.",
+    "Zapisuj grę często - Khorinis nie wybacza błędów.",
+    };
+  return tips[size_t(std::rand())%(sizeof(tips)/sizeof(tips[0]))];
+  }
+
+// Diathic: our picture with embers, the logo, the place, the bar and a hint
+void MainWindow::drawLoadingScreen(Painter& p) {
+  const int   W = w(), H = h();
+  const float k = float(H)/1080.f;
+
+  p.setBrush(Color(0.f,0.f,0.f,1.f));
+  p.drawRect(0, 0, W, H);
+  if(auto bg = diathicBackground())
+    paintCover(p, *bg);
+  // darker, most at the bottom (the text)
+  p.setBrush(Brush(Color(0.f,0.f,0.f,0.30f), Painter::Alpha));
+  p.drawRect(0, 0, W, H);
+  {
+    const int steps = 24, top = int(float(H)*0.55f);
+    for(int i=0; i<steps; ++i) {
+      const float t = float(i)/float(steps);
+      p.setBrush(Brush(Color(0.f,0.f,0.f,0.75f*t), Painter::Alpha));
+      p.drawRect(0, top+(H-top)*i/steps, W, (H-top)/steps+1);
+      }
+  }
+  paintEmbers(p, 50);
+
+  // the logo (MENU_GOTHIC.TGA = the Diathic logo), top center
+  if(auto logo = Resources::loadTexture("MENU_GOTHIC.TGA")) {
+    const float aspect = float(logo->w())/float(std::max(1,logo->h()));
+    int lw = int(float(W)*0.34f), lh = int(float(lw)/aspect);
+    if(lh>int(float(H)*0.30f)) {
+      lh = int(float(H)*0.30f);
+      lw = int(float(lh)*aspect);
+      }
+    p.setBrush(Brush(*logo, Painter::Alpha));
+    p.drawRect((W-lw)/2, int(float(H)*0.06f), lw, lh, 0, 0, logo->w(), logo->h());
+    }
+
+  // the bar follows the progress smoothly
+  {
+    const uint64_t now    = Application::tickCount();
+    const float    dt     = loadShownAt==0 ? 0.f : float(std::min<uint64_t>(now-loadShownAt, 200))/1000.f;
+    const float    target = float(Gothic::inst().loadingProgress())/100.f;
+    loadShownAt = now;
+    loadShown  += (target-loadShown)*std::min(1.f, dt*6.f);
+    loadShown   = std::clamp(std::max(loadShown, 0.02f), 0.f, 1.f);
+  }
+
+  const float base   = float(std::max(1, Resources::font(1.f).pixelSize()));
+  GthFont     fTitle = Resources::font(Resources::FontType::Hi,     44.f*k/base);
+  GthFont     fSmall = Resources::font(Resources::FontType::Normal, 22.f*k/base);
+  GthFont     fTip   = Resources::font(Resources::FontType::Normal, 24.f*k/base);
+  fTitle.setColor(Color(1.00f, 0.80f, 0.45f, 1.f));
+  fSmall.setColor(Color(0.85f, 0.76f, 0.60f, 1.f));
+  fTip  .setColor(Color(0.90f, 0.85f, 0.76f, 1.f));
+
+  const int  bw = int(float(W)*0.46f), bh = std::max(4, int(8.f*k));
+  const Rect bar((W-bw)/2, int(float(H)*0.86f), bw, bh);
+
+  std::string_view place = loadingPlace(Gothic::inst().loadingBannerName());
+  if(place.empty())
+    place = loadingPlace(loadWorldHint);
+  const std::string title = ArpgMenu::gtxt(place.empty() ? std::string_view("Wczytywanie") : place);
+  {
+    const auto ts = fTitle.textSize(title);
+    fTitle.drawText(p, (W-ts.w)/2, bar.y-int(26.f*k), title);
+  }
+  drawDiathicBar(p, bar, loadShown);
+  {
+    const std::string pc = std::to_string(int(loadShown*100.f+0.5f)) + "%";
+    fSmall.drawText(p, bar.x+bar.w+int(14.f*k), bar.y+bh/2+fSmall.pixelSize()/3, pc);
+  }
+  if(!loadTip.empty()) {
+    const std::string tip = ArpgMenu::gtxt(loadTip);
+    const auto ts = fTip.textSize(tip);
+    fTip.drawText(p, (W-ts.w)/2, bar.y+bh+int(46.f*k), tip);
+    }
+  }
+
+// Diathic: the last frame of the game, a bit darker; bottom right a turning ring of embers, "Zapisywanie gry" and a thin bar
 void MainWindow::drawSaving(Painter &p) {
-  if(auto back = Gothic::inst().loadingBanner()) {
+  const int   W = w(), H = h();
+  const float k = float(H)/1080.f;
+  if(auto back = Gothic::inst().loadingBanner(); back!=nullptr && !back->isEmpty()) {
     p.setBrush(Brush(*back,Painter::NoBlend));
-    p.drawRect(0,0,this->w(),this->h(),
-               0,0,back->w(),back->h());
+    p.drawRect(0,0,W,H, 0,0,back->w(),back->h());
+    }
+  p.setBrush(Brush(Color(0.f,0.f,0.f,0.35f), Painter::Alpha));
+  p.drawRect(0, 0, W, H);
+
+  const float base = float(std::max(1, Resources::font(1.f).pixelSize()));
+  GthFont     fnt  = Resources::font(Resources::FontType::Hi, 30.f*k/base);
+  fnt.setColor(Color(1.00f, 0.82f, 0.48f, 1.f));
+  const std::string txt = ArpgMenu::gtxt("Zapisywanie gry...");
+  const auto ts = fnt.textSize(txt);
+
+  // a dark plate behind, fading to the left
+  const int plateW = ts.w + int(170.f*k), plateH = int(110.f*k);
+  const int px = W-plateW, py = H-plateH-int(40.f*k);
+  for(int i=0; i<16; ++i) {
+    const float t = float(i)/16.f;
+    p.setBrush(Brush(Color(0.02f,0.01f,0.01f,0.80f*t), Painter::Alpha));
+    p.drawRect(px+plateW*i/16, py, plateW/16+1, plateH);
     }
 
-  if(saveback==nullptr)
-    saveback = Resources::loadTexture("SAVING.TGA");
-  if(saveback==nullptr)
-    return;
-
-  const float scale = Gothic::interfaceScale(this);
-  int         szX   = Gothic::options().saveGameImageSize.w;
-  int         szY   = Gothic::options().saveGameImageSize.h;
-
-  if(szX<=460 || szY<=300) {
-    // way too small otherwise
-    szX = 460;
-    szY = 300;
-    }
-  szX = int(float(szX)*scale);
-  szY = int(float(szY)*scale);
-  drawSaving(p,*saveback,szX,szY,scale);
-  }
-
-void MainWindow::drawSaving(Painter& p, const Tempest::Texture2d& back, int sw, int sh, float scale) {
-  const int x = (w()-sw)/2, y = (h()-sh)/2;
-
-  // SAVING.TGA is semi-transparent image with the idea to accomulate alpha over time
-  // ... for loop for now
-  p.setBrush(back);
-  for(int i=0;i<10;++i) {
-    p.drawRect(x,y,sw,sh, 0,0,back.w(),back.h());
+  // the ring
+  const float cx = float(W) - 70.f*k, cy = float(py) + float(plateH)*0.5f;
+  const float rr = 22.f*k;
+  const float t  = float(Application::tickCount()%1200)/1200.f;
+  const int   n  = 12;
+  for(int i=0; i<n; ++i) {
+    const float ang = 2.f*3.14159265f*float(i)/float(n);
+    const float ph  = std::fmod(float(i)/float(n) - t + 1.f, 1.f); // 0 = the head
+    const float a   = 0.15f + 0.85f*(1.f-ph);
+    const int   s   = std::max(2, int((3.f+3.f*(1.f-ph))*k));
+    const int   x   = int(cx + std::cos(ang)*rr), y = int(cy + std::sin(ang)*rr);
+    p.setBrush(Brush(Color(1.f, 0.55f+0.3f*(1.f-ph), 0.18f, a), Painter::Alpha));
+    p.drawRect(x-s/2, y-s/2, s, s);
     }
 
-  float v = float(Gothic::inst().loadingProgress())/100.f;
-  drawProgress(p, x+int(100.f*scale), y+sh-int(75.f*scale), sw-2*int(100.f*scale), int(40.f*scale), v);
+  const int tx = int(cx - rr) - int(24.f*k) - ts.w;
+  fnt.drawText(p, tx, int(cy) + fnt.pixelSize()/3 - int(6.f*k), txt);
+  const Rect bar(tx, int(cy) + int(14.f*k), ts.w, std::max(3, int(4.f*k)));
+  drawDiathicBar(p, bar, float(Gothic::inst().loadingProgress())/100.f);
   }
 
 void MainWindow::isDialogClosed(bool& ret) {
@@ -1547,6 +1720,10 @@ uint64_t MainWindow::tick() {
     return 0;
 
   if(Gothic::inst().isPause()) {
+    // Diathic: in a pause the interface is still drawn every frame (the sword cursor, the menus' animation);
+    // before only on the menu's timer (10 times a second) - the cursor jumped
+    if(Camera::isArpgEnabled() || rootMenu.isActive())
+      update();
     return 0;
     }
 
@@ -1587,7 +1764,7 @@ uint64_t MainWindow::tick() {
       ArpgProgress::Hero h;
       h.level = pl->level();
       for(int t=1; t<=4; ++t)
-        h.pct[t] = pl->hitChance(Talent(t));
+        h.pct[t] = pl->hitChance(Talent(t)) - pl->world().script().arpgEquipFightBonus(*pl, t); // without the weapon's bonus
       gs->arpgProgress().initWeapons(h);
       }
   }
@@ -1760,6 +1937,7 @@ void MainWindow::startGame(std::string_view slot) {
     setGameImpl(nullptr);
     }
 
+  loadWorldHint = std::string(slot); // Diathic: the loading screen names the place
   Gothic::inst().startLoad("LOADING.TGA",[slot=std::string(slot)](std::unique_ptr<GameSession>&& game){
     game = nullptr; // clear world-memory now
     std::unique_ptr<GameSession> w(new GameSession(slot));
@@ -1776,6 +1954,19 @@ void MainWindow::loadGame(std::string_view slot) {
     }
 
   Gothic::inst().setBenchmarkMode(Benchmark::None);
+  // Diathic: the loading screen names the place of the save
+  loadWorldHint.clear();
+  try {
+    Tempest::RFile file(slot);
+    Serialize      s(file);
+    SaveGameHeader hdr;
+    s.setEntry("header");
+    s.read(hdr);
+    loadWorldHint = hdr.world;
+    }
+  catch(...) {
+    loadWorldHint.clear();
+    }
   Gothic::inst().startLoad("LOADING.TGA",[slot=std::string(slot)](std::unique_ptr<GameSession>&& game){
     game = nullptr; // clear world-memory now
     Tempest::RFile file(slot);
@@ -1847,6 +2038,9 @@ void MainWindow::onVideo(std::string_view fname) {
   }
 
 void MainWindow::onStartLoading() {
+  loadShown   = 0.f;
+  loadShownAt = 0;
+  loadTip     = loadingTip();
   dropArpgDialogLight();
   arpgRemarks.clear();
   player   .clearInput();
@@ -2211,6 +2405,12 @@ void MainWindow::paintArpgMinimap(Painter& p) {
       const float dx = np.x-hero.x, dz = np.z-hero.z;
       if(dx*dx+dz*dz > sight*sight)
         continue;
+      if(std::fabs(np.y-hero.y) > 250.f) {
+        // Diathic: another floor, a cave below, under the ground: only when the hero can see it
+        const auto ray = world->physic()->rayBothSides(hero+Vec3(0,150.f,0), np+Vec3(0,100.f,0));
+        if(ray.hasCol)
+          continue;
+        }
       const Vec2 sp = toScreen(np.x, np.z);
       if(player.arpgIsEnemy(*npc))
         p.setBrush(Brush(Color(0.9f,0.15f,0.1f,1.f), Painter::Alpha)); else
@@ -2315,6 +2515,43 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       });
   }
 
+  // Diathic: staggered (after a parry): blue stars going round over the head
+  {
+    const uint64_t now = world->tickCount();
+    auto stars = [&](Npc& n) {
+      if(n.isDead() || !n.arpgHasStatus(ArpgStatus::Stagger))
+        return;
+      const auto  bb  = n.bounds();
+      const float top = (bb.bbox[1].y>n.position().y+60.f && bb.bbox[1].y<n.position().y+700.f) ? bb.bbox[1].y : n.position().y+190.f;
+      Point sp;
+      if(!toScreen(Vec3(n.position().x, top+25.f, n.position().z), sp))
+        return;
+      const float rx = 26.f*scale, ry = 8.f*scale;
+      for(int i=0; i<3; ++i) {
+        const float ang = float(now%100000)*0.008f + float(i)*2.0944f;
+        const float cx  = float(sp.x) + std::cos(ang)*rx;
+        const float cy  = float(sp.y) + std::sin(ang)*ry;
+        const float s   = (6.f + 1.5f*std::sin(float(now%100000)*0.02f+float(i)))*scale;
+        const float w   = s*0.28f;
+        // a four-pointed star: two thin crossed diamonds (both windings: the UI pipeline culls one)
+        auto tri = [&](float ax, float ay, float bx, float by, float qx, float qy) {
+          p.drawTriangle(ax,ay,0,0, bx,by,0,0, qx,qy,0,0);
+          p.drawTriangle(ax,ay,0,0, qx,qy,0,0, bx,by,0,0);
+          };
+        p.setBrush(Brush(Color(0.35f,0.6f,1.f,0.6f), Painter::Add));
+        tri(cx,cy-s, cx+w,cy, cx,cy+s);
+        tri(cx,cy-s, cx-w,cy, cx,cy+s);
+        tri(cx-s,cy, cx,cy+w, cx+s,cy);
+        tri(cx-s,cy, cx,cy-w, cx+s,cy);
+        p.setBrush(Brush(Color(0.75f,0.88f,1.f,1.f), Painter::Alpha));
+        p.drawRect(int(cx)-1, int(cy)-1, 3, 3);
+        }
+      };
+    const auto& view  = cam->arpgView();
+    const float sight = view.fowRadius>0.f ? view.fowRadius : 1500.f;
+    world->detectNpc(pl->position(), sight, [&](Npc& n) { stars(n); });
+  }
+
   // floating numbers: rise and fade in about a second
   {
     auto&          list = world->arpgPopups();
@@ -2349,7 +2586,8 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       else if(e.kind==5) {
         // a skill of the trees went off
         type = Resources::FontType::Yellow;
-        const char* nm = (e.value==1) ? "Wir!" : (e.value==2) ? "Fala uderzeniowa!" : (e.value==3) ? "Grad strzał!" : "";
+        const char* nm = (e.value==1) ? "Wir!" : (e.value==2) ? "Fala uderzeniowa!" : (e.value==3) ? "Grad strzał!" :
+                         (e.value==4) ? "Parowanie!" : "";
         std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt(nm).c_str());
         } else {
         type = (e.kind==1) ? Resources::FontType::Red : Resources::FontType::Normal;
@@ -2382,6 +2620,30 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       else {
         p.setBrush(Brush(Color(0.85f,0.15f,0.1f,0.9f), Painter::Alpha));
         p.drawRect(sp.x-bw/2, sp.y, bw, bh);
+        }
+      }
+  }
+
+  // Diathic: the block: 3 charges over the head while it is held or not full (worn below 0: red, damage leaks)
+  {
+    const int32_t ch = pl->arpgBlockCharges();
+    Point sp;
+    if((pl->arpgBlockHeld() || ch<ArpgStatus::BlockCharges) && toScreen(pl->position()+Vec3(0,215.f,0), sp)) {
+      const int n   = ArpgStatus::BlockCharges;
+      const int sw  = int(20.f*scale), sh = std::max(4, int(6.f*scale)), gap = std::max(2, int(3.f*scale));
+      const int all = n*sw+(n-1)*gap;
+      const int x0  = sp.x-all/2;
+      p.setBrush(Brush(Color(0.f,0.f,0.f,0.7f), Painter::Alpha));
+      p.drawRect(x0-2, sp.y-2, all+4, sh+4);
+      for(int i=0; i<n; ++i) {
+        const int x = x0+i*(sw+gap);
+        if(ch>i)
+          p.setBrush(Brush(Color(0.85f,0.82f,0.70f,0.95f), Painter::Alpha));   // holds
+        else if(ch<0 && i<-ch)
+          p.setBrush(Brush(Color(0.85f,0.15f,0.10f,0.95f), Painter::Alpha));   // worn: 25% through each
+        else
+          p.setBrush(Brush(Color(0.25f,0.23f,0.20f,0.85f), Painter::Alpha));   // empty
+        p.drawRect(x, sp.y, sw, sh);
         }
       }
   }
