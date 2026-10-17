@@ -18,6 +18,7 @@
 #include "camera.h"
 #include "game/gamesession.h"
 #include "game/arpgskills.h"
+#include "game/definitions/sounddefinitions.h"
 #include "gothic.h"
 #include "resources.h"
 
@@ -2075,6 +2076,11 @@ bool Npc::commitDamageArpg() {
   const auto ws = weaponState();
   if(ws!=WeaponState::Fist && ws!=WeaponState::W1H && ws!=WeaponState::W2H)
     return false;
+  arpgCommitN++;
+  if(arpgNoCommitUntil>owner.tickCount()) {
+    arpgNoCommitUntil = 0; // only the skill's own swing
+    return true;           // Diathic: a skill (Pchnięcie, Skok) deals the damage of this swing itself
+    }
 
   // gothic-diablo: the swing hits every enemy in an arc in front of the hero (Gothic: one target; 120 degrees,
   // Szeroki łuk up to 180); a charged special attack (right mouse button): 180 degrees, x3 damage, knocks the enemies
@@ -2166,7 +2172,12 @@ bool Npc::arpgSpinning() const {
   }
 
 void Npc::arpgHoldParade() {
-  visual.holdParade(owner.tickCount());
+  // Diathic: a block held without a break is one block; a new one starts after a pause (parry: ArpgStatus::ParryWindowMs)
+  const uint64_t now = owner.tickCount();
+  if(arpgParadeLast==0 || now>arpgParadeLast+200)
+    arpgParadeStart = now;
+  arpgParadeLast = now;
+  visual.holdParade(now);
   }
 
 void Npc::arpgHoldAttack() {
@@ -2255,45 +2266,106 @@ void Npc::arpgNpcCollision(bool on) {
   physic.setNpcCollision(on);
   }
 
-void Npc::arpgDot(ArpgDot& d, float dps, uint64_t ms, Npc& from) {
+void Npc::arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from) {
+  if(id>=ArpgStatus::Count || isDead())
+    return;
   const uint64_t now = owner.tickCount();
-  if(d.until<=now)
-    d.next = now+1000;
-  d.dps   = std::max(d.until>now ? d.dps : 0.f, dps); // the stronger one, longer
-  d.until = now+ms;
-  d.from  = &from;
+  auto&          st  = arpgSt[id];
+  if(ArpgStatus::info(id).dot) {
+    if(st.until<=now)
+      st.next = now+1000;
+    st.value = std::max(st.until>now ? st.value : 0.f, value); // the stronger one, longer
+    } else {
+    st.value = value;
+    }
+  st.until = std::max(st.until, now+ms);
+  st.from  = from;
+
+  if(id==ArpgStatus::Stagger) {
+    // the swing stops (a stumble, like a hit), no attack until it is over (Npc::doAttack)
+    const bool noInter = (hnpc->bodystate_interruptable_override!=0);
+    if(!isDown() && interactive()==nullptr && !noInter) {
+      char hitType = 'A';
+      if(from!=nullptr) {
+        const float a  = angleDir(from->x-x, from->z-z);
+        const float da = a-angle;
+        hitType = (std::cos(da*M_PI/180.0)<0) ? 'A' : 'B';
+        }
+      visual.interrupt();
+      setAnimAngGet(hitType=='A' ? Anim::StumbleA : Anim::StumbleB);
+      }
+    if(!isPlayer())
+      implFaiWait(ms);
+    }
+  if(id==ArpgStatus::Burn && arpgBurnFx==nullptr) {
+    if(auto vfx = Gothic::inst().loadVisualFx("VOB_MAGICBURN")) {
+      Effect e(*vfx, owner, *this, SpellFxKey::Count);
+      e.setActive(true);
+      visual.startEffect(owner, std::move(e), 0, true);
+      arpgBurnFx = vfx;
+      }
+    }
   }
 
-void Npc::arpgTickDots() {
+void Npc::arpgParrySound() {
+  // Diathic: a parry - the clang and the sparks of metal on metal (Gothic's block) and a short bell, when the sounds of
+  // the game have one (looked up once by name, the names found go to the log)
+  static bool        chosen = false;
+  static std::string bell;
+  if(!chosen) {
+    chosen = true;
+    const auto  list = Gothic::sfx().find({"BELL", "GLOCK", "CHIME", "GONG", "KLING"});
+    std::string all;
+    for(auto& n:list)
+      all += (all.empty() ? "" : ", ") + n;
+    Tempest::Log::i("Diathic: parry, bells in the sounds of the game: ", all.empty() ? std::string("none") : all);
+    if(!list.empty())
+      bell = list[0];
+    }
+  Tempest::Matrix4x4 m;
+  m.identity();
+  m.translate(x, y+130.f, z);
+  owner.addWeaponBlkEffect(MAT_METAL, MAT_METAL, m).play();
+  if(!bell.empty())
+    emitSoundEffect(bell, 2000.f, true);
+  }
+
+bool Npc::arpgHasStatus(ArpgStatus::Id id) const {
+  return id<ArpgStatus::Count && arpgSt[id].until>owner.tickCount();
+  }
+
+void Npc::arpgTickStatus() {
   const uint64_t now = owner.tickCount();
-  for(ArpgDot* d:{&arpgBleed, &arpgBurn}) {
-    if(d->until==0)
+  for(uint8_t i=0; i<ArpgStatus::Count; ++i) {
+    auto& st = arpgSt[i];
+    if(st.until==0)
       continue;
-    if(isDead() || d->from==nullptr) {
-      d->until = 0;
-      continue;
+    if(isDead()) {
+      st.until = now;
       }
-    while(d->next<=now && d->next<=d->until) {
-      d->next += 1000;
-      const int32_t v = std::max<int32_t>(1, int32_t(std::lround(d->dps)));
-      if(isDown())
-        break;
-      const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
-      lastHit      = d->from;
-      currentOther = d->from;
-      changeAttribute(ATR_HITPOINTS, -v, true);
-      const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
-      if(lost>0)
-        owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, 0);
-      if(isDead())
-        owner.sendPassivePerc(*this,*d->from,*this,PERC_ASSESSMURDER);
-      else if(isUnconscious())
-        owner.sendPassivePerc(*this,*d->from,*this,PERC_ASSESSDEFEAT);
+    else if(ArpgStatus::info(ArpgStatus::Id(i)).dot && st.from!=nullptr) {
+      // damage every second
+      while(st.next<=now && st.next<=st.until) {
+        st.next += 1000;
+        const int32_t v = std::max<int32_t>(1, int32_t(std::lround(st.value)));
+        if(isDown())
+          break;
+        const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
+        lastHit      = st.from;
+        currentOther = st.from;
+        changeAttribute(ATR_HITPOINTS, -v, true);
+        const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
+        if(lost>0)
+          owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, 0);
+        if(isDead())
+          owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSMURDER);
+        else if(isUnconscious())
+          owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSDEFEAT);
+        }
       }
-    if(d->until<=now) {
-      d->until = 0;
-      d->dps   = 0;
-      if(d==&arpgBurn && arpgBurnFx!=nullptr) {
+    if(st.until<=now) {
+      st = ArpgStatusState();
+      if(i==ArpgStatus::Burn && arpgBurnFx!=nullptr) {
         visual.stopEffect(*arpgBurnFx);
         arpgBurnFx = nullptr;
         }
@@ -2345,25 +2417,107 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
     arpgParry = (cam!=nullptr && cam->isArpgActive());
     }
   // gothic-diablo: Łamacz gardy: the hero's charged attack goes through a block
-  const auto* hk         = other.arpgPerks();
-  const bool  guardBreak = hk!=nullptr && hk->guardBreak && other.arpgHitSpecial && b==nullptr;
-  const bool  isBlock = (arpgParry || !other.isMonster() || other.inventory().activeWeapon()!=nullptr) &&
-                         fghAlgo.isInFocusAngle(*this,other) &&
-                         pose.isDefence(owner.tickCount()) && !guardBreak;
+  const auto*    hk         = other.arpgPerks();
+  const bool     guardBreak = b==nullptr && ((hk!=nullptr && hk->guardBreak && other.arpgHitSpecial) ||
+                                               other.arpgHitSkill!=nullptr); // Diathic: the skills of the weapon trees too
+  // Diathic: the hero's tree Blok: Bastion (all round after a parry), Osłona (arrows), Odwet
+  const auto*    mk         = arpgParry ? arpgPerks() : nullptr;
+  const uint64_t nowT       = owner.tickCount();
+  const bool     bastion    = mk!=nullptr && arpgBastionUntil>nowT;
+  const bool     inFront    = fghAlgo.isInFocusAngle(*this,other) || bastion;
+  const bool     isBlock = (arpgParry || !other.isMonster() || other.inventory().activeWeapon()!=nullptr) &&
+                         inFront && pose.isDefence(owner.tickCount()) && !guardBreak;
+  const bool     arrowBlock = b!=nullptr && mk!=nullptr && mk->arrowBlock && isBlock;
 
   lastHit = &other;
   if(!isPlayer())
     setOther(&other);
   owner.sendPassivePerc(*this,other,*this,PERC_ASSESSFIGHTSOUND);
 
-  if(!(isBlock || isJumpb) || b!=nullptr) {
+  // Diathic: parry - the hero's block started at most ArpgStatus::ParryWindowMs before the hit of an enemy in front of him:
+  // no damage, the enemy is staggered (ArpgStatus::Stagger), a short sound
+  // (Wyczucie ostrza: a longer window with a 1H weapon; Dłuższe zachwianie; Bastion and Riposta after it)
+  const uint64_t parryWin = ArpgStatus::ParryWindowMs +
+                            ((mk!=nullptr && weaponState()==WeaponState::W1H) ? uint64_t(mk->parry1H) : 0);
+  if(arpgParry && b==nullptr && !guardBreak && &other!=this && arpgParadeStart!=0 &&
+     owner.tickCount()<=arpgParadeLast+100 && owner.tickCount()<=arpgParadeStart+parryWin &&
+     fghAlgo.isInFocusAngle(*this,other)) {
+    const uint64_t extra = mk!=nullptr ? uint64_t(mk->staggerAdd*1000.f) : 0;
+    other.arpgApplyStatus(ArpgStatus::Stagger, ArpgStatus::StaggerMs+extra, 0.f, this);
+    owner.arpgPopup(position()+Tempest::Vec3(0,200.f,0), 4, 5); // "Parowanie!"
+    arpgParrySound();
+    arpgParadeStart = 0; // one parry per block
+    if(mk!=nullptr && mk->bastion)
+      arpgBastionUntil = nowT+ArpgStatus::BastionMs;
+    if(mk!=nullptr && mk->riposte && !other.isDead())
+      arpgRiposteTg = &other;
+    return;
+    }
+
+  if(!(isBlock || isJumpb) || (b!=nullptr && !arrowBlock)) {
     takeDamage(other,b,COLL_DOEVERYTHING,0,false);
-    } else {
+    }
+  else if(arpgParry && isBlock && arpgBlockCh<=0 && !bastion) {
+    // Diathic: the block is worn out: one more below 0 (to -BlockDebt), 25% of the damage through for each
+    arpgBlockCh = std::max(arpgBlockCh-1, -ArpgStatus::BlockDebt);
+    arpgDmgScale  = std::min(1.f, float(-arpgBlockCh)*ArpgStatus::BlockLeak);
+    arpgBlockLeak = true;
+    takeDamage(other,b,COLL_DOEVERYTHING,0,false);
+    arpgDmgScale  = 1.f;
+    arpgBlockLeak = false;
+    if(invent.activeWeapon()!=nullptr)
+      visual.emitBlockEffect(*this,other);
+    }
+  else {
+    if(arpgParry && isBlock && !bastion)
+      arpgBlockCh = std::max(0, arpgBlockCh-1); // Diathic: one hit of the block's 3
     if(Camera::isArpgEnabled() && (other.isPlayer() || isPlayer()))
       owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 2); // gothic-diablo: "blocked"
     if(invent.activeWeapon()!=nullptr)
       visual.emitBlockEffect(*this,other);
+    if(mk!=nullptr && mk->retaliate>0.f && b==nullptr && &other!=this && !other.isDead()) {
+      // Diathic: Odwet: a part of the blocked hit back to the attacker
+      DamageCalculator::Damage d = {};
+      const auto v = DamageCalculator::damageValue(other,*this,nullptr,false,d,COLL_DOEVERYTHING);
+      if(v.value>0)
+        other.arpgDirectDamage(*this, std::max<int32_t>(1, int32_t(std::lround(float(v.value)*mk->retaliate))));
+      }
     }
+  }
+
+int32_t Npc::arpgBlockMax() const {
+  const auto* pk = arpgPerks();
+  return ArpgStatus::BlockCharges + (pk!=nullptr ? pk->blockCharges : 0);
+  }
+
+void Npc::arpgDirectDamage(Npc& from, int32_t v) {
+  // like a tick of bleeding: no stumble, the number over the head, Gothic's perceptions of a death / a defeat
+  if(v<=0 || isDead() || isDown())
+    return;
+  const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
+  lastHit      = &from;
+  currentOther = &from;
+  changeAttribute(ATR_HITPOINTS, -v, true);
+  const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
+  if(lost>0)
+    owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, isPlayer() ? 1 : 0);
+  if(isDead())
+    owner.sendPassivePerc(*this,from,*this,PERC_ASSESSMURDER);
+  else if(isUnconscious())
+    owner.sendPassivePerc(*this,from,*this,PERC_ASSESSDEFEAT);
+  }
+
+void Npc::arpgSkillDamage(Npc& tg, const ArpgSkillHit& h) {
+  // Diathic: a skill of the weapon trees: Gothic's hit of the weapon in hand, then the skill's multiplier and effects
+  if(&tg==this || tg.isDead() || tg.isDown())
+    return;
+  arpgHitSkill = &h;
+  tg.takeDamage(*this,nullptr);
+  arpgHitSkill = nullptr;
+  }
+
+bool Npc::arpgBlockHeld() const {
+  return arpgParadeLast!=0 && owner.tickCount()<=arpgParadeLast+100;
   }
 
 void Npc::takeDamage(Npc& other, const Bullet* b, const VisualFx* vfx, int32_t splId) {
@@ -2420,10 +2574,17 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
   const bool       arpgSpecialHit = (other.isPlayer() && other.arpgHitSpecial && b==nullptr && !isSpell);
   const ArpgPerks* hk             = isSpell ? nullptr : other.arpgPerks();
   const uint64_t   now            = owner.tickCount();
+  const auto*      sk             = (hk!=nullptr && b==nullptr) ? other.arpgHitSkill : nullptr; // Diathic: a skill
+  const auto       ows            = other.weaponState();
+  const bool       rage           = hk!=nullptr && hk->mercRage &&
+                                    other.attribute(ATR_HITPOINTS)*10<other.attribute(ATR_HITPOINTSMAX)*3;
   if(hitResult.value>0 && (arpgSpecialHit || hk!=nullptr)) {
     float mul = 1.f;
     if(arpgSpecialHit) {
       mul = other.arpgSpecialMul*(other.arpgHitWave ? 0.5f : 1.f); // the shock wave: half
+      }
+    else if(sk!=nullptr) {
+      mul = sk->mul;
       }
     else if(hk!=nullptr && b==nullptr) {
       mul += hk->meleeDmg;                                         // Ostra klinga
@@ -2435,6 +2596,18 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
         mul += hk->counter;                                        // Kontratak
       if(arpgIsKnockedDown())
         mul += hk->vsDown;                                         // Dobicie
+      if(ows==WeaponState::W2H)
+        mul += hk->dmg2H;                                          // Diathic: Miażdżenie
+      }
+    if(hk!=nullptr) {
+      if(rage)
+        mul += ArpgStatus::RageDmg;                                // Diathic: Szał najemnika
+      if(b!=nullptr && isMonster())
+        mul += hk->hunter;                                         // Diathic: Myśliwy
+      if(b!=nullptr && hk->stalker && currentTarget!=&other && weaponState()==WeaponState::NoWeapon) {
+        mul *= ArpgStatus::StalkerMul;                             // Diathic: Łowca, not noticed yet
+        owner.arpgPopup(position()+Tempest::Vec3(0,230.f,0), 9, 5);
+        }
       }
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*mul)));
     }
@@ -2445,6 +2618,26 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
         hitResult.value = std::max<int32_t>(0, hitResult.value-pk->hardSkin);
       arpgHardSkinUntil = now+3000;
       }
+    }
+  if(hitResult.value>0 && isPlayer()) {
+    // Diathic: Twardy jak skała (with a 2H weapon), Osłona przed magią (a spell, the block held)
+    if(auto pk = arpgPerks()) {
+      float cut = 0.f;
+      if(weaponState()==WeaponState::W2H)
+        cut += pk->guard2H;
+      if(isSpell && arpgBlockHeld())
+        cut += pk->spellBlock;
+      if(cut>0.f)
+        hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*(1.f-std::min(cut,0.9f)))));
+      }
+    }
+  // Diathic: through the worn out block: only a part
+  if(hitResult.value>0 && arpgDmgScale!=1.f)
+    hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*arpgDmgScale)));
+  // Diathic: staggered (after a parry): this hit x4, and the stagger is over (damage over time does not end it)
+  if(hitResult.value>0 && arpgHasStatus(ArpgStatus::Stagger)) {
+    hitResult.value = int32_t(std::lround(float(hitResult.value)*ArpgStatus::StaggerDmgMul));
+    arpgSt[ArpgStatus::Stagger].until = owner.tickCount();
     }
   // gothic-diablo: hero's arrows in the ARPG view (normal shot x0.5, charged shot x1.5)
   if(b!=nullptr && !isSpell && hitResult.value>0 && b->arpgDamageMul()!=1.f)
@@ -2457,7 +2650,11 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
     return;
     }
 
-  if(hitResult.hasHit) {
+  // Diathic: Niewzruszony: the hero's swing with a 2H weapon goes on; Młyn is not stopped by a hit either
+  bool unstoppable = false;
+  if(auto pk = arpgPerks())
+    unstoppable = arpgMillUntil>now || (pk->unstoppable && weaponState()==WeaponState::W2H && isAttackAnim());
+  if(hitResult.hasHit && !arpgBlockLeak && !unstoppable) { // Diathic: a hit through the worn out block does not break the block
     auto state = bodyStateMasked();
     if(interactive()==nullptr && ((state&BS_FLAG_INTERRUPTABLE)!=BS_NONE || state==BS_RUN || state==BS_NONE)) {
       //NONE/RUN requires for monsters like waran
@@ -2480,6 +2677,9 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
   else if(hitResult.hasHit && arpgSpecialHit && other.arpgSpecialKnock && !other.arpgHitWave) {
     arpgKnockDown(other); // gothic-diablo: special attack knocks down
     }
+  else if(hitResult.hasHit && sk!=nullptr && sk->knock) {
+    arpgKnockDown(other); // Diathic: Skok, Szarża
+    }
   else if(hitResult.hasHit && hk!=nullptr && b==nullptr && !arpgSpecialHit && hk->knockback>0.f && isMonster()) {
     // gothic-diablo: Odrzut: small creatures are pushed back (0.25 of a push speed = about 1 m)
     const auto bb = bounds();
@@ -2501,20 +2701,25 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
         if(hk->leech>0.f && !other.isDead())
           other.changeAttribute(ATR_HITPOINTS, std::max<int32_t>(1, int32_t(std::lround(float(lost)*hk->leech))), false);
         if(hk->bleed>0.f && b==nullptr && !isDown())
-          arpgDot(arpgBleed, float(lost)*hk->bleed, 3000, other);      // Głębokie rany
-        if(hk->innosWrath && arpgSpecialHit && !isDown()) {
-          arpgDot(arpgBurn, std::max(4.f, float(lost)*0.1f), 4000, other); // Gniew Innosa
-          if(arpgBurnFx==nullptr) {
-            if(auto vfx = Gothic::inst().loadVisualFx("VOB_MAGICBURN")) {
-              Effect e(*vfx, owner, *this, SpellFxKey::Count);
-              e.setActive(true);
-              visual.startEffect(owner, std::move(e), 0, true);
-              arpgBurnFx = vfx;
-              }
-            }
-          }
+          arpgApplyStatus(ArpgStatus::Bleed, 3000, float(lost)*hk->bleed, &other);              // Głębokie rany
+        if(hk->innosWrath && arpgSpecialHit && !isDown())
+          arpgApplyStatus(ArpgStatus::Burn, 4000, std::max(4.f, float(lost)*0.1f), &other);    // Gniew Innosa
         if(arpgSpecialHit && isDown())
           other.arpgSpecialKill = true;                                 // Pęd bitewny
+        // Diathic: the weapon trees
+        if(hk->critBleed>0.f && b==nullptr && hitResult.arpgFull && ows==WeaponState::W1H && !isDown())
+          arpgApplyStatus(ArpgStatus::Bleed, 3000, float(lost)*hk->critBleed, &other);          // Rozcięcie
+        if(sk!=nullptr && sk->bleed>0.f && !isDown())
+          arpgApplyStatus(ArpgStatus::Bleed, 3000, float(lost)*sk->bleed, &other);              // Pchnięcie
+        if(sk!=nullptr && sk->stagger>0 && !isDown())
+          arpgApplyStatus(ArpgStatus::Stagger, sk->stagger, 0.f, &other);                       // Uderzenie
+        if(sk==nullptr && b==nullptr && hk->stun2H>0.f && ows==WeaponState::W2H && !isDown() &&
+           owner.script().rand(100)<uint32_t(hk->stun2H*100.f))
+          arpgApplyStatus(ArpgStatus::Stagger, ArpgStatus::StaggerMs+uint64_t(hk->staggerAdd*1000.f), 0.f, &other); // Ogłuszenie
+        if(rage && !other.isDead())
+          other.changeAttribute(ATR_HITPOINTS, std::max<int32_t>(1, int32_t(std::lround(float(lost)*ArpgStatus::RageLeech))), false);
+        if(isDown() && hk->butcher>0.f && ows==WeaponState::W2H)
+          other.arpgButcherUntil = now+ArpgStatus::ButcherMs;                                   // Rzeźnik
         }
       }
 
@@ -2754,15 +2959,18 @@ void Npc::tick(uint64_t dt) {
 
   assert(go2.flag!=GoToHint::GT_Enemy && go2.flag!=GoToHint::GT_EnemyG);
 
-  // gothic-diablo: hero attacks 20% faster in the ARPG view (Płynne ruchy more); Szybki naciąg: bow / crossbow
+  // gothic-diablo: hero's attacks faster with Płynne ruchy (Diathic: no base bonus any more); Szybki naciąg: bow / crossbow
   if(isPlayer() && Camera::isArpgEnabled()) {
     auto        cam = Gothic::inst().camera();
     const auto* pk  = arpgPerks();
     if(cam!=nullptr && cam->isArpgActive() && pk!=nullptr) {
       visual.setArpgComboWindow(1.f+pk->comboWindow);
       const auto ws = weaponState();
-      if(isAttackAnim()) {
-        arpgWarpAcc += float(dt)*(0.2f+pk->atkSpeed);
+      // Diathic: Lekka broń (1H), Rzeźnik (2H, 3 s after a kill)
+      const float spd = pk->atkSpeed + arpgSkillSpeed + (ws==WeaponState::W1H ? pk->atkSpeed1H : 0.f) +
+                        ((ws==WeaponState::W2H && arpgButcherUntil>owner.tickCount()) ? pk->butcher : 0.f);
+      if(isAttackAnim() && spd>0.f) {
+        arpgWarpAcc += float(dt)*spd;
         const uint64_t ms = uint64_t(arpgWarpAcc);
         arpgWarpAcc -= float(ms);
         visual.warpAttack(ms, owner.tickCount());
@@ -2777,9 +2985,19 @@ void Npc::tick(uint64_t dt) {
       visual.setArpgComboWindow(1.f);
       }
     arpgTickShadow();
+    // Diathic: the block lowered: one charge back a second
+    // (Twarda garda: more charges, Oddech: faster)
+    const uint64_t now   = owner.tickCount();
+    const uint64_t regen = uint64_t(float(ArpgStatus::BlockRegenMs)/(1.f+(pk!=nullptr ? pk->blockRegen : 0.f)));
+    if(arpgBlockHeld() || arpgBlockCh>=arpgBlockMax()) {
+      arpgBlockRegen = now+regen;
+      }
+    else if(now>=arpgBlockRegen) {
+      arpgBlockCh   += 1;
+      arpgBlockRegen = now+regen;
+      }
     }
-  if(arpgBleed.until!=0 || arpgBurn.until!=0)
-    arpgTickDots();
+  arpgTickStatus();
   if(arpgSpinUntil!=0) {
     // Wir: one turn in 0.3 s
     if(arpgSpinUntil>owner.tickCount())
@@ -4261,6 +4479,8 @@ bool Npc::doAttack(Anim anim, BodyState bs) {
   auto weaponSt = weaponState();
   if(weaponSt==WeaponState::NoWeapon || weaponSt==WeaponState::Mage)
     return false;
+  if(arpgHasStatus(ArpgStatus::Stagger))
+    return false; // Diathic: staggered - no attack, no block
 
   if(mvAlgo.isSwim())
     return false;
@@ -4559,7 +4779,10 @@ bool Npc::shootBow(Interactive* focOverride) {
 
   auto& b = owner.shootBullet(*itm,*this,currentTarget,focOverride);
 
-  invent.delItem(size_t(munition),1,*this);
+  // Diathic: Kołczan: sometimes the arrow is not used up
+  const auto* qk = arpgHero ? arpgPerks() : nullptr;
+  if(qk==nullptr || qk->quiver<=0.f || owner.script().rand(100)>=uint32_t(qk->quiver*100.f))
+    invent.delItem(size_t(munition),1,*this);
   b.setOrigin(this);
   b.setDamage(DamageCalculator::rangeDamageValue(*this));
 
@@ -4610,6 +4833,42 @@ bool Npc::shootBow(Interactive* focOverride) {
       }
     }
   arpgShotMul = 1.f;
+  return true;
+  }
+
+bool Npc::arpgSkillArrow(const Tempest::Vec3* from, const Tempest::Vec3& vel, const Npc* tg, float mul) {
+  // Diathic: an arrow of a skill (Deszcz strzał, Odskok): no animation, always hits, uses no arrow (the skill took one)
+  auto active = invent.activeWeapon();
+  if(active==nullptr)
+    return false;
+  auto itm = invent.getItem(size_t(active->handle().munition));
+  if(itm==nullptr)
+    return false;
+  auto& b = owner.shootBullet(*itm,*this,tg,nullptr);
+  if(from!=nullptr)
+    b.setPosition(*from);
+  if(tg==nullptr)
+    b.setDirection(vel);
+  b.setOrigin(this);
+  b.setDamage(DamageCalculator::rangeDamageValue(*this));
+  b.setHitChance(1.f);
+  b.setArpgSure(true);
+  b.setArpgDamageMul(ArpgBowDamage*mul);
+  if(auto pk = arpgPerks())
+    b.setArpgPierce(pk->pierce);
+  return true;
+  }
+
+bool Npc::arpgUseArrow() {
+  auto active = invent.activeWeapon();
+  if(active==nullptr)
+    return false;
+  const int32_t mun = active->handle().munition;
+  if(mun<0 || invent.itemCount(size_t(mun))<=0)
+    return false;
+  const auto* pk = arpgPerks();
+  if(pk==nullptr || pk->quiver<=0.f || owner.script().rand(100)>=uint32_t(pk->quiver*100.f))
+    invent.delItem(size_t(mun),1,*this);
   return true;
   }
 
@@ -5194,6 +5453,10 @@ SensesBit Npc::canSenseNpc(const Npc &oth, bool freeLos, float extRange) const {
   // NOTE3: seem npc can't hear player in general case, and hearing relevant only for sendImmediatePerc cases
   const bool isNoisy = false;
   const auto mid     = oth.centerPosition();
+  if(Camera::isArpgEnabled() && oth.isPlayer() && isMonster()) {
+    // Diathic: from above the hero sees far around; creatures notice him at 80% of their range
+    return canSenseNpc(mid,freeLos,isNoisy,extRange-ArpgMonsterSenseCut*float(hnpc->senses_range));
+    }
   return canSenseNpc(mid,freeLos,isNoisy,extRange);
   }
 

@@ -609,9 +609,11 @@ function Invoke-Gui {
   $linkData = New-Link 'Zapisy i logi'
   $linkGame = New-Link 'Folder Gothic II'
   $linkPage = New-Link 'Strona buildu'
+  $linkBug  = New-Link 'Zgłoś błąd'
   $links.Controls.Add($linkData)
   $links.Controls.Add($linkGame)
   $links.Controls.Add($linkPage)
+  $links.Controls.Add($linkBug)
   $tips = New-Object Windows.Forms.ToolTip
   $tips.SetToolTip($linkGame, $(if ($Cfg.GothicPath) { $Cfg.GothicPath } else { 'nie wskazano' }))
 
@@ -802,6 +804,65 @@ function Invoke-Gui {
     Log "Gothic II: $Path" 'ok'
   }
 
+  # --- raport błędu: gra po crashu zapisuje gra\dane\raporty\crash-<data> (kontekst, crash.log, crash.dmp, log.txt) ---
+  function Get-Crashes {
+    $dir = Join-Path $Cfg.DataDir 'raporty'
+    @(Get-ChildItem -LiteralPath $dir -Directory -Filter 'crash-*' -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+  }
+
+  function Test-NewCrash {
+    $last = Get-Crashes | Select-Object -First 1
+    if (-not $last) { return $false }
+    $mark = Join-Path (Join-Path $Cfg.DataDir 'raporty') 'zgloszony.txt'
+    -not (Test-Path -LiteralPath $mark) -or (Get-Item -LiteralPath $mark -Force).LastWriteTime -lt $last.LastWriteTime
+  }
+
+  function New-BugReport {
+    $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+    $tmp   = Join-Path $env:TEMP "diathic-raport-$stamp"
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $d = $Cfg.DataDir
+
+    $crash = Get-Crashes | Select-Object -First 1
+    if ($crash) { Copy-Item -LiteralPath $crash.FullName -Destination (Join-Path $tmp $crash.Name) -Recurse }
+    foreach ($n in 'log.txt', 'crash.log', 'Gothic.ini') {
+      $p = Join-Path $d $n
+      if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination $tmp }
+    }
+    $sav = Get-ChildItem -LiteralPath $d -Filter '*.sav' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($sav) { Copy-Item -LiteralPath $sav.FullName -Destination $tmp }
+
+    $info = New-Object Collections.Generic.List[string]
+    $it = Get-Selected
+    $info.Add("Raport Diathic $stamp")
+    if ($it) { $info.Add("Wybrana wersja: $($it.Title) ($($it.Tag))") }
+    $info.Add('Zainstalowane: ' + ((Get-Installed | ForEach-Object { $_.Tag }) -join ', '))
+    $info.Add("Gothic II: $($Cfg.GothicPath)")
+    try {
+      $os = Get-CimInstance Win32_OperatingSystem
+      $info.Add("System: $($os.Caption) $($os.Version), RAM $([math]::Round($os.TotalVisibleMemorySize / 1MB, 1)) GB")
+      Get-CimInstance Win32_Processor | ForEach-Object { $info.Add("CPU: $($_.Name.Trim())") }
+      Get-CimInstance Win32_VideoController | ForEach-Object { $info.Add("GPU: $($_.Name), sterownik $($_.DriverVersion)") }
+    } catch { $info.Add('(brak danych systemu)') }
+    $info.Add('')
+    $info.Add('Dziennik zdarzeń Windows (Application Error / Windows Error Reporting, 14 dni):')
+    $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = @('Application Error', 'Windows Error Reporting'); StartTime = (Get-Date).AddDays(-14) } -ErrorAction SilentlyContinue |
+      Where-Object { $_.Message -match 'Gothic2Notr' } | Select-Object -First 6)
+    if (-not $ev.Count) { $info.Add('(brak wpisów o Gothic2Notr.exe)') }
+    foreach ($e in $ev) { $info.Add("--- $($e.TimeCreated) $($e.ProviderName) $($e.Id)"); $info.Add($e.Message) }
+    Set-Content -LiteralPath (Join-Path $tmp 'system.txt') -Value $info -Encoding UTF8
+
+    $zip = Join-Path ([Environment]::GetFolderPath('Desktop')) "Diathic-raport-$stamp.zip"
+    Compress-Archive -Path (Get-ChildItem -LiteralPath $tmp).FullName -DestinationPath $zip -Force
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    if ($crash) {
+      $mark = Join-Path (Join-Path $d 'raporty') 'zgloszony.txt'
+      Set-Content -LiteralPath $mark -Value $stamp
+    }
+    $zip
+  }
+
   # --- zdarzenia ---
   $combo.Add_SelectedIndexChanged({ try { Show-Selected } catch { } })
   $btnPlay.Add_Click({ Invoke-Play $false })
@@ -811,6 +872,17 @@ function Invoke-Gui {
     Start-Process explorer.exe -ArgumentList "`"$($Cfg.DataDir)`""
   })
   $linkPage.Add_LinkClicked({ $it = Get-Selected; if ($it -and $it.Page) { Start-Process $it.Page } })
+  $linkBug.Add_LinkClicked({
+    $form.Cursor = [Windows.Forms.Cursors]::WaitCursor
+    try {
+      $zip = New-BugReport
+      $linkBug.Text = 'Zgłoś błąd'; $linkBug.LinkColor = $C.Muted
+      Log "Raport na pulpicie: $(Split-Path $zip -Leaf) – wyślij go twórcom." 'ok'
+      Start-Process explorer.exe -ArgumentList "/select,`"$zip`""
+    } catch {
+      Log "Nie udało się zrobić raportu: $($_.Exception.Message)" 'error'
+    } finally { $form.Cursor = [Windows.Forms.Cursors]::Default }
+  })
   $linkGame.Add_LinkClicked({
     $p = Select-GothicFolder $pickWhy $form
     if ($p) { Set-GamePath $p }
@@ -858,6 +930,12 @@ function Invoke-Gui {
   })
 
   $form.Add_Shown({
+    # stare raporty: zostaje 10 najnowszych; nowy crash = przycisk na żółto
+    Get-Crashes | Select-Object -Skip 10 | ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Recurse -Force } catch { } }
+    if (Test-NewCrash) {
+      $linkBug.Text = 'Zgłoś błąd (gra się wysypała)'; $linkBug.LinkColor = $C.Warn
+      $tips.SetToolTip($linkBug, 'Pakuje raport błędu, logi i ostatni zapis do pliku zip na pulpicie')
+    }
     if ($Offline) {
       $St.Ready = $true
       Update-Items
