@@ -7,6 +7,7 @@
 #include <cctype>
 
 #include "utils/string_frm.h"
+#include "utils/arpgcrash.h"
 #include "worldstatestorage.h"
 #include "world/objects/npc.h"
 #include "world/world.h"
@@ -329,6 +330,11 @@ void GameSession::tick(uint64_t dt) {
 
   vm->tick(dt);
   wrld->tick(dt);
+  if(auto pl = wrld->player()) {
+    // Diathic: where the hero is, for the crash report
+    const auto p = pl->position();
+    ArpgCrash::setPlace(wrld->name(), p.x, p.y, p.z, Camera::isArpgEnabled());
+    }
   // std::this_thread::sleep_for(std::chrono::milliseconds(60));
 
   if(exitSessionFlg) {

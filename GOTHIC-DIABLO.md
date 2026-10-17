@@ -220,6 +220,14 @@ Decyzje 2026-10-16: jedno drzewko na broń; łuk i kusza wspólnie; drzewko Blok
 | Napisy umiejętności nad głową: Uderzenie!, Szarża!, Pchnięcie!, Taniec ostrzy!, Łowca!, Skok!, Młyn!, Deszcz strzał!, Odskok!, Riposta!; wpis „Diathic: skill …” w log.txt | `MainWindow::paintArpgCombat` (`names`), `arpgSkillStart` |
 | Wartości do balansu (odnowienia, odległości, mnożniki) w jednym miejscu | `game/arpgstatus.h` (`BashCd` … `RiposteTime`, `RageDmg`, `StalkerMul`) |
 
+## Poprawki dla testerów (gałąź poprawki-miasto)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Raport błędu: po crashu gra zapisuje `gra\dane\raporty\crash-<data>\` — `kontekst.txt` (wyjątek, moduł + przesunięcie i adres dla addr2line, świat, pozycja bohatera, tryb, stos odwinięty z kontekstu wyjątku), `crash.log` (stos OpenGothic), `crash.dmp` (minizrzut), `log.txt` (opróżniony bufor; przy następnym starcie log.txt jest nadpisywany) | `ArpgCrash` (`common/utils/arpgcrash.cpp`), zaczepy: `CrashLog::dumpStack`, `exceptionHandler`, `main`, `GameSession::tick` |
+| Launcher: „Zgłoś błąd” = zip na pulpicie (najnowszy raport crasha, log.txt, crash.log, Gothic.ini, ostatni zapis, `system.txt`: wersja, Windows, CPU, GPU i sterownik, wpisy o Gothic2Notr.exe z dziennika zdarzeń Windows); po nowym crashu link na żółto „(gra się wysypała)”; zostaje 10 raportów | `launcher.ps1` (`New-BugReport`, `Test-NewCrash`) |
+| Ctrl trzymany: każda żywa postać pod kursorem jak wróg — czerwony kursor, czerwona etykieta, poświata (Ctrl + LPM ją atakuje) | `PlayerControl::arpgCanAttack`, `arpgCursorOnEnemy`, `tickFocus`, `MainWindow::drawArpgLabel` |
+
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
 Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury, światło, obraz, efekty. Komplet zasad, podział plików i stan: [`docs/plan/grafika.md`](docs/plan/grafika.md).
@@ -288,6 +296,11 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Dziennik: B_LogEntry / Log_AddEntry z tematem TOPIC_*TEACHER / *TRADER (bez TOPIC_ADDON_BANDITTRADER) w funkcji dialogu (C_Info.information) → C_Info.npc; 141 wpisów, 131 z postacią; gdy wpis wymienia inne imię (np. Skip o Garecie) — ta postać
 - Klawisze w Gothic.ini: kody DIK (0x2d = X, 0x13 = R, 0x2e = C, 0x39 = Spacja, 0x32 = M…), przyciski myszy 0x0c02 lewy, 0x0d02 prawy, 0x0e02 środkowy; klawisze ARPG w sekcji [DIATHIC]; keyShowMap = M → skrypt playerHotKeyScreenMap (w trybie ARPG M przejmuje nasza mapa); skradanie w Gothicu wymaga talentu (Npc::canSneak = TALENT_SNEAK)
 - Klawisze użytkownika: Gothic II\system\Gothic.ini — Q/E obrót, A/D krok w bok, Spacja + środkowy przycisk broń, Alt / prawy Ctrl skok, End + prawy przycisk parada, lewy Ctrl + lewy przycisk akcja, Tab + Backspace ekwipunek, X skradanie, keyLook = R, keyLookFP = F; gra\dane\Gothic.ini — keySlow = X, keySneak = prawy Shift, keyShowStatus = C, B
+
+### Raporty błędów
+- Build Windows (MinGW, RelWithDebInfo) nie jest strippowany: exe z wydania ma pełne DWARF (~0,5 GB), więc adres = baza w pliku (0x140000000) + przesunięcie → `x86_64-w64-mingw32-addr2line -f -C -e Gothic2Notr.exe`. Skrót: `dev/symbolizuj.sh <kontekst.txt | raport.zip> [tag]` (tag z linii „exe:” raportu, exe pobierane z wydania przez REST)
+- Stos z wyjątku: `RtlLookupFunctionEntry` + `RtlVirtualUnwind` (.pdata MinGW x64 działa); funkcja liściowa = adres powrotu na szczycie stosu. Minizrzut: `MiniDumpWriteDump` z dbghelp.dll ładowanego dynamicznie. `SetThreadStackGuarantee` 64 KB dla obsługi przepełnienia stosu
+- Piaskownica: `gh release download` idzie przez GraphQL (zablokowany) — pobieranie zasobów wydań przez `gh api repos/.../releases/tags/<tag>` + `Accept: application/octet-stream`. Test obsługi crasha bez Windows: mingw-w64 + wine64 (`/usr/lib/wine/wine64`)
 
 ### Grafika i renderer
 - Tekstury: `Resources::implLoadTextureUncached` — dla NAZWA.TGA najpierw skompilowana NAZWA-C.TEX z VDF (DXT1–5 → DDS, inne → RGBA8), potem sam .TGA; podmiana na własny plik jak logo (`isDiathicLogo` + `DiathicAsset::get`); mipmapy tylko, gdy tekstura je ma albo `forceMips`

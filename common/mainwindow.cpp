@@ -1173,7 +1173,7 @@ bool MainWindow::arpgLabelRect(const Focus& f, const Matrix4x4& vp, Rect& out) c
 void MainWindow::drawArpgLabel(Painter& p, const Rect& r, const Focus& f, bool hi) {
   const float scale = Gothic::interfaceScale(this);
   const int   pad   = int(4.f*scale);
-  const bool  enemy = (f.npc!=nullptr && player.arpgIsEnemy(*f.npc));
+  const bool  enemy = (f.npc!=nullptr && player.arpgCanAttack(*f.npc)); // Diathic: with Ctrl anyone
 
   p.setBrush(Brush(hi ? Color(0.25f,0.2f,0.05f,0.8f) : Color(0.f,0.f,0.f,0.6f), Painter::Alpha));
   p.drawRect(r.x, r.y, r.w, r.h);

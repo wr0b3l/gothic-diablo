@@ -123,6 +123,7 @@ class PlayerControl final {
     void  arpgVisibleObjects(std::vector<Focus>& out) const; // items and usable objects the hero can see
     float arpgCeiling() const;                   // indoors: everything above is cut away
     bool  arpgIsEnemy(const Npc& npc) const;     // would be attacked by a click
+    bool  arpgCanAttack(const Npc& npc) const;   // Diathic: a click attacks it now (enemy, or anyone with Ctrl held)
     bool  arpgCursorOnEnemy() const;             // Diathic: a living enemy under the mouse cursor (red sword cursor)
     bool  arpgAttackQueued() const;              // an attack waits for its moment (combo window)
 

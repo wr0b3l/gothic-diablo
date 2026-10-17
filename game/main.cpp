@@ -20,6 +20,7 @@
 #endif
 
 #include "utils/crashlog.h"
+#include "utils/arpgcrash.h"
 #include "mainwindow.h"
 #include "gothic.h"
 #include "build.h"
@@ -89,6 +90,7 @@ int main(int argc,const char** argv) {
       if(mode==Tempest::Log::Error)
         logFile.flush();
       });
+    ArpgCrash::setup("log.txt", [](){ logFile.flush(); }); // Diathic: log copied into the crash report
     }
   catch(...) {
     Tempest::Log::e("unable to setup logfile - fallback to console log");

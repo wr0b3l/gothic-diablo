@@ -410,8 +410,8 @@ void PlayerControl::tickFocus() {
       setTarget(currentFocus.npc);
     // the enemy under the cursor and the one being attacked glow a little (shader: scene.arpgHi)
     {
-      auto glow = [this](const Npc* n) {
-        if(n==nullptr || n->isDead() || !arpgIsEnemy(*n))
+      auto glow = [this](const Npc* n, bool attacked) {
+        if(n==nullptr || n->isDead() || !(attacked || arpgCanAttack(*n)))
           return Tempest::Vec4();
         const auto  b  = n->bounds();
         const auto  sz = b.bbox[1]-b.bbox[0];
@@ -421,8 +421,8 @@ void PlayerControl::tickFocus() {
         };
       const Npc* hov = arpgHover.npc;
       const Npc* tgt = (arpgClick.kind==ArpgClick::Attack) ? arpgClick.target.npc : nullptr;
-      camera->arpgSetHighlight(0, glow(hov));
-      camera->arpgSetHighlight(1, tgt!=hov ? glow(tgt) : Tempest::Vec4());
+      camera->arpgSetHighlight(0, glow(hov, hov!=nullptr && hov==tgt));
+      camera->arpgSetHighlight(1, tgt!=hov ? glow(tgt, true) : Tempest::Vec4());
     }
     return;
     }
@@ -2646,7 +2646,16 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
 
 bool PlayerControl::arpgCursorOnEnemy() const {
   auto n = arpgHover.npc;
-  return n!=nullptr && !n->isDead() && !n->isDown() && arpgIsEnemy(*n);
+  return n!=nullptr && !n->isDead() && !n->isDown() && arpgCanAttack(*n);
+  }
+
+bool PlayerControl::arpgCanAttack(const Npc& npc) const {
+  if(arpgIsEnemy(npc))
+    return true;
+  // Ctrl + click attacks anyone (arpgMouseDown): red cursor, label and glow show it before the click
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  return ctrl[KeyCodec::ActionGeneric] && pl!=nullptr && &npc!=pl && !npc.isDead() && !npc.isDown();
   }
 
 bool PlayerControl::arpgIsEnemy(const Npc& npc) const {

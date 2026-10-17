@@ -18,6 +18,8 @@ Co robi `launcher.ps1`:
 3. usuwa starsze wersje (zostawia 2),
 4. uruchamia `Gothic2Notr.exe -g "<Gothic II>"`.
 
+Link **Zgłoś błąd**: zip na pulpicie z najnowszym raportem crasha (`gra\dane\raporty\crash-<data>`), `log.txt`, `crash.log`, `Gothic.ini`, ostatnim zapisem i `system.txt` (wersja, Windows, GPU i sterownik, wpisy z dziennika zdarzeń). Po nowym crashu link jest żółty. Analiza: `dev/symbolizuj.sh <raport.zip>`.
+
 Folder Gothic II launcher szuka sam: Steam (wszystkie biblioteki z `libraryfolders.vdf`, gra 39510), GOG,
 wpisy instalatorów w rejestrze, typowe ścieżki na każdym dysku. Musi być `System\Gothic2.exe`
 i `Data\Worlds_Addon.vdf` (Noc Kruka). Gdy nic nie znajdzie, okno launchera prosi o wskazanie folderu;
