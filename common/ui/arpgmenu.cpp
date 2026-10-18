@@ -717,7 +717,8 @@ void ArpgMenu::drawTabs(Painter& p, int w, const Fonts& f) {
 void ArpgMenu::drawHint(Painter& p, int w, int h, const Fonts& f) const {
   const std::string s = (page==P_Trade) ?
     gtxt("LPM - jedna sztuka      Shift+LPM / PPM - cały stos      przeciągnij na drugą stronę      Esc - koniec") :
-    gtxt("Q / E - obrót kamery        Esc - zamknij");
+    gtxt(ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::CamLeft)) + " / " + ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::CamRight)) +
+         " - obrót kamery        Esc - zamknij");
   const int tw = f.small->textSize(s).w + int(70*k);
   const int th = int(40*k);
   const Rect r((w-tw)/2, h-int(12*k)-th, tw, th);

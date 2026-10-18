@@ -171,7 +171,11 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
       }
     if(a==KeyCodec::ActionGeneric && key==Tempest::KeyEvent::K_LControl) {
       // Ctrl is only a modifier for the mouse here (attack anyone / in place; with a bow: aim at the cursor),
-      // not Gothic's action key (it would aim the bow and shoot only on release)
+      // not Gothic's action key (it would aim the bow and shoot only on release); held = lock on (arpgTickLock)
+      if(!ctrl[a] && arpgCtrlDownAt==0) {
+        arpgCtrlDownAt = std::max<uint64_t>(1, w->tickCount()); // key repeat does not restart the hold
+        arpgCtrlUsed   = false;
+        }
       ctrl[a] = true;
       return;
       }
@@ -321,6 +325,16 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
 
 void PlayerControl::onKeyReleased(KeyCodec::Action a, KeyCodec::Mapping mapping) {
   ctrl[a] = false;
+  if(a==KeyCodec::ActionGeneric && arpgCtrlDownAt!=0) {
+    // Diathic: a short Ctrl while locked, the cursor on another living one = lock on it
+    auto w0  = Gothic::inst().world();
+    auto pl0 = w0!=nullptr ? w0->player() : nullptr;
+    auto n   = arpgPickRaw.npc;
+    if(pl0!=nullptr && !arpgCtrlUsed && arpgLockTarget()!=nullptr && w0->tickCount()-arpgCtrlDownAt<ArpgStatus::LockHoldMs &&
+       n!=nullptr && n!=arpgLock && n!=pl0 && !n->isDead() && !n->isDown())
+      arpgSetLock(n);
+    arpgCtrlDownAt = 0;
+    }
   if(a>=Action::WeaponMage3 && a<=Action::WeaponMage10)
     arpgSpellKey(uint8_t(a-Action::WeaponMage3+3), false); // gothic-diablo: end investing
 
@@ -401,8 +415,13 @@ void PlayerControl::tickFocus() {
   if(camera!=nullptr && camera->isArpgActive() && arpgCursor.valid) {
     // gothic-diablo: focus is whatever is under the mouse cursor
     currentFocus = arpgPick();
+    arpgPickRaw  = currentFocus;
+    if(auto lk = arpgLockTarget())
+      currentFocus = Focus(*lk); // Diathic: locked: clicks, skills, spells and the bow go at the target
     arpgHover    = currentFocus;
-    if(arpgClick.kind==ArpgClick::Attack && arpgClick.target.npc!=nullptr)
+    if(auto lk = arpgLockTarget())
+      setTarget(lk);
+    else if(arpgClick.kind==ArpgClick::Attack && arpgClick.target.npc!=nullptr)
       setTarget(arpgClick.target.npc);
     else if(arpgClick.kind==ArpgClick::Strike)
       setTarget(nullptr); // shooting at a point: straight ahead
@@ -764,6 +783,10 @@ bool PlayerControl::tickMove(uint64_t dt) {
   if(pl==nullptr)
     return true;
   arpgTickRain(*pl, dtF); // Diathic: Deszcz strzał goes on by itself
+  if(camera!=nullptr && camera->isArpgActive())
+    arpgTickLock(*pl); // Diathic: lock on a target
+  else
+    arpgSetLock(nullptr);
 
   // gothic-diablo: the camera turn keys of ArpgKeys (arrows) rotate the ARPG camera, whatever the hero is doing
   if(camera!=nullptr && camera->isArpgActive() && !dlg.isActive()) {
@@ -927,7 +950,7 @@ void PlayerControl::implMove(uint64_t dt) {
     arpgDodgeLock = 0;
     }
 
-  // Diathic: the skills of the weapon trees (Q / E / F) and Riposta's counter swing
+  // Diathic: the skills of the weapon trees (G / F / B, ArpgKeys) and Riposta's counter swing
   if(arpg) {
     const float dtF = float(dt)/1000.f;
     if(arpgSkillRun(pl, rot, dtF))
@@ -1472,9 +1495,11 @@ void PlayerControl::implMove(uint64_t dt) {
     // W/S/A/D (and arrows) move up/down/left/right on screen, hero turns to the move direction
     const float fb = movement.forwardBackward.value();
     const float lr = movement.strafeRightLeft.value();
-    if(fb!=0.f || lr!=0.f)
+    // Diathic: locked: a click (attack) wins over W/S/A/D, so the hero can circle and hit
+    const bool lockAtk = arpgLockTarget()!=nullptr && arpgClick.kind==ArpgClick::Attack;
+    if((fb!=0.f || lr!=0.f) && !lockAtk)
       arpgClick = ArpgClick(); // keyboard overrides mouse
-    if(fb==0.f && lr==0.f && arpgClick.kind!=ArpgClick::None) {
+    if(((fb==0.f && lr==0.f) || lockAtk) && arpgClick.kind!=ArpgClick::None) {
       // left mouse button: walk / interact / attack
       switch(arpgClickTick(pl, rot, rotation, pl.isRotationAllowed(), dt)) {
         case ArpgStop: ani = Npc::Anim::Idle; rotation = 0; break;
@@ -1485,17 +1510,45 @@ void PlayerControl::implMove(uint64_t dt) {
       }
     else if(fb!=0.f || lr!=0.f) {
       const float dest = camera->arpgYaw() + std::atan2(-lr, fb)*180.f/float(M_PI);
-      const float da   = std::remainder(dest-rot, 360.f);
-      if(allowRot) {
-        const float step = 900.f*(float(dt)/1000.f);
-        rot += std::clamp(da, -step, step);
-        }
-      if(std::fabs(da)<100.f || !allowRot) {
-        ani = Npc::Anim::Move;
+      if(auto lk = arpgLockTarget()) {
+        // Diathic: locked (like Dark Souls): the hero faces the target, W/S/A/D (screen directions) =
+        // towards it / back / Gothic's side steps around it
+        const auto  d    = lk->position()-pl.position();
+        const float face = std::atan2(d.z,d.x)*180.f/float(M_PI);
+        const float da   = std::remainder(face-rot, 360.f);
+        if(allowRot) {
+          const float step = 720.f*(float(dt)/1000.f);
+          rot += std::clamp(da, -step, step);
+          }
+        const float rel = std::remainder(dest-face, 360.f);
+        if(std::fabs(rel)<=50.f)
+          ani = Npc::Anim::Move;
+        else if(std::fabs(rel)>=130.f)
+          ani = Npc::Anim::MoveBack;
+        else
+          ani = (rel>0.f) ? Npc::Anim::MoveL : Npc::Anim::MoveR;
         } else {
-        ani      = Npc::Anim::Idle;
-        rotation = (da>0.f) ? -1 : 1;
+        const float da = std::remainder(dest-rot, 360.f);
+        if(allowRot) {
+          const float step = 900.f*(float(dt)/1000.f);
+          rot += std::clamp(da, -step, step);
+          }
+        if(std::fabs(da)<100.f || !allowRot) {
+          ani = Npc::Anim::Move;
+          } else {
+          ani      = Npc::Anim::Idle;
+          rotation = (da>0.f) ? -1 : 1;
+          }
         }
+      }
+    else if(auto lk = arpgLockTarget(); lk!=nullptr && allowRot && !pl.isAttackAnim()) {
+      // Diathic: locked, standing: turn to the target
+      const auto  d    = lk->position()-pl.position();
+      const float da   = std::remainder(std::atan2(d.z,d.x)*180.f/float(M_PI)-rot, 360.f);
+      const float step = 540.f*(float(dt)/1000.f);
+      rot += std::clamp(da, -step, step);
+      if(std::fabs(da)>8.f)
+        rotation = (da>0.f) ? -1 : 1;
       }
     }
   else if(this->wantsToStrafeLeft()) {
@@ -1930,8 +1983,20 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
       }
     }
 
+  if(ctrl[KeyCodec::ActionGeneric])
+    arpgCtrlUsed = true; // Ctrl + click: no lock from this hold
   arpgHover = f;
   const bool force = ctrl[KeyCodec::ActionGeneric]; // Ctrl + click: attack anyone
+  if(auto lk = arpgLockTarget()) {
+    // Diathic: locked (like Dark Souls): a click anywhere attacks the target
+    arpgHover          = Focus(*lk);
+    arpgClick.kind     = ArpgClick::Attack;
+    arpgClick.target   = Focus(*lk);
+    arpgClick.stuckPos = pl->position();
+    if(pl->weaponState()==WeaponState::NoWeapon)
+      arpgDrawPreferred(*pl);
+    return;
+    }
   if(force && (f.npc==nullptr || f.npc->isDown())) {
     // Ctrl + click on no one: attack in place towards the cursor
     arpgClick.kind = ArpgClick::Strike;
@@ -2650,7 +2715,7 @@ bool PlayerControl::arpgCursorOnEnemy() const {
   }
 
 bool PlayerControl::arpgCanAttack(const Npc& npc) const {
-  if(arpgIsEnemy(npc))
+  if(arpgIsEnemy(npc) || &npc==arpgLockTarget())
     return true;
   // Ctrl + click attacks anyone (arpgMouseDown): red cursor, label and glow show it before the click
   auto w  = Gothic::inst().world();
@@ -2661,7 +2726,66 @@ bool PlayerControl::arpgCanAttack(const Npc& npc) const {
 bool PlayerControl::arpgIsEnemy(const Npc& npc) const {
   auto w  = Gothic::inst().world();
   auto pl = w!=nullptr ? w->player() : nullptr;
-  return pl!=nullptr && &npc!=pl && !npc.isDown() && arpgIsHostile(*pl,npc);
+  if(pl==nullptr || &npc==pl || npc.isDown())
+    return false;
+  return &npc==arpgLockTarget() || arpgIsHostile(*pl,npc); // Diathic: the locked one is fought, friend or not
+  }
+
+Npc* PlayerControl::arpgLockTarget() const {
+  auto w = Gothic::inst().world();
+  return (arpgLock!=nullptr && w!=nullptr && w==arpgLockWorld) ? arpgLock : nullptr;
+  }
+
+void PlayerControl::arpgSetLock(Npc* n) {
+  arpgLock      = n;
+  arpgLockWorld = n!=nullptr ? Gothic::inst().world() : nullptr;
+  if(n!=nullptr)
+    setTarget(n);
+  }
+
+void PlayerControl::arpgToggleLock(Npc& pl) {
+  if(arpgLockTarget()!=nullptr) {
+    arpgSetLock(nullptr);
+    return;
+    }
+  // the one under the cursor (anyone living: people in town too), otherwise the nearest enemy in sight
+  Npc* n = arpgPickRaw.npc;
+  if(n!=nullptr && (n==&pl || n->isDead() || n->isDown()))
+    n = nullptr;
+  if(n==nullptr)
+    n = arpgNextEnemy(pl, nullptr, ArpgStatus::LockRange);
+  if(n==nullptr) {
+    Gothic::inst().onPrint(ArpgMenu::gtxt("Brak celu"));
+    return;
+    }
+  arpgSetLock(n);
+  }
+
+void PlayerControl::arpgTickLock(Npc& pl) {
+  auto w = Gothic::inst().world();
+  if(!ctrl[KeyCodec::ActionGeneric])
+    arpgCtrlDownAt = 0; // the release got lost (window switch)
+  if(arpgCtrlDownAt!=0 && !arpgCtrlUsed && w->tickCount()-arpgCtrlDownAt>=ArpgStatus::LockHoldMs) {
+    arpgCtrlUsed = true;
+    arpgToggleLock(pl);
+    }
+  if(arpgLock==nullptr)
+    return;
+  Focus f;
+  f.npc = arpgLock;
+  if(arpgLockWorld!=w || w->validateFocus(f).npc==nullptr || dlg.isActive()) {
+    arpgSetLock(nullptr); // removed from the world, another world, a dialog
+    return;
+    }
+  Npc& t = *arpgLock;
+  if(t.isDead() || t.isDown()) {
+    // like Dark Souls: the next enemy close by, otherwise the lock ends
+    arpgSetLock(arpgNextEnemy(pl, &t, ArpgStatus::LockRange));
+    return;
+    }
+  const auto d = t.position()-pl.position();
+  if(d.x*d.x+d.z*d.z > ArpgStatus::LockRange*ArpgStatus::LockRange || std::abs(d.y)>600.f)
+    arpgSetLock(nullptr);
   }
 
 bool PlayerControl::arpgAttackQueued() const {
@@ -3093,7 +3217,7 @@ PlayerControl::ArpgBar PlayerControl::arpgBar() const {
   }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Diathic: the skills of the weapon trees: Q / E with the weapon in hand (Jednoręczna, Dwuręczna, Łuk i kusza),
+// Diathic: the skills of the weapon trees: G / F with the weapon in hand (Jednoręczna, Dwuręczna, Łuk i kusza),
 // F = the tree Blok. A skill controls the hero while it goes on (PlayerControl::implMove -> arpgSkillRun).
 
 namespace {

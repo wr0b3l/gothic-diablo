@@ -44,8 +44,12 @@ namespace ArpgStatus {
   constexpr float    StalkerMul    = 3.f;   // Łowca: the first shot at an enemy who has not noticed the hero
   constexpr uint64_t ButcherMs     = 3000;  // Rzeźnik: attack speed after a kill
 
-  // Diathic: the skills of the weapon trees (Q / E / F); s, cm, multipliers of the hit of the weapon in hand
-  constexpr float    BashCd        = 6.f;   // Uderzenie (F): a dash in the block pose, the enemy in front staggered
+  // Diathic: lock on a target (like Dark Souls): Ctrl held this long = on / off; further away = the lock ends
+  constexpr uint64_t LockHoldMs    = 400;
+  constexpr float    LockRange     = 1500.f;
+
+  // Diathic: the skills of the weapon trees (G / F / B, ArpgKeys); s, cm, multipliers of the hit of the weapon in hand
+  constexpr float    BashCd        = 6.f;   // Uderzenie (B): a dash in the block pose, the enemy in front staggered
   constexpr float    BashDist      = 150.f;
   constexpr float    BashSpeed     = 600.f;
   constexpr float    BashMul       = 0.5f;

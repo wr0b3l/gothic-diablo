@@ -49,6 +49,11 @@ Klawisze można zmienić w menu głównym: "Sterowanie" (także w grze pod Esc).
 Lewy przycisk myszy     chodzenie, rozmowa, podnoszenie, otwieranie, atak
                         (przytrzymanie = kolejne ciosy)
 Ctrl + lewy przycisk    atak na dowolną postać (np. w mieście) / w miejscu
+Ctrl (przytrzymaj)      namierzenie celu, także postaci w mieście: postać zwrócona
+                        do celu, lewy przycisk zawsze go atakuje, W/S/A/D krąży
+                        wokół niego; krótki Ctrl nad inną postacią = zmiana celu,
+                        ponowne przytrzymanie = koniec
+G / F / B               umiejętności broni 1 / 2 / umiejętność bloku
 Prawy przycisk          atak ładowany: przytrzymaj, puść, gdy pasek jest złoty
 Środkowy przycisk       blok (z łukiem: odepchnięcie, bez broni: obrót kamery)
 Spacja                  fikołek (przewrót)

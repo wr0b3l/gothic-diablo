@@ -742,6 +742,7 @@ void GameMenu::paintModernKeys(Painter& p, GthFont& fItem, GthFont& fSel, GthFon
     "Prawy przycisk - atak ładowany (przytrzymaj)",
     "Środkowy przycisk - blok, z łukiem odepchnięcie, bez broni obrót kamery",
     "Ctrl + lewy przycisk - atak w miejscu / na każdego",
+    "Ctrl przytrzymany - namierzenie celu (wł. / wył.), krótki Ctrl - zmiana celu",
     "Kółko myszy - przybliżenie kamery",
     "3 - 0 - runy i zwoje (przypisanie w ekwipunku)",
     "Ruch klawiaturą i skok - z ustawień Gothica (Opcje)",

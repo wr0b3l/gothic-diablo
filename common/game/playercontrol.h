@@ -74,7 +74,7 @@ class PlayerControl final {
     void  arpgChargeRelease();                   // right mouse button up: release it
     float arpgSpecialLeft() const;               // 0..1 of the cooldown left
     void  arpgPush();                            // middle mouse button with a bow: push the enemies in front away
-    void  arpgSkillKey(int slot);                // Diathic: Q / E / F pressed (the skills of the weapon trees)
+    void  arpgSkillKey(int slot);                // Diathic: G / F / B pressed (the skills of the weapon trees)
     void  arpgStop();                            // a window opened: drop every mouse order / charge / request
     bool  arpgCanPush() const;                   // a bow / crossbow is drawn
     float arpgPushLeft() const;                  // 0..1 of the push cooldown left
@@ -124,6 +124,7 @@ class PlayerControl final {
     float arpgCeiling() const;                   // indoors: everything above is cut away
     bool  arpgIsEnemy(const Npc& npc) const;     // would be attacked by a click
     bool  arpgCanAttack(const Npc& npc) const;   // Diathic: a click attacks it now (enemy, or anyone with Ctrl held)
+    Npc*  arpgLockTarget() const;                // Diathic: the locked target (Ctrl held 0.4 s, like Dark Souls) or null
     bool  arpgCursorOnEnemy() const;             // Diathic: a living enemy under the mouse cursor (red sword cursor)
     bool  arpgAttackQueued() const;              // an attack waits for its moment (combo window)
 
@@ -286,6 +287,12 @@ class PlayerControl final {
     ArpgCursor     arpgCursor;
     ArpgClick      arpgClick;
     Focus          arpgHover;
+    // Diathic: lock on a target (Ctrl held ArpgLockHold ms = on / off, short Ctrl over another one = switch)
+    Npc*           arpgLock       = nullptr;
+    const World*   arpgLockWorld  = nullptr;
+    uint64_t       arpgCtrlDownAt = 0;     // world time when Ctrl went down, 0 = up
+    bool           arpgCtrlUsed   = false; // a click or the lock happened during this hold
+    Focus          arpgPickRaw;            // what is under the cursor (arpgHover is the locked target while locked)
     Tempest::Vec3  arpgGround      = {};
     bool           arpgGroundValid = false;
 
@@ -360,6 +367,9 @@ class PlayerControl final {
     void           arpgSpellKey(uint8_t slot, bool pressed);
     bool           arpgCursorAim(const Npc& pl, Tempest::Vec3& out) const;
     Npc*           arpgNextEnemy(Npc& pl, const Npc* except, float range) const;
+    void           arpgTickLock(Npc& pl);
+    void           arpgToggleLock(Npc& pl);
+    void           arpgSetLock(Npc* n);
     int            arpgStartRoll(Npc& pl, float& rot);
     float          arpgRollCd       = 0;  // s until the next dodge roll
     void           arpgPotion(uint8_t kind);

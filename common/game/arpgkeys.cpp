@@ -10,9 +10,9 @@ static const Info infos[Count] = {
   {"Fikołek (unik)",                      "keyDodge",        Event::K_Space   },
   {"Broń: dobycie / schowanie",           "keyWeapon",       Event::K_LShift  },
   {"Broń biała / łuk lub kusza",          "keySwapWeapon",   Event::K_X       },
-  {"Umiejętność broni 1",                 "keySkillA",       Event::K_Q       },
-  {"Umiejętność broni 2",                 "keySkillB",       Event::K_E       },
-  {"Umiejętność bloku",                   "keySkillBlock",   Event::K_F       },
+  {"Umiejętność broni 1",                 "keySkillA",       Event::K_G       },
+  {"Umiejętność broni 2",                 "keySkillB",       Event::K_F       },
+  {"Umiejętność bloku",                   "keySkillBlock",   Event::K_B       },
   {"Chód / bieg",                         "keyWalk",         Event::K_R       },
   {"Skradanie",                           "keySneak",        Event::K_V       },
   {"Mikstura zdrowia",                    "keyPotionHealth", Event::K_1       },
@@ -24,11 +24,33 @@ static const Info infos[Count] = {
   {"Minimapa / mapa na grze",             "keyMinimap",      Event::K_Tab     },
   {"Etykiety (przytrzymaj)",              "keyLabels",       Event::K_Z       },
   {"Dziennik",                            "keyLog",          Event::K_L       },
-  {"Obrót kamery w lewo",                 "keyCamLeft",      Event::K_Left    },
-  {"Obrót kamery w prawo",                "keyCamRight",     Event::K_Right   },
+  {"Obrót kamery w lewo",                 "keyCamLeft",      Event::K_Q       },
+  {"Obrót kamery w prawo",                "keyCamRight",     Event::K_E       },
   };
 
 static constexpr std::string_view Section = "DIATHIC";
+
+// Diathic 2026-10-18: Q / E back to the camera, the skills on G / F / B. Keys saved with the old defaults
+// (Q E F for the skills, arrows for the camera: "reset" in the menu writes all of them) move to the new ones once.
+static constexpr int KeysVersion = 2;
+
+static void migrate() {
+  static bool done = false;
+  if(done)
+    return;
+  done = true;
+  if(Gothic::settingsGetI(Section, "keysVersion")>=KeysVersion)
+    return;
+  struct Old { Action a; Event::KeyType k; };
+  static const Old old[] = {
+    {SkillA, Event::K_Q}, {SkillB, Event::K_E}, {SkillBlock, Event::K_F},
+    {CamLeft, Event::K_Left}, {CamRight, Event::K_Right},
+    };
+  for(auto& o:old)
+    if(Gothic::settingsGetI(Section, infos[o.a].ini)==int(o.k))
+      Gothic::settingsSetI(Section, infos[o.a].ini, int(infos[o.a].def));
+  Gothic::settingsSetI(Section, "keysVersion", KeysVersion);
+  }
 
 const Info& info(Action a) {
   return infos[a<Count ? a : 0];
@@ -37,6 +59,7 @@ const Info& info(Action a) {
 Event::KeyType key(Action a) {
   if(a>=Count)
     return Event::K_NoKey;
+  migrate();
   const int v = Gothic::settingsGetI(Section, infos[a].ini);
   if(v>0 && v<int(Event::K_Last) && canBind(Event::KeyType(v)))
     return Event::KeyType(v);
@@ -56,6 +79,7 @@ void setKey(Action a, Event::KeyType k) {
 void resetDefaults() {
   for(uint8_t i=0; i<Count; ++i)
     Gothic::settingsSetI(Section, infos[i].ini, int(infos[i].def));
+  Gothic::settingsSetI(Section, "keysVersion", KeysVersion);
   }
 
 bool is(Action a, Event::KeyType k) {

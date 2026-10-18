@@ -2504,8 +2504,8 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         return;
       const int32_t hp  = n.attribute(ATR_HITPOINTS);
       const int32_t hpM = std::max(1, n.attribute(ATR_HITPOINTSMAX));
-      if(hp>=hpM && n.target()!=pl)
-        return; // not in a fight yet
+      if(hp>=hpM && n.target()!=pl && &n!=player.arpgLockTarget())
+        return; // not in a fight yet (the locked one: always)
       Point sp;
       if(!toScreen(n.position()+Vec3(0,n.isDown() ? 60.f : 210.f,0), sp))
         return;
@@ -2515,6 +2515,31 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       p.setBrush(Brush(Color(0.75f,0.08f,0.05f,0.95f), Painter::Alpha));
       p.drawRect(sp.x-bw/2, sp.y, int(float(bw)*v), bh);
       });
+  }
+
+  // Diathic: the locked target (Ctrl held, like Dark Souls): a gold diamond on the chest, pulsing
+  if(auto lk = player.arpgLockTarget()) {
+    Point sp;
+    if(!lk->isDead() && toScreen(lk->centerPosition(), sp)) {
+      const float t  = float(world->tickCount()%100000)*0.006f;
+      const float s  = (9.f + 1.5f*std::sin(t))*scale;
+      const float cx = float(sp.x), cy = float(sp.y);
+      auto dia = [&](float r) {
+        // both windings: the UI pipeline culls one
+        p.drawTriangle(cx,cy-r,0,0, cx+r,cy,0,0, cx,cy+r,0,0);
+        p.drawTriangle(cx,cy-r,0,0, cx,cy+r,0,0, cx+r,cy,0,0);
+        p.drawTriangle(cx,cy-r,0,0, cx-r,cy,0,0, cx,cy+r,0,0);
+        p.drawTriangle(cx,cy-r,0,0, cx,cy+r,0,0, cx-r,cy,0,0);
+        };
+      p.setBrush(Brush(Color(1.f,0.7f,0.2f,0.45f), Painter::Add));
+      dia(s*1.7f);
+      p.setBrush(Brush(Color(0.f,0.f,0.f,0.75f), Painter::Alpha));
+      dia(s);
+      p.setBrush(Brush(Color(1.f,0.85f,0.4f,1.f), Painter::Alpha));
+      dia(s*0.72f);
+      p.setBrush(Brush(Color(1.f,1.f,0.9f,1.f), Painter::Alpha));
+      dia(s*0.3f);
+      }
   }
 
   // Diathic: staggered (after a parry): blue stars going round over the head
@@ -2995,7 +3020,7 @@ void MainWindow::paintArpgBar(Painter& p) {
     drawSlot(r, arpgMidBlock || arpgMidPush);
     if(bar.ranged) drawPush(r); else drawShield(r);
   }
-  // Diathic: Q / E / F: the skills of the weapon trees (the model of the node; not learned: dark)
+  // Diathic: G / F / B (ArpgKeys): the skills of the weapon trees (the model of the node; not learned: dark)
   for(int k=0; k<3; ++k) {
     const Rect r  = arpgBarSlot(ArpgBarSkill+k);
     const auto sk = player.arpgSkillSlot(k);
@@ -3055,7 +3080,7 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
   label(rR, "PPM", false);
   label(rM, "SPM", false);
 
-  // Diathic: Q / E / F: the key, the cooldown; not learned / nothing with this weapon: dark, the key dim
+  // Diathic: G / F / B (ArpgKeys): the key, the cooldown; not learned / nothing with this weapon: dark, the key dim
   for(int k=0; k<3; ++k) {
     const Rect r  = arpgBarSlot(ArpgBarSkill+k);
     const auto sk = player.arpgSkillSlot(k);
