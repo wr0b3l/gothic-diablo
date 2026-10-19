@@ -68,6 +68,9 @@ class World final {
     const WayPoint*      findNextPoint(const WayPoint& pos) const;
 
     const WayPoint&      startPoint() const;
+    // gothic-diablo: the test bot (ArpgAutotest)
+    template<class F>
+    void                 arpgForEachWayPoint(const F& f) const { wmatrix->arpgForEachWayPoint(f); }
     const WayPoint&      deadPoint() const;
 
     void                 detectNpcNear(std::function<void(Npc&)> f);

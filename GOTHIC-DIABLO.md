@@ -247,6 +247,16 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Pasek: bez grupy G / F / B; na 3–0 umiejętność (model węzła, czerwona poświata, odnowienie, przyciemniona bez wiedzy albo bez broni) albo runa; w ekwipunku rząd 3–0 pokazuje też umiejętności | `MainWindow::paintArpgBar` / `paintArpgBarOverlay`, `PlayerControl::arpgSkillSlot`, `ArpgMenu::paintEquip` |
 | Księga umiejętności: spis — lewa strona pasywne (Cios, Atak ładowany, Fikołek, Biegłość z procentami broni), prawa umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, pod każdym jego umiejętności z klawiszem); klik w drzewko / umiejętność = przewrócenie strony (0,45 s, kartka zgina się przy grzbiecie, cień, dźwięk strony gry albo MENU_BROWSE): lewa strona drzewko, prawa „Wróć do spisu”, punkty i opis węzła (ostatniego pod kursorem; przy umiejętności jej klawisz); Backspace = powrót | `ArpgMenu::paintTrees`, `paintSkillIndex`, `skillEntry`, `paintTree`, `paintTurn`, `turnTo`, `backKey`, `mouseDown` (`H_Tree`, `H_Back`, `H_Skill`) |
 
+## Faza 10 — bot testowy (gałąź faza10-bot)
+
+Plan całości: [`docs/plan/bot-testowy.md`](docs/plan/bot-testowy.md). Gotowa część 1 — objazd kamery.
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Uruchomienie: `autotest.bat` (kopia z dev\, jak graj_lokalnie.bat buduje najnowszy commit) → gra z `-autotest kamera` (`-autotest-swiaty a,b`, `-autotest-co N`, `-autotest-limit N`); od razu nowa gra bez menu, filmy pominięte, rozmowy, listy, ekwipunek i ekran rozdziału zamykane od razu, bohater nieśmiertelny, pora dnia 12:00 poza 9–16; po ostatnim świecie gra się zamyka | `CommandLine::arpgAutotest*`, `ArpgAutotest::tick`, `MainWindow` (`arpgAutotest`, `setHooks`, `tick`, `onVideo`), `DialogMenu::arpgAbort`, `ChapterScreen::arpgClose`, `dev/autotest.bat`, `dev/dev.ps1` (`-Autotest`, `-Swiaty`, `-Co`, `-Limit`) |
+| Objazd kamery: światy NEWWORLD, OLDWORLD, ADDONWORLD, DRAGONISLAND (zmiana świata jak przejście w grze); każdy punkt drogi (bez wolnych punktów FP) → bohater przeniesiony, 1,5 s na kamerę (rozmowa albo przerywnik na punkcie: zamknięte i punkt od nowa, najwyżej 3 razy); pomiary: czerń (max RGB ≤ 10) w środkowej połowie ekranu i na całym, bohater zasłonięty (promień kamera → środek bohatera trafia ścianę, której nie wycina sufit ani skała, i nie ma prześwitu), kamera w skale (pierwsza ściana widziana od środka; wycięta przez grę albo nie), FPS średni i najniższy (bez pierwszych 0,4 s), spadek bohatera, największa różnica wysokości do sąsiednich punktów drogi; ocena = suma wag | `ArpgAutotest::collectPoints`, `placeHero`, `measure`, `World::arpgForEachWayPoint` / `WayMatrix::arpgForEachWayPoint`; progi i wagi: stałe na początku `arpgautotest.cpp` |
+| Wyniki w `gra\dane\autotest\<data_godzina>\`: `raport.html` (karty z miniaturą, najgorsze na górze, filtry świat / rodzaj / ocena, porównanie z poprzednim przebiegiem: gorzej / lepiej / nowe, tabela podsumowania, przy każdym punkcie `goto waypoint`), `punkty.js` (wiersz na punkt dopisywany na bieżąco — raport działa też po przerwaniu), `stan.js`, `poprzedni.js`, `log.txt`, `img\<ŚWIAT>\<nr>.jpg` (480 px) i `<nr>_d.jpg` (1280 px, od oceny 25) | `ArpgAutotest::writeReport` (`kReportHtml`), `writeState`, `writePrevious`, `log` |
+
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
 Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury, światło, obraz, efekty. Komplet zasad, podział plików i stan: [`docs/plan/grafika.md`](docs/plan/grafika.md).
@@ -315,6 +325,12 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Dziennik: B_LogEntry / Log_AddEntry z tematem TOPIC_*TEACHER / *TRADER (bez TOPIC_ADDON_BANDITTRADER) w funkcji dialogu (C_Info.information) → C_Info.npc; 141 wpisów, 131 z postacią; gdy wpis wymienia inne imię (np. Skip o Garecie) — ta postać
 - Klawisze w Gothic.ini: kody DIK (0x2d = X, 0x13 = R, 0x2e = C, 0x39 = Spacja, 0x32 = M…), przyciski myszy 0x0c02 lewy, 0x0d02 prawy, 0x0e02 środkowy; klawisze ARPG w sekcji [DIATHIC]; keyShowMap = M → skrypt playerHotKeyScreenMap (w trybie ARPG M przejmuje nasza mapa); skradanie w Gothicu wymaga talentu (Npc::canSneak = TALENT_SNEAK)
 - Klawisze użytkownika: Gothic II\system\Gothic.ini — Q/E obrót, A/D krok w bok, Spacja + środkowy przycisk broń, Alt / prawy Ctrl skok, End + prawy przycisk parada, lewy Ctrl + lewy przycisk akcja, Tab + Backspace ekwipunek, X skradanie, keyLook = R, keyLookFP = F; gra\dane\Gothic.ini — keySlow = X, keySneak = prawy Shift, keyShowStatus = C, B
+
+### Bot testowy (faza 10)
+- Zrzut świata bez interfejsu: `Renderer::screenshoot(cmdId, rozmiar)` + `device.readPixels` (to samo co miniatura zapisu gry); wywoływane z `MainWindow::tick`
+- Ekran rozdziału (`ChapterScreen`) robi `pushPause` — przy pauzie `MainWindow::tick` kończy się przed logiką gry; zamyka go timer (czas z `IntroduceChapter`) albo klawisz
+- Zmiana świata: `GameSession::changeWorld(plik, punkt)` — pusty punkt = punkt startowy świata; wczytanie w osobnym wątku, w tym czasie `tick` gry nie działa
+- `DialogMenu::close` w trakcie rozmowy: dalsze AI_Output tej postaci idą w pustkę (`aiOutput` odrzuca nieznaną postać), ważna informacja może wrócić przy następnym zbliżeniu
 
 ### Raporty błędów
 - Build Windows (MinGW, RelWithDebInfo) nie jest strippowany: exe z wydania ma pełne DWARF (~0,5 GB), więc adres = baza w pliku (0x140000000) + przesunięcie → `x86_64-w64-mingw32-addr2line -f -C -e Gothic2Notr.exe`. Skrót: `dev/symbolizuj.sh <kontekst.txt | raport.zip> [tag]` (tag z linii „exe:” raportu, exe pobierane z wydania przez REST)

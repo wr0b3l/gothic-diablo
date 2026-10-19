@@ -67,6 +67,11 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 ## Faza 10 — przejście gry (2026-10-15)
 - Poprawki map pionowych (Górnicza Dolina, Jarkendar, wieże), jaskinie wielopoziomowe, kamera, ruch na klik
 - Ręczny test zbyt czasochłonny → bot testowy, „zrobimy to później” (plan: bot-testowy.md)
+- 2026-10-19: „robimy bota testowego” — zaczęta część 1 (objazd kamery), gałąź faza10-bot
+  - Uruchomienie: `autotest.bat` w folderze launchera (jak graj_lokalnie.bat: buduje najnowszy commit), opcje `-Swiaty newworld,oldworld`, `-Co N`, `-Limit N`; gra sama się zamyka; wyniki `gra\dane\autotest\<data_godzina>\raport.html`
+  - Bez zapisów gry przy błędzie: w objeździe kamery do odtworzenia wystarczy punkt drogi (MARVIN, F2: `goto waypoint <nazwa>`)
+- Wartości do balansu (stałe na początku `arpgautotest.cpp`): czas na kamerę 1,5 s, czerń = max RGB ≤ 10, „czarny” od 25% środka ekranu, niski FPS < 30, upadek > 5 m, „pion” > 4 m do sąsiada; wagi oceny: czerń ×100, zasłonięty 60, skała bez wycięcia 50, skała wycięta 5, FPS 2 / klatkę poniżej 30, upadek 40, pion 10, rozmowa 5; duży zrzut od oceny 25
+- Do testu: najpierw krótko `autotest.bat -Swiaty newworld -Limit 30` (czy gra startuje, przenosi bohatera, zamyka się, raport z miniaturami), potem całość na noc (wszystkie 4 światy, kilka godzin); w raporcie ocenić, czy „czarny” i „zasłonięty” trafiają w prawdziwe błędy (progi do korekty)
 
 ## Publikacja (2026-10-16)
 - Użytkownik: „dodajmy do planu dokładne kroki do zrobienia przed publikacją” → publikacja.md (etapy A–G, decyzje otwarte: język pierwszej wersji, launcher, fazy 7–8 przed betą, pad)

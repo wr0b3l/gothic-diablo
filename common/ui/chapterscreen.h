@@ -18,6 +18,7 @@ class ChapterScreen : public Tempest::Widget {
 
     void show(const Show& image);
     bool isActive() const { return active; }
+    void arpgClose() { close(); } // gothic-diablo: the test bot does not wait
 
     void keyDownEvent(Tempest::KeyEvent &e);
     void keyUpEvent  (Tempest::KeyEvent &e);

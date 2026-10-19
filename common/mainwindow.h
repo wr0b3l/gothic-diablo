@@ -38,6 +38,7 @@
 #include "ui/menuroot.h"
 #include "ui/consolewidget.h"
 #include "ui/touchinput.h"
+#include "game/arpgautotest.h"
 
 #include "utils/keycodec.h"
 #include "resources.h"
@@ -247,6 +248,7 @@ class MainWindow : public Tempest::Window {
     std::vector<ArpgLabel>    arpgLabels;
     std::vector<Focus>        arpgLabelObjs;
     PlayerControl             player;
+    ArpgAutotest              arpgAutotest; // gothic-diablo: the test bot (-autotest)
     uint64_t                  lastTick=0;
 
     Tempest::Shortcut         funcKey[11];

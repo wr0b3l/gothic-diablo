@@ -288,6 +288,11 @@ bool DialogMenu::isActive() const {
   return (state!=State::Idle) || current.time>0;
   }
 
+void DialogMenu::arpgAbort() {
+  if(isActive())
+    close();
+  }
+
 bool DialogMenu::hasContent() const {
   return (current.time>0 || choice.size()>0);
   }

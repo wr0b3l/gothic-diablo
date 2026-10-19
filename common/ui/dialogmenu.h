@@ -39,6 +39,7 @@ class DialogMenu : public Tempest::Widget {
     bool isNpcInDialog(const Npc* npc) const;
 
     bool isActive() const;
+    void arpgAbort(); // gothic-diablo: the test bot ends a talk at once
     bool hasContent() const;
 
     void print      (std::string_view msg);
