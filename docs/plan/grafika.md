@@ -97,11 +97,16 @@ Pierwszy krok: jedno pytanie do użytkownika, od czego zacząć — przed kodem:
   - Kiedy: tabela razem z anizotropią (przy jednym przełączniku strona nie ma sensu); stronę agent rozgrywki robi po scaleniu PR #10 do master. Ustawienia działają tylko w trybie ARPG.
 - Prawa: żadnych oryginalnych tekstur z VDF ani ich przeróbek w repozytorium lub paczce Diathic; ewentualna paczka pozostaje plikiem instalowanym przez gracza.
 
+## Gałąź: oświetlenie postaci i obrys
+
+Użytkownik wybrał zmianę, która ma dać wyraźną różnicę na RTX 3080 i słabszych kartach, bez DLSS 5.
+
+- Oświetlenie postaci: rozwinąć istniejące rozjaśnienie `BK_SKIN` i ciepły rim light aktywnego celu; dodać mocniejszy, ale ograniczony kolorystycznie akcent światła krawędziowego. Zachować mroczny styl Gothica i nie „plastikować” modeli.
+- Obrys: cienki, czytelny kontur na postaciach; wyraźniejszy dla wroga pod kursorem / celu. Do selekcji pikseli użyć maski postaci w G-buforze — głębia/normalne same w sobie obrysowałyby też architekturę i teren.
+- Opcje w `ArpgGfx::options()`: osobne `gfxCharacterLighting` i `gfxCharacterOutline`, obsługiwane przez istniejący panel grafiki. Tylko ARPG; tryb `-classic` bez zmian. Koszt opcji obrysu mierzyć na 1080p, z fallbackiem na starszych GPU.
+- Następny krok implementacji: uzgodniony punkt zaczepienia-mask w shaderze materiału, pełnoekranowy obrys po G-buforze oraz kompozycja światła; porównać tę samą postać i lokację z opcjami ON/OFF. Na tej gałęzi jest na razie specyfikacja, nie kod efektu.
 ## Stan
-- 2026-10-19: dodano tabelę `ArpgGfx::options()` dla panelu agenta rozgrywki i przełącznik `gfxAnisotropy` działający tylko w ARPG; tryb klasyczny zachowuje dotychczasowy sampler.
-- Tabela zawiera `gfxColorGrade` i `gfxAnisotropy`; anizotropia ogranicza dostępne poziomy możliwościami GPU. Renderer odświeża ustawienia przez `onSettingsChanged`, bez odczytu INI co klatkę.
-- PR #12 jest scalony do master; build i porównanie A/B aktualnych ustawień nie zostały potwierdzone w tej sesji. Użytkownik zgłosił brak widocznej różnicy; załączone zrzuty nie były dostępne do odczytu.
-- 2026-10-19: użytkownik zgłosił brak widocznej różnicy między opcjami. Audyt kodu: korekcja koloru ma siłę 0,35, odcienie 1,5–2,5% i winietę 3,5%, więc efekt jest bardzo subtelny; anizotropia poprawia głównie tekstury z mipmapami oglądane pod ostrym kątem.
-- 2026-10-19: użytkownik wybrał DLSS jako większy kierunek poprawy. Audyt: brak wektorów ruchu, jittera temporalnego i historii klatek; obecny upscaler Lanczos jest przestrzenny. DLSS pozostaje niezaimplementowany do czasu przygotowania tych wejść i integracji Streamline.
-- Następne: zaprojektować i wdrożyć bazę temporalną/motion vectors dla świata i animowanych modeli, z testem błędów obrazu; potem integracja Streamline/DLSS SR oraz fallback. Build i test gry wymagają środowiska użytkownika; testuj `graj_lokalnie.bat -Branch faza12-grafika`.
-- Jeśli próbkowanie nie wystarczy, przygotować narzędzie lub paczkę HD instalowaną przez gracza; tekstury gry ani ich przeróbki nie trafią do repozytorium ani paczki projektu.
+- 2026-10-19: gałąź `faza12-swiatlo-obrys` utworzona z `faza12-grafika`; zapisano specyfikację efektów oświetlenia postaci i obrysu, bez zmian w kodzie renderera.
+- Audyt: postacie `BK_SKIN` są już jaśniejsze o 40%, cel/wróg pod kursorem ma ciepły rim light; osobnego obrysu brak. Obrys z samej głębi objąłby też świat.
+- Następne: dodać maskę postaci i ARPG-only obrys/rim-light przez nazwane punkty zaczepienia, opcje `gfxCharacterLighting` / `gfxCharacterOutline`, potem build i test A/B na `graj_lokalnie.bat -Branch faza12-swiatlo-obrys`.
+- PR #12 jest scalony; build i test w grze wymagają środowiska testowego użytkownika. `-classic` musi pozostać bez zmian.
