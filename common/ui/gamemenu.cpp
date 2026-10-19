@@ -23,6 +23,7 @@
 #include "gothic.h"
 #include "resources.h"
 #include "game/arpgkeys.h"
+#include "graphics/arpggfx.h"
 #include "ui/arpgmenu.h"
 #include "build.h"
 
@@ -546,7 +547,8 @@ void GameMenu::paintEvent(PaintEvent &e) {
     }
   }
 
-// Diathic: the items of the modern main menu from top to bottom; -2 = "Sterowanie" (ours, after the options)
+// Diathic: the items of the modern main menu from top to bottom; -2 = "Sterowanie", -3 = "Grafika Diathic"
+// (ours, after the options)
 std::vector<int> GameMenu::modernOrder() {
   std::vector<int> ret;
   for(int i=0; i<zenkit::IMenu::item_count; ++i) {
@@ -565,6 +567,7 @@ std::vector<int> GameMenu::modernOrder() {
     if(hItems[ret[i]].name=="MENUITEM_MAIN_EXIT" && at==ret.size())
       at = i;
     }
+  ret.insert(ret.begin()+std::ptrdiff_t(at), -3);
   ret.insert(ret.begin()+std::ptrdiff_t(at), -2);
   return ret;
   }
@@ -581,7 +584,7 @@ void GameMenu::paintModern(Painter& p) {
     }
   // a dark band on the left, fading to the right
   {
-    const int panelW = int(float(W)*(modernPage==1 ? 0.62f : 0.48f));
+    const int panelW = int(float(W)*(modernPage!=0 ? 0.62f : 0.48f));
     const int steps  = 32;
     for(int i=0; i<steps; ++i) {
       const float t = float(i)/float(steps);
@@ -618,10 +621,16 @@ void GameMenu::paintModern(Painter& p) {
     it.modernRect = Rect();
   keysItemRect = Rect();
   keysRows.clear();
+  gfxItemRect  = Rect();
+  gfxRows.clear();
 
   if(modernPage==1) {
     paintModernKeys(p, fItem, fSel, fInfo, band);
-    } else {
+    }
+  else if(modernPage==2) {
+    paintModernGfx(p, fSel, fInfo, band);
+    }
+  else {
     // the logo (MENU_GOTHIC.TGA = the Diathic logo), top left
     int lx = int(float(W)*0.05f), ly = int(float(H)*0.05f), lw = 0, lh = 0;
     if(auto logo = Resources::loadTexture("MENU_GOTHIC.TGA")) {
@@ -650,14 +659,15 @@ void GameMenu::paintModern(Painter& p) {
       const Rect r(x0-int(14.f*k), y, itemW, itemH);
       bool        hi  = false;
       std::string txt;
-      if(idx==-2) {
-        keysItemRect = r;
-        hi  = keysItemSel;
-        txt = ArpgMenu::gtxt("Sterowanie");
+      if(idx==-2 || idx==-3) {
+        const bool keys = (idx==-2);
+        (keys ? keysItemRect : gfxItemRect) = r;
+        hi  = keys ? keysItemSel : gfxItemSel;
+        txt = ArpgMenu::gtxt(keys ? "Sterowanie" : "Grafika Diathic");
         } else {
         auto& it = hItems[idx];
         it.modernRect = r;
-        hi = (&it==sel) && !keysItemSel;
+        hi = (&it==sel) && !keysItemSel && !gfxItemSel;
         getText(it, textBuf);
         txt = textBuf.data();
         }
@@ -671,6 +681,9 @@ void GameMenu::paintModern(Painter& p) {
     // what the selected item does (the second text of the script), bottom left
     if(keysItemSel) {
       fInfo.drawText(p, x0, H-int(36.f*k), ArpgMenu::gtxt("Klawisze trybu ARPG: zobacz i zmień"));
+      }
+    else if(gfxItemSel) {
+      fInfo.drawText(p, x0, H-int(36.f*k), ArpgMenu::gtxt("Ustawienia grafiki trybu ARPG"));
       }
     else if(sel!=nullptr && sel->handle!=nullptr && sel->handle->text->size()>0) {
       std::string_view info = sel->handle->text[1];
@@ -770,9 +783,108 @@ void GameMenu::modernActivate() {
   update();
   }
 
+// "Grafika Diathic": the table ArpgGfx::options() of the graphics agent (a new row there = a new row here);
+// click / Enter / right = the next value, left = the previous one, saved in [DIATHIC] of Gothic.ini
+void GameMenu::paintModernGfx(Painter& p, GthFont& fSel, GthFont& fInfo,
+                              const std::function<void(const Rect&)>& band) {
+  const int   W = w(), H = h();
+  const float k = float(H)/1080.f;
+  const float base = float(std::max(1, Resources::font(1.f).pixelSize()));
+  GthFont fRow  = Resources::font(Resources::FontType::Normal, 26.f*k/base);
+  GthFont fRowH = Resources::font(Resources::FontType::Hi,     26.f*k/base);
+  GthFont fVal  = Resources::font(Resources::FontType::Hi,     26.f*k/base);
+  GthFont fOff  = Resources::font(Resources::FontType::Normal, 26.f*k/base);
+  fRow .setColor(Color(0.90f, 0.85f, 0.76f, 1.f));
+  fRowH.setColor(Color(1.00f, 0.82f, 0.45f, 1.f));
+  fVal .setColor(Color(1.00f, 0.90f, 0.62f, 1.f));
+  fOff .setColor(Color(0.55f, 0.50f, 0.44f, 1.f));
+
+  const int x0 = int(float(W)*0.06f);
+  int       y  = int(float(H)*0.06f);
+  fSel.drawText(p, x0, y+fSel.pixelSize(), ArpgMenu::gtxt("Grafika Diathic"));
+  y += fSel.pixelSize() + int(10.f*k);
+  fInfo.drawText(p, x0, y+fInfo.pixelSize(), ArpgMenu::gtxt("Kliknij, Enter albo strzałki w lewo / w prawo - zmiana wartości"));
+  y += fInfo.pixelSize() + int(22.f*k);
+
+  const auto& opts  = ArpgGfx::options();
+  const int   count = int(opts.size());
+  const int   rowH  = int(38.f*k);
+  const int   rowW  = int(float(W)*0.46f);
+  const int   valX  = x0 + int(float(rowW)*0.55f);
+  for(int i=0; i<count+2; ++i) {
+    if(i==count)
+      y += int(10.f*k);
+    const Rect r(x0-int(14.f*k), y, rowW, rowH);
+    gfxRows.push_back(r);
+    const bool hi = (gfxSel==i);
+    if(hi)
+      band(r);
+    auto&     f  = hi ? fRowH : fRow;
+    const int tx = x0 + (hi ? int(8.f*k) : 0);
+    const int ty = y + rowH/2 + f.pixelSize()/3;
+    if(i<count) {
+      const auto& o = opts[size_t(i)];
+      f.drawText(p, tx, ty, ArpgMenu::gtxt(o.name));
+      const int   v      = ArpgGfx::value(o.ini);
+      const bool  locked = o.levels.size()>1 && ArpgGfx::levelsSupported(o)<=1;
+      std::string val    = (v>=0 && size_t(v)<o.levels.size()) ? std::string(o.levels[size_t(v)]) : std::to_string(v);
+      if(locked)
+        val += " (karta nie obsługuje)";
+      else if(o.restart)
+        val += " (po restarcie)";
+      (locked ? fOff : fVal).drawText(p, valX, ty, ArpgMenu::gtxt(val));
+      } else {
+      f.drawText(p, tx, ty, ArpgMenu::gtxt(i==count ? "Przywróć domyślne" : "Wróć"));
+      }
+    y += rowH;
+    }
+
+  y += int(18.f*k);
+  fInfo.drawText(p, x0, y+fInfo.pixelSize(), ArpgMenu::gtxt("Działa w trybie ARPG; tryb klasyczny bez zmian. Rozdzielczość i zasięg widzenia - w Opcjach Gothica."));
+
+  // what the selected row does, bottom left
+  std::string_view info;
+  if(gfxSel<count)
+    info = opts[size_t(gfxSel)].info;
+  else if(gfxSel==count)
+    info = "Wszystkie ustawienia grafiki Diathic na wartości domyślne";
+  if(!info.empty())
+    fInfo.drawText(p, x0, H-int(36.f*k), ArpgMenu::gtxt(info));
+  }
+
+void GameMenu::modernGfxActivate(int dir) {
+  const auto& opts  = ArpgGfx::options();
+  const int   count = int(opts.size());
+  if(gfxSel<count) {
+    const auto& o = opts[size_t(gfxSel)];
+    const int   n = ArpgGfx::levelsSupported(o);
+    if(n>1) {
+      const int step = (dir==0 ? 1 : dir);
+      Gothic::settingsSetI("DIATHIC", o.ini, (ArpgGfx::value(o.ini) + step + n) % n);
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+      }
+    }
+  else if(dir==0 && gfxSel==count) {
+    for(const auto& o:opts)
+      Gothic::settingsSetI("DIATHIC", o.ini, o.def);
+    Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+    }
+  else if(dir==0) {
+    modernPage = 0;
+    }
+  update();
+  }
+
 bool GameMenu::modernKeyDown(KeyEvent& e) {
-  if(!modern || modernPage!=1)
+  if(!modern || modernPage==0)
     return false;
+  if(modernPage==2) {
+    if(e.key!=Event::K_ESCAPE && e.key!=Event::K_Back)
+      return false;
+    modernPage = 0;
+    update();
+    return true;
+    }
   if(keysCapture) {
     if(e.key!=Event::K_ESCAPE && keysSel<int(ArpgKeys::Count)) {
       if(!ArpgKeys::canBind(e.key))
@@ -793,9 +905,9 @@ bool GameMenu::modernKeyDown(KeyEvent& e) {
   }
 
 bool GameMenu::modernBack() {
-  if(!modern || modernPage!=1)
+  if(!modern || modernPage==0)
     return false;
-  if(keysCapture)
+  if(modernPage==1 && keysCapture)
     keysCapture = false; else
     modernPage = 0;
   update();
@@ -886,6 +998,21 @@ bool GameMenu::modernMouse(const Point& pos, bool click) {
   if(!modern)
     return skinMouse(pos - Point(x(),y()), click);
   auto inside = [&](const Rect& r) { return r.w>0 && pos.x>=r.x && pos.y>=r.y && pos.x<r.x+r.w && pos.y<r.y+r.h; };
+  if(modernPage==2) {
+    for(size_t i=0; i<gfxRows.size(); ++i) {
+      if(!inside(gfxRows[i]))
+        continue;
+      if(gfxSel!=int(i)) {
+        gfxSel = int(i);
+        Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+        update();
+        }
+      if(click)
+        modernGfxActivate(0);
+      return true;
+      }
+    return false;
+    }
   if(modernPage==1) {
     if(keysCapture)
       return true;
@@ -903,9 +1030,11 @@ bool GameMenu::modernMouse(const Point& pos, bool click) {
       }
     return false;
     }
-  if(inside(keysItemRect)) {
-    if(!keysItemSel) {
-      keysItemSel = true;
+  if(inside(keysItemRect) || inside(gfxItemRect)) {
+    const bool keys = inside(keysItemRect);
+    if(!(keys ? keysItemSel : gfxItemSel)) {
+      keysItemSel = keys;
+      gfxItemSel  = !keys;
       curItem     = uint32_t(-1);
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
       update();
@@ -917,8 +1046,9 @@ bool GameMenu::modernMouse(const Point& pos, bool click) {
   for(int i=0; i<zenkit::IMenu::item_count; ++i) {
     if(!inside(hItems[i].modernRect))
       continue;
-    if(curItem!=uint32_t(i) || keysItemSel) {
+    if(curItem!=uint32_t(i) || keysItemSel || gfxItemSel) {
       keysItemSel = false;
+      gfxItemSel  = false;
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
       setSelection(i, 1);
       if(auto s = selectedItem())
@@ -1170,23 +1300,39 @@ void GameMenu::onKeyboard(KeyCodec::Action key) {
       modernActivate();
     return;
     }
+  if(modern && modernPage==2) {
+    // Diathic: "Grafika Diathic"
+    const int rows = int(ArpgGfx::options().size())+2;
+    if(key==KeyCodec::Forward || key==KeyCodec::Back) {
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      gfxSel = (gfxSel + (key==KeyCodec::Forward ? rows-1 : 1)) % rows;
+      update();
+      }
+    if(key==KeyCodec::Left || key==KeyCodec::Right)
+      modernGfxActivate(key==KeyCodec::Right ? 1 : -1);
+    if(key==KeyCodec::ActionGeneric)
+      modernGfxActivate(0);
+    return;
+    }
   if(modern && (key==KeyCodec::Forward || key==KeyCodec::Back)) {
-    // Diathic: up / down in the order of the modern list, "Sterowanie" included
+    // Diathic: up / down in the order of the modern list, "Sterowanie" and "Grafika Diathic" included
     auto order = modernOrder();
     if(!order.empty()) {
       int at = -1;
       for(size_t i=0; i<order.size(); ++i)
-        if((order[i]==-2 && keysItemSel) || (order[i]>=0 && !keysItemSel && uint32_t(order[i])==curItem))
+        if((order[i]==-2 && keysItemSel) || (order[i]==-3 && gfxItemSel) ||
+           (order[i]>=0 && !keysItemSel && !gfxItemSel && uint32_t(order[i])==curItem))
           at = int(i);
       const int n  = int(order.size());
       const int nx = at<0 ? 0 : (at + (key==KeyCodec::Forward ? n-1 : 1)) % n;
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
-      if(order[size_t(nx)]==-2) {
-        keysItemSel = true;
-        curItem     = uint32_t(-1);
+      const int pick = order[size_t(nx)];
+      keysItemSel = (pick==-2);
+      gfxItemSel  = (pick==-3);
+      if(pick<0) {
+        curItem = uint32_t(-1);
         } else {
-        keysItemSel = false;
-        setSelection(order[size_t(nx)], 1);
+        setSelection(pick, 1);
         if(auto s = selectedItem())
           updateSavThumb(*s);
         }
@@ -1194,10 +1340,11 @@ void GameMenu::onKeyboard(KeyCodec::Action key) {
       }
     return;
     }
-  if(modern && keysItemSel && key==KeyCodec::ActionGeneric) {
+  if(modern && (keysItemSel || gfxItemSel) && key==KeyCodec::ActionGeneric) {
     Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
-    modernPage  = 1;
+    modernPage  = keysItemSel ? 1 : 2;
     keysSel     = 0;
+    gfxSel      = 0;
     keysCapture = false;
     update();
     return;
