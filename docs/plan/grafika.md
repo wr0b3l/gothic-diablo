@@ -8,7 +8,7 @@ Ten plik jest jedynym źródłem zasad dla agenta grafiki (ChatGPT): nie ma on d
 - Tryb ARPG (domyślny) i klasyczny (`-classic`, OpenGothic bez zmian).
 - Gra u użytkownika (Windows): `graj_lokalnie.bat` (buduje commit z GitHuba lokalnie, ~1 min) albo launcher z buildami z CI. Log gry: `gra\dane\log.txt`.
 - CI: push na master albo do PR → wydanie `build-<N>` (Windows).
-- Stan (2026-10-17): PR #10 (gałąź faza9-ekrany) i PR #11 (faza11-drzewka-broni, baza faza9-ekrany) czekają na test użytkownika. Dlatego baza dla grafiki to `faza11-drzewka-broni` — ma wszystko.
+- Stan (2026-10-19): wszystkie PR (#10–#15, także twoje #12 i strona „Grafika Diathic” #14) scalone do master jednym squashem. Baza dla grafiki to teraz `master`.
 
 ## Twoje zadanie
 Tekstury, oświetlenie, obraz (shadery, przebiegi po renderze), efekty, własne grafiki. Nie twoje: walka, drzewka umiejętności, interfejs, mapa, loot, klawisze.
@@ -49,9 +49,9 @@ Pierwszy krok: jedno pytanie do użytkownika, od czego zacząć — przed kodem:
 - Proś o zrzuty przed / po z tych samych miejsc: Khorinis w dzień (targ), las, jaskinia, noc z pochodnią, walka z magią.
 
 ## Git
-- Gałąź `faza12-grafika` od `origin/faza11-drzewka-broni`. Jeśli twoje narzędzie samo nadaje nazwę gałęzi — podaj ją użytkownikowi (do `-Branch`).
+- Gałąź `faza12-grafika` od `origin/master` (od 2026-10-19: stara gałąź jest już w master — zacznij ją od nowa: `git fetch origin && git checkout -B faza12-grafika origin/master`, potem push z `--force-with-lease` tylko ten jeden raz). Jeśli twoje narzędzie samo nadaje nazwę gałęzi — podaj ją użytkownikowi (do `-Branch`).
 - Commity po polsku: pierwsza linia = co się zmieniło dla gracza, potem lista zmian. Zmiany tylko dokumentów → `[skip ci]` na początku pierwszej linii.
-- PR do bazy `faza11-drzewka-broni` (tytuł i opis po polsku). Po scaleniu #10 i #11 do master: `git merge origin/master` (scalenia są squash, te same zmiany łączą się bez konfliktu) i zmiana bazy PR na master.
+- PR do bazy `master` (tytuł i opis po polsku). Nowe zmiany z master pobieraj przez `git merge origin/master`.
 - Zmiany bazy pobieraj przez merge, bez przepisywania historii. Scalenie PR tylko na polecenie użytkownika.
 
 ## Na koniec każdego zadania
