@@ -99,3 +99,9 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Księga umiejętności (decyzja „4 + 4”): strona główna = spis — lewa: pasywne (Cios, Atak ładowany, Fikołek, Biegłość), prawa: umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, z ich umiejętnościami i klawiszami); klik = przewrócenie strony na drzewko: lewa drzewko, prawa opis węzła; „Wróć do spisu” / Backspace
 - Wartości do balansu: `ArpgStatus::ArmorK` 100, `NormalHit` 0,5, `DanceCutTime` 0,36 s, `DanceHitAt` 0,17 s, `DanceMul` 1, `DanceArc` 150°
 - Do testu: Taniec ostrzy (3 i 4 cięcia, trafienia w liczbach), obrażenia różnych broni i siły (bez stałych 5), parowanie bez odepchnięcia, blok bandytów / orków (pasek nad głową, po 3 blokach atak / odskok), F i Shift + LPM, przypisanie do 3–0 i runy, stary zapis (umiejętności same na wolne klawisze), strona „Sterowanie”, spis i przewracanie stron
+
+
+## Faza 12 — aktualizacja kierunku (2026-10-19)
+- Użytkownik zgłosił, że nie widzi różnicy między włączonymi i wyłączonymi ustawieniami grafiki. W kodzie korekcja kolorów jest bardzo subtelna; anizotropia zależy od powierzchni i mipmap, więc nie zawsze będzie oczywista.
+- Użytkownik wybrał DLSS jako większe ulepszenie. Kierunek: DLSS Super Resolution przez Streamline/Vulkan, tylko w ARPG, z fallbackiem; nie traktować go jako zamiennika tekstur lub modeli HD.
+- Audyt wykazał brak wektorów ruchu i jittera temporalnego w rendererze; przygotowanie tych danych dla świata i animowanych modeli jest warunkiem dalszej integracji. Nie dodawać przełącznika DLSS przed działającym torem i weryfikacją obrazu.
