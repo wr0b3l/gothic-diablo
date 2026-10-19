@@ -105,3 +105,5 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Użytkownik zgłosił, że nie widzi różnicy między włączonymi i wyłączonymi ustawieniami grafiki. W kodzie korekcja kolorów jest bardzo subtelna; anizotropia zależy od powierzchni i mipmap, więc nie zawsze będzie oczywista.
 - Użytkownik wybrał DLSS jako większe ulepszenie. Kierunek: DLSS Super Resolution przez Streamline/Vulkan, tylko w ARPG, z fallbackiem; nie traktować go jako zamiennika tekstur lub modeli HD.
 - Audyt wykazał brak wektorów ruchu i jittera temporalnego w rendererze; przygotowanie tych danych dla świata i animowanych modeli jest warunkiem dalszej integracji. Nie dodawać przełącznika DLSS przed działającym torem i weryfikacją obrazu.
+
+- 2026-10-19: użytkownik wybrał większy, łatwo porównywalny efekt graficzny: poprawę oświetlenia postaci i obrysów wroga/celu. Kierunek ma zachować mroczny styl Gothica, działać wyłącznie w ARPG, mieć przełączniki w panelu grafiki i nie zmieniać `-classic`.
