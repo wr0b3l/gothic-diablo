@@ -100,7 +100,7 @@ Pierwszy krok: jedno pytanie do użytkownika, od czego zacząć — przed kodem:
 ## Stan
 - 2026-10-19: dodano tabelę `ArpgGfx::options()` dla panelu agenta rozgrywki i przełącznik `gfxAnisotropy` działający tylko w ARPG; tryb klasyczny zachowuje dotychczasowy sampler.
 - Tabela zawiera `gfxColorGrade` i `gfxAnisotropy`; anizotropia ogranicza dostępne poziomy możliwościami GPU. Renderer odświeża ustawienia przez `onSettingsChanged`, bez odczytu INI co klatkę.
-- Build/clang nieuruchomione w tym środowisku; PR #12 i nowy kod czekają na build oraz test użytkownika w tych samych lokacjach przed/po.
+- PR #12 jest scalony do master; build i porównanie A/B aktualnych ustawień nie zostały potwierdzone w tej sesji. Użytkownik zgłosił brak widocznej różnicy; załączone zrzuty nie były dostępne do odczytu.
 - 2026-10-19: użytkownik zgłosił brak widocznej różnicy między opcjami. Audyt kodu: korekcja koloru ma siłę 0,35, odcienie 1,5–2,5% i winietę 3,5%, więc efekt jest bardzo subtelny; anizotropia poprawia głównie tekstury z mipmapami oglądane pod ostrym kątem.
 - 2026-10-19: użytkownik wybrał DLSS jako większy kierunek poprawy. Audyt: brak wektorów ruchu, jittera temporalnego i historii klatek; obecny upscaler Lanczos jest przestrzenny. DLSS pozostaje niezaimplementowany do czasu przygotowania tych wejść i integracji Streamline.
 - Następne: zaprojektować i wdrożyć bazę temporalną/motion vectors dla świata i animowanych modeli, z testem błędów obrazu; potem integracja Streamline/DLSS SR oraz fallback. Build i test gry wymagają środowiska użytkownika; testuj `graj_lokalnie.bat -Branch faza12-grafika`.
