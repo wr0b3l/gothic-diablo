@@ -83,3 +83,14 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 ## Faza 12 — grafika (2026-10-17)
 - Użytkownik: drugi agent ulepsza tekstury i grafikę równolegle z pracą nad grą → gałąź faza12-grafika, zasady i podział plików w grafika.md
 - Agent grafiki to ChatGPT (bez skilli, pamięci i dokumentów projektu) → grafika.md samowystarczalny, stan w jego sekcji „Stan”
+
+## Poprawki walki i księga umiejętności (2026-10-19, gałąź poprawki-walka)
+- Użytkownik: Taniec ostrzy = jedno uderzenie zamiast trzech; obrażenia zawsze 5 albo wielokrotność; po parowaniu potwory odepchnięte; potwory blokują w nieskończoność
+  - Taniec ostrzy: każde cięcie ma swój czas (0,36 s), trafienie liczy umiejętność (0,17 s w cięciu), nie animacja; przed trafieniem krok do wroga z przodu
+  - obrażenia bohatera (decyzja: „ochrona procentowo”): (siła albo zręczność + broń) × 100 / (100 + ochrona); cios bez pełnych obrażeń = 50% (Gothic: 10%); czary i ciosy innych bez zmian
+  - parowanie: zachwiany wróg stoi w miejscu (bez odepchnięcia animacji)
+  - blok ludzi i potworów jak bohatera: 3 ładunki, +1 na sekundę poza blokiem, przy 0 przepuszcza 25% za każdy ładunek poniżej; AI z zużytym blokiem zamiast parady: atak (50%), odskok (25%), krok w bok (25%); pasek ładunków nad głową, gdy niepełny
+- Klawisze: F = broń (dobycie / schowanie), Shift przytrzymany + LPM = atak w miejscu (z lockiem: w cel); umiejętności drzewek na 3–0 zamiast G / F / B (przypisanie: najazd w księdze + klawisz; nowo poznana sama na pierwszy wolny klawisz; runa na klawisz z umiejętnością zdejmuje umiejętność i odwrotnie)
+- Księga umiejętności (decyzja „4 + 4”): strona główna = spis — lewa: pasywne (Cios, Atak ładowany, Fikołek, Biegłość), prawa: umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, z ich umiejętnościami i klawiszami); klik = przewrócenie strony na drzewko: lewa drzewko, prawa opis węzła; „Wróć do spisu” / Backspace
+- Wartości do balansu: `ArpgStatus::ArmorK` 100, `NormalHit` 0,5, `DanceCutTime` 0,36 s, `DanceHitAt` 0,17 s, `DanceMul` 1, `DanceArc` 150°
+- Do testu: Taniec ostrzy (3 i 4 cięcia, trafienia w liczbach), obrażenia różnych broni i siły (bez stałych 5), parowanie bez odepchnięcia, blok bandytów / orków (pasek nad głową, po 3 blokach atak / odskok), F i Shift + LPM, przypisanie do 3–0 i runy, stary zapis (umiejętności same na wolne klawisze), strona „Sterowanie”, spis i przewracanie stron

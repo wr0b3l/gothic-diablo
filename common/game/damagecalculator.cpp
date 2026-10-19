@@ -1,6 +1,9 @@
 #include "damagecalculator.h"
 
+#include <cmath>
+
 #include "game/arpgskills.h"
+#include "game/arpgstatus.h"
 
 #include "world/objects/npc.h"
 #include "world/objects/item.h"
@@ -13,6 +16,14 @@
 
 static float mix(float x, float y, float a) {
   return x + (y-x)*a;
+  }
+
+// Diathic: the hero's swings and shots: the protection takes a part of the damage, not all of it
+static int32_t arpgArmor(int32_t raw, int32_t prot) {
+  if(raw<=0)
+    return 0;
+  const float k = ArpgStatus::ArmorK;
+  return int32_t(std::lround(float(raw)*k/(k+float(std::max(0, prot)))));
   }
 
 DamageCalculator::Val DamageCalculator::damageValue(Npc& src, Npc& other, const Bullet* b, bool isSpell, const DamageCalculator::Damage& splDmg, const CollideMask bMsk) {
@@ -104,10 +115,10 @@ DamageCalculator::Val DamageCalculator::rangeDamage(Npc& nsrc, Npc& nother, cons
   if((bMsk & (COLL_APPLYDAMAGE | COLL_APPLYDOUBLEDAMAGE | COLL_APPLYHALVEDAMAGE | COLL_DOEVERYTHING))==0)
     return Val(0,true,true);
 
-  return rangeDamage(nsrc,nother,dmg,bMsk);
+  return rangeDamage(nsrc,nother,dmg,bMsk,nsrc.arpgPerks()!=nullptr);
   }
 
-DamageCalculator::Val DamageCalculator::rangeDamage(Npc&, Npc& nother, Damage dmg, const CollideMask bMsk) {
+DamageCalculator::Val DamageCalculator::rangeDamage(Npc&, Npc& nother, Damage dmg, const CollideMask bMsk, bool arpgHero) {
   auto& other = nother.handle();
 
   if(bMsk & COLL_APPLYDOUBLEDAMAGE)
@@ -120,7 +131,7 @@ DamageCalculator::Val DamageCalculator::rangeDamage(Npc&, Npc& nother, Damage dm
   for(unsigned int i=0; i<zenkit::DamageType::NUM; ++i) {
     if(dmg[size_t(i)]==0)
       continue;
-    int vd = std::max(dmg[size_t(i)] - other.protection[i],0);
+    int vd = arpgHero ? arpgArmor(dmg[size_t(i)], other.protection[i]) : std::max(dmg[size_t(i)] - other.protection[i],0);
     if(other.protection[i]>=0) { // Filter immune
       value     += vd;
       invincible = false;
@@ -158,19 +169,26 @@ DamageCalculator::Val DamageCalculator::swordDamage(Npc& nsrc, Npc& nother) {
       critChance = -1;
       }
 
-    bool invincible = true;
-    bool full       = false;
+    bool        invincible = true;
+    bool        full       = false;
+    const auto* pk         = nsrc.arpgPerks();
     for(unsigned int i=0; i<zenkit::DamageType::NUM; ++i) {
       if((dtype & (1<<i))==0)
         continue;
-      int vd = std::max(str + src.damage[i] - other.protection[i],0);
+      // Diathic: the hero - the protection takes a part (ArpgStatus::ArmorK), the swing without the full damage gives
+      // NormalHit of it; others: Gothic (all of the protection off, 10% without the full damage)
+      int vd = pk!=nullptr ? arpgArmor(str + src.damage[i], other.protection[i])
+                           : std::max(str + src.damage[i] - other.protection[i],0);
       // gothic-diablo: Słaby punkt: a better chance of the full damage; Diathic: Celny sztych with a 1H weapon
       int crit = src.hitchance[tal];
-      if(auto pk = nsrc.arpgPerks())
+      if(pk!=nullptr)
         crit += pk->critAdd + (nsrc.weaponState()==WeaponState::W1H ? pk->crit1H : 0);
-      if(crit<=critChance)
-        vd = (vd-1)/10; else
+      if(crit>critChance)
         full = true;
+      else if(pk!=nullptr)
+        vd = int(std::lround(float(vd)*ArpgStatus::NormalHit));
+      else
+        vd = (vd-1)/10;
       if(other.protection[i]>=0) { // Filter immune
         value += vd;
         invincible = false;

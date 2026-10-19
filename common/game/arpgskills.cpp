@@ -2,6 +2,7 @@
 #include "arpgkeys.h"
 
 #include <algorithm>
+#include <iterator>
 
 #include "game/serialize.h"
 
@@ -59,12 +60,12 @@ const std::vector<Tree>& ArpgSkills::trees() {
       },
       {"Cień",1,"Po fikołku 1 s niewidzialności: wrogowie gubią cel","ITAT_SHADOWFUR"},
       "3/3 w Kontrataku", {2}, {0, {{2,0}}}},
-    {"Blok", "", "Blok (środkowy przycisk) bronią albo pięściami; później także tarczą. Umiejętność pod klawiszem bloku",
+    {"Blok", "", "Blok (środkowy przycisk) bronią albo pięściami; później także tarczą. Uderzenie i Szarża na klawiszu 3 - 0",
      "ITMW_1H_SPECIAL_04",
       {
         {"Uderzenie",    {{"Uderzenie",1,"Zryw 1,5 m w stronę kursora, cel zachwiany (odnowienie 6 s)","ITMW_STREITKOLBEN"},
                           {"Ciężkie uderzenie",3,"Uderzenie: +25% obrażeń i +0,25 s zachwiania za punkt","ITMW_NAGELKEULE"},
-                          {"Szybsze uderzenie",2,"Odnowienie uderzenia krótsze o 1 s za punkt","ITPO_SPEED"}}, 0, ArpgKeys::SkillBlock},
+                          {"Szybsze uderzenie",2,"Odnowienie uderzenia krótsze o 1 s za punkt","ITPO_SPEED"}}, 0, SkBash},
         {"Szarża",       {{"Szarża",1,"Uderzenie z rozbiegu: do 6 m, przewraca wszystkich na drodze","ITAT_SHADOWHORN"},
                           {"Taran",2,"Szarża dalej o 1 m za punkt","ITMW_KRIEGSHAMMER1"}}, 0, -1, 0},
         {"Garda",        {{"Twarda garda",2,"Blok: +1 ładunek za punkt","ITAT_CRAWLERPLATE"},
@@ -80,10 +81,10 @@ const std::vector<Tree>& ArpgSkills::trees() {
       {
         {"Pchnięcie",    {{"Pchnięcie",1,"Wypad 3 m w stronę kursora, trafia wrogów na drodze (x1,5), krwawienie (odnowienie 5 s)","ITMW_RAPIER"},
                           {"Głębokie pchnięcie",3,"Pchnięcie: +25% obrażeń za punkt","ITMW_1H_VLK_DAGGER"},
-                          {"Dalszy wypad",2,"Pchnięcie dalej o 1 m za punkt","ITRI_DEX_02"}}, 0, ArpgKeys::SkillA},
+                          {"Dalszy wypad",2,"Pchnięcie dalej o 1 m za punkt","ITRI_DEX_02"}}, 0, SkThrust},
         {"Taniec ostrzy",{{"Taniec ostrzy",1,"Trzy szybkie cięcia, każde w stronę kursora (odnowienie 8 s)","ITMW_MEISTERDEGEN"},
                           {"Szybkie ostrza",3,"Odnowienie tańca krótsze o 1 s za punkt","ITPO_SPEED"},
-                          {"Czwarte cięcie",1,"Taniec ostrzy: cztery cięcia","ITMW_1H_SPECIAL_04"}}, 30, ArpgKeys::SkillB},
+                          {"Czwarte cięcie",1,"Taniec ostrzy: cztery cięcia","ITMW_1H_SPECIAL_04"}}, 30, SkDance},
         {"Szermierka",   {{"Wyczucie ostrza",3,"Okno parowania dłuższe o 50 ms za punkt (broń jednoręczna)","ITMI_SEXTANT"},
                           {"Dłuższe zachwianie",2,"Wróg zachwiany o 0,25 s dłużej, za punkt","ITMW_ELBASTARDO"}}},
         {"Precyzja",     {{"Celny sztych",3,"+5% szansy na pełne obrażenia bronią jednoręczną, za punkt","ITMW_SCHWERT1"},
@@ -98,10 +99,10 @@ const std::vector<Tree>& ArpgSkills::trees() {
       {
         {"Skok",         {{"Skok",1,"Skok do 5 m w punkt kursora, cios znad głowy przewraca wrogów w promieniu 2,5 m (odnowienie 8 s)","ITMW_SCHLACHTAXT"},
                           {"Twarde lądowanie",3,"Skok: +25% obrażeń za punkt","ITMW_STEINBRECHER"},
-                          {"Dalszy skok",2,"Skok dalej o 1 m za punkt","ITBE_ADDON_DEX_10"}}, 0, ArpgKeys::SkillA},
+                          {"Dalszy skok",2,"Skok dalej o 1 m za punkt","ITBE_ADDON_DEX_10"}}, 0, SkLeap},
         {"Młyn",         {{"Młyn",1,"Trzymany: obrót z bronią, trafia wszystkich wokół co 0,4 s, do 2 s (odnowienie 8 s)","ITRU_WHIRLWIND"},
                           {"Wicher",3,"Młyn: +15% obrażeń za punkt","ITSC_WINDFIST"},
-                          {"Długi młyn",2,"Młyn dłużej o 0,5 s za punkt","ITMW_2H_SLD_SWORD"}}, 30, ArpgKeys::SkillB},
+                          {"Długi młyn",2,"Młyn dłużej o 0,5 s za punkt","ITMW_2H_SLD_SWORD"}}, 30, SkMill},
         {"Ciężar",       {{"Miażdżenie",3,"+5% obrażeń bronią dwuręczną za punkt","ITMW_MORGENSTERN"},
                           {"Ogłuszenie",2,"Cios dwuręczny: 10% szansy na zachwianie, za punkt","ITMW_2H_ORCAXE_01"}}},
         {"Zawziętość",   {{"Niewzruszony",1,"Trafienie nie przerywa zamachu bronią dwuręczną","ITAR_LEATHER_L"},
@@ -115,10 +116,10 @@ const std::vector<Tree>& ArpgSkills::trees() {
       {
         {"Deszcz strzał",{{"Deszcz strzał",1,"Strzały z nieba przez 2 s na obszar 4 m w punkcie kursora (odnowienie 10 s)","ITRU_FIRERAIN"},
                           {"Ulewa",3,"Deszcz strzał dłużej o 0,5 s za punkt","ITRW_ARROW"},
-                          {"Szeroki deszcz",2,"Deszcz strzał: +1 m promienia za punkt","ITRW_BOW_M_01"}}, 0, ArpgKeys::SkillA},
+                          {"Szeroki deszcz",2,"Deszcz strzał: +1 m promienia za punkt","ITRW_BOW_M_01"}}, 0, SkRain},
         {"Odskok",       {{"Odskok",1,"Skok w tył (od kursora) i strzał w wroga pod kursorem albo najbliższego (odnowienie 6 s)","ITAT_WING"},
                           {"Dalszy odskok",2,"Odskok dalej o 0,5 m za punkt","ITRI_DEX_01"},
-                          {"Podwójny strzał",1,"Odskok: dwie strzały","ITRW_BOW_L_04"}}, 30, ArpgKeys::SkillB},
+                          {"Podwójny strzał",1,"Odskok: dwie strzały","ITRW_BOW_L_04"}}, 30, SkDisengage},
         {"Naciąg",       {{"Szybki naciąg",5,"+4% szybkości strzałów za punkt","ITRW_BOW_L_01"},
                           {"Przebicie",2,"Strzała przelatuje przez 1 wroga za punkt","ITRW_ARROW"},
                           {"Celne oko",3,"+5% szansy trafienia powyżej 15 m, za punkt","ITRW_BOW_H_01"}}},
@@ -226,6 +227,24 @@ static bool exists(const NodeId& n) {
   return n.node>=0 && size_t(n.node)<t.branches[size_t(n.branch)].nodes.size();
   }
 
+const Node* ArpgSkills::skillNode(Active s, size_t* tree, int* branch) {
+  if(s==SkNone || s>=SkCount)
+    return nullptr;
+  auto& tr = trees();
+  for(size_t t=0; t<tr.size(); ++t)
+    for(size_t b=0; b<tr[t].branches.size(); ++b) {
+      auto& br = tr[t].branches[b];
+      if(br.skill!=int(s) || br.nodes.empty())
+        continue;
+      if(tree!=nullptr)
+        *tree = t;
+      if(branch!=nullptr)
+        *branch = int(b);
+      return &br.nodes[0];
+      }
+  return nullptr;
+  }
+
 // ---------------------------------------------------------------------------------------------------------------
 
 void ArpgProgress::clear() {
@@ -235,6 +254,32 @@ void ArpgProgress::clear() {
   caps.clear();
   bought      = 0;
   weaponsInit = false;
+  std::fill(std::begin(slots), std::end(slots), uint8_t(SkNone));
+  slotsInit   = true; // a new game: the skills go on the keys when they are learned
+  }
+
+ArpgSkills::Active ArpgProgress::slotSkill(int slot) const {
+  if(slot<0 || slot>=SlotCount || slots[slot]>=SkCount)
+    return SkNone;
+  return Active(slots[slot]);
+  }
+
+int ArpgProgress::slotOf(Active s) const {
+  if(s==SkNone)
+    return -1;
+  for(int i=0; i<SlotCount; ++i)
+    if(slots[i]==s)
+      return i;
+  return -1;
+  }
+
+void ArpgProgress::setSlot(int slot, Active s) {
+  if(slot<0 || slot>=SlotCount)
+    return;
+  for(auto& i:slots)
+    if(s!=SkNone && i==s)
+      i = SkNone;
+  slots[slot] = s;
   }
 
 static void writeMap(Serialize& fout, const ArpgProgress::Ranks& m) {
@@ -255,13 +300,16 @@ static void readMap(Serialize& fin, ArpgProgress::Ranks& m) {
   }
 
 void ArpgProgress::save(Serialize& fout) const {
-  const uint8_t ver = 2;
+  const uint8_t ver = 3;
   fout.write(ver, bought);
   writeMap(fout, rk);
   writeMap(fout, found);
   // v2: Biegłość
   writeMap(fout, caps);
   fout.write(weaponsInit);
+  // v3: the skills on the keys 3-0
+  for(auto i:slots)
+    fout.write(i);
   }
 
 void ArpgProgress::load(Serialize& fin) {
@@ -273,6 +321,15 @@ void ArpgProgress::load(Serialize& fin) {
   if(ver>=2) {
     readMap(fin, caps);
     fin.read(weaponsInit);
+    }
+  if(ver>=3) {
+    for(auto& i:slots) {
+      fin.read(i);
+      if(i>=SkCount)
+        i = SkNone;
+      }
+    } else {
+    slotsInit = false; // the skills learned before go on free keys once (PlayerControl::arpgTickSlots)
     }
   // Diathic: the bow nodes of Cios and Atak ładowany moved to the tree Łuk i kusza (2026-10-16)
   static const char* moved[][2] = {

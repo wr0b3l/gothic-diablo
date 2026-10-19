@@ -1,6 +1,7 @@
 #include "game/arpgkeys.h"
 #include "arpgmenu.h"
 
+#include <Tempest/Application>
 #include <Tempest/Brush>
 #include <Tempest/Color>
 
@@ -21,6 +22,7 @@
 #include "game/gamesession.h"
 #include "game/questlog.h"
 #include "utils/gthfont.h"
+#include "game/definitions/sounddefinitions.h"
 #include "resources.h"
 #include "gothic.h"
 
@@ -227,7 +229,38 @@ static ArpgProgress::Hero heroOf(const Npc& pl) {
   return h;
   }
 
+// Diathic: the skill book
+// a tree with a skill to put on a key (right page of the contents)
+static bool hasSkills(const ArpgSkills::Tree& t) {
+  for(auto& b:t.branches)
+    if(b.skill>=0)
+      return true;
+  return false;
+  }
+
+// the key 3-0 of a skill: "klawisz 4", "" on none
+static std::string skillKey(ArpgSkills::Active s) {
+  auto pr = progress();
+  const int slot = pr!=nullptr ? pr->slotOf(s) : -1;
+  if(slot<0)
+    return "";
+  return "klawisz " + std::to_string((slot+3)%10);
+  }
+
+static bool skillKnown(ArpgSkills::Active s) {
+  auto   pr = progress();
+  size_t t  = 0;
+  int    b  = 0;
+  if(pr==nullptr || ArpgSkills::skillNode(s, &t, &b)==nullptr)
+    return false;
+  return pr->rank(ArpgSkills::NodeId{t, b, 0})>0;
+  }
+
 void ArpgMenu::open(Page p) {
+  if(p==P_Skills && page!=P_Skills) {
+    treeOpen = false; // Diathic: the skill book opens at its contents
+    turnAt   = 0;
+    }
   page   = p;
   scroll = 0;
   if(!undoSet) {
@@ -347,8 +380,17 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
       scroll = 0;
       return true;
     case H_Tree:
-      tree = h->id;
+      turnTo(true, h->id); // Diathic: the page turns to the tree
       return true;
+    case H_Back:
+      turnTo(false, tree);
+      return true;
+    case H_Skill: {
+      size_t t = 0;
+      if(ArpgSkills::skillNode(ArpgSkills::Active(h->id), &t)!=nullptr)
+        turnTo(true, int(t));
+      return true;
+      }
     case H_Node: {
       // left button: a point into the node; right: one point back (only one added since the book was opened)
       auto pr = progress();
@@ -360,6 +402,15 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
         // Biegłość: Gothic's percent of the weapon goes with the rank (hit chance, moves of a warrior / master)
         if(const int tal = ArpgSkills::talentOf(id); tal>0)
           pl.world().script().arpgRaiseFightTalent(pl, tal, right ? -ArpgSkills::PctPerRank : ArpgSkills::PctPerRank);
+        // Diathic: a skill learned goes on a free key 3-0; taken back: off its key
+        auto& tr = ArpgSkills::trees()[size_t(tree)];
+        if(id.branch>=0 && id.node==0 && tr.branches[size_t(id.branch)].skill>=0) {
+          const auto sk = ArpgSkills::Active(tr.branches[size_t(id.branch)].skill);
+          if(!right && pr->slotOf(sk)<0)
+            putSkillOnKey(sk, -1, pl, true);
+          else if(right && pr->rank(id)==0 && pr->slotOf(sk)>=0)
+            pr->setSlot(pr->slotOf(sk), ArpgSkills::SkNone);
+          }
         Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
         }
       return true;
@@ -533,7 +584,7 @@ void ArpgMenu::dropOn(const Point& pos, Npc& pl) {
       }
     case H_Key:
       if((ItmFlags(it->mainFlag()) & ITM_CAT_RUNE)!=0)
-        pl.useItem(drag.cls, uint8_t(t->id), false);
+        putSpellOnKey(drag.cls, uint8_t(t->id), pl);
       return;
     case H_Pack:
       if(drag.equipped)
@@ -591,6 +642,19 @@ void ArpgMenu::paintDrag(Painter& p, const Fonts& f, InventoryRenderer& items, N
   }
 
 bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
+  if(page==P_Skills) {
+    // Diathic: the skill under the cursor goes on the key
+    if(hoverSkill==ArpgSkills::SkNone || slot<3 || slot>10)
+      return false;
+    if(!skillKnown(hoverSkill)) {
+      if(auto nd = ArpgSkills::skillNode(hoverSkill))
+        Gothic::inst().onPrint(gtxt(std::string(nd->name)+" - najpierw naucz się tej umiejętności"));
+      return true;
+      }
+    putSkillOnKey(hoverSkill, int(slot)-3, pl, true);
+    Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+    return true;
+    }
   if(page!=P_Equip || hoverCls==0)
     return false;
   for(auto it = pl.inventory().iterator(Inventory::T_Inventory); it.isValid(); ++it) {
@@ -598,10 +662,51 @@ bool ArpgMenu::spellKey(uint8_t slot, Npc& pl) {
       continue;
     if((ItmFlags(it->mainFlag()) & ITM_CAT_RUNE)==0)
       return false;
-    pl.useItem(hoverCls, slot, false);
+    putSpellOnKey(hoverCls, slot, pl);
     return true;
     }
   return false;
+  }
+
+void ArpgMenu::putSkillOnKey(ArpgSkills::Active s, int slot, Npc& pl, bool announce) {
+  auto pr = progress();
+  if(pr==nullptr || s==ArpgSkills::SkNone || slot>=ArpgSkills::SlotCount)
+    return;
+  auto& inv = pl.inventory();
+  auto  freeKey = [&](int except) {
+    for(int i=0; i<ArpgSkills::SlotCount; ++i)
+      if(i!=except && pr->slotSkill(i)==ArpgSkills::SkNone && inv.currentSpell(uint8_t(i))==nullptr)
+        return i;
+    return -1;
+    };
+  if(slot<0) {
+    slot = freeKey(-1);
+    if(slot<0) {
+      if(announce)
+        Gothic::inst().onPrint(gtxt("Brak wolnego klawisza 3 - 0: przypisz umiejętność w księdze (najedź i naciśnij klawisz)"));
+      return;
+      }
+    }
+  pr->setSlot(slot, s);
+  // a rune / scroll on that key: to a free key, otherwise off the keys (it stays in the backpack)
+  if(auto sp = inv.currentSpell(uint8_t(slot))) {
+    const size_t cls = sp->clsId();
+    const int    to  = freeKey(slot);
+    if(to>=0)
+      pl.useItem(cls, uint8_t(to+3), false); else
+      pl.unequipItem(cls);
+    }
+  if(announce)
+    if(auto nd = ArpgSkills::skillNode(s))
+      Gothic::inst().onPrint(gtxt(std::string(nd->name)+" - klawisz "+std::to_string((slot+3)%10)));
+  }
+
+void ArpgMenu::putSpellOnKey(size_t cls, uint8_t gothicSlot, Npc& pl) {
+  if(gothicSlot<3 || gothicSlot>10)
+    return;
+  if(auto pr = progress())
+    pr->setSlot(int(gothicSlot)-3, ArpgSkills::SkNone);
+  pl.useItem(cls, gothicSlot, false);
   }
 
 void ArpgMenu::logKey(int dy, bool pageKey) {
@@ -880,11 +985,23 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
   {
     text(p, *f.ink, cl.x, y, gtxt("Klawisze 3–0"));
     y += f.ink->pixelSize()+int(2*k);
-    y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Najedź na runę albo zwój w plecaku i naciśnij klawisz.")) + int(8*k);
+    y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Najedź na runę albo zwój w plecaku i naciśnij klawisz. Umiejętności przypiszesz w księdze umiejętności.")) + int(8*k);
     const int gap = int(6*k);
     const int qs  = std::min(int(58*k), (cl.w-7*gap)/8);
+    auto      pr  = progress();
     for(uint8_t i=0; i<8; ++i) {
       const Rect  r(cl.x+i*(qs+gap), y, qs, qs);
+      // Diathic: a skill of the trees on the key: the model of its node (a rune / scroll dropped here takes the key)
+      const auto  sk = pr!=nullptr ? pr->slotSkill(i) : ArpgSkills::SkNone;
+      if(sk!=ArpgSkills::SkNone) {
+        drawSlot(p, r, false, false);
+        if(auto nd = ArpgSkills::skillNode(sk))
+          if(auto itm = iconItem(nd->icon))
+            items.drawItem(r.x+qs/8, r.y+qs/8, qs-qs/4, qs-qs/4, *itm);
+        Hit h; h.r = r; h.kind = H_Key; h.id = i+3; h.cls = 0; h.count = (i+3)%10;
+        hits.push_back(h);
+        continue;
+        }
       const Item* it = inv.currentSpell(i);
       const bool  hv = r.contains(mouse) && it!=nullptr;
       drawSlot(p, r, it!=nullptr, hv);
@@ -1262,24 +1379,220 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
     }
   }
 
-// the keys of a tree: its own text (LPM, PPM...) or the ArpgKeys of the skills its branches unlock (Q, E, F)
+// Diathic: the skill book. The contents: the passive trees on the left page (Cios, Atak ładowany, Fikołek, Biegłość),
+// the trees of skills on the right one (Blok and the weapons, their skills go on the keys 3-0); a click turns the page
+// to the tree: the tree on the left page, the note on a node on the right one; "Wróć do spisu" / Backspace turns back.
+
+static constexpr uint64_t TurnMs = 450; // a page turning
+
+// what the hero does with a tree: its keys (LPM, PPM...), the keys 3-0 of its skills, or "zawsze"
 static std::string treeKeys(const ArpgSkills::Tree& t) {
   if(t.key!=nullptr && t.key[0]!='\0')
     return t.key;
+  if(!hasSkills(t))
+    return "zawsze";
   std::string ret;
   for(auto& b:t.branches) {
     if(b.skill<0)
       continue;
-    if(!ret.empty())
-      ret += ", ";
-    ret += ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Action(b.skill)));
+    const std::string k = skillKey(ArpgSkills::Active(b.skill));
+    if(k.empty())
+      continue;
+    ret += (ret.empty() ? "" : ", ") + k.substr(8); // the number
     }
-  return ret;
+  return ret.empty() ? std::string("bez klawisza") : "klawisze " + ret;
+  }
+
+static std::string pageSound() {
+  // Diathic: a page turned: a sound of a page / a book of the game, when it has one (looked up once by name)
+  static bool        chosen = false;
+  static std::string snd    = "MENU_BROWSE";
+  if(!chosen) {
+    chosen = true;
+    const auto list = Gothic::sfx().find({"BOOK_PAGE", "PAGE", "BOOK"});
+    if(!list.empty())
+      snd = list[0];
+    }
+  return snd;
+  }
+
+void ArpgMenu::turnTo(bool open, int t) {
+  if(open==treeOpen && (!open || t==tree))
+    return;
+  if(open && t!=tree) {
+    noteKind = -1;
+    noteB    = 0;
+    noteN    = 0;
+    }
+  tree     = t;
+  treeOpen = open;
+  turnAt   = Application::tickCount();
+  turnBack = !open;
+  Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx(pageSound()));
+  }
+
+bool ArpgMenu::backKey() {
+  if(page!=P_Skills || !treeOpen)
+    return false;
+  turnTo(false, tree);
+  return true;
   }
 
 void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
   auto& trees = ArpgSkills::trees();
-  tree = std::clamp(tree, 0, int(trees.size())-1);
+  tree       = std::clamp(tree, 0, int(trees.size())-1);
+  hoverSkill = ArpgSkills::SkNone;
+  lockedNodes.clear();
+  if(treeOpen)
+    paintTree(p, f, cl, cr, items, pl); else
+    paintSkillIndex(p, f, cl, cr, items, pl);
+  }
+
+// a skill on the contents: its model, the name, the key; hovered: a key 3-0 puts it there. Returns the height
+int ArpgMenu::skillEntry(Painter& p, const Fonts& f, InventoryRenderer& items, int x, int y, int w, ArpgSkills::Active s) {
+  size_t t = 0;
+  int    b = 0;
+  auto   nd = ArpgSkills::skillNode(s, &t, &b);
+  if(nd==nullptr)
+    return 0;
+  auto&      br    = ArpgSkills::trees()[t].branches[size_t(b)];
+  const int  is    = int(54*k);
+  const Rect r(x, y, is, is);
+  const bool known = skillKnown(s);
+  const bool hv    = Rect(x, y, w, is).contains(mouse);
+  drawSlot(p, r, known, hv);
+  if(auto itm = iconItem(nd->icon)) {
+    const int d = r.w/7;
+    items.drawItem(r.x+d, r.y+d, r.w-2*d, r.h-2*d, *itm);
+    }
+  if(!known)
+    lockedNodes.push_back(r);
+  if(hv)
+    hoverSkill = s;
+  const int tx = x+is+int(10*k);
+  text(p, known ? *f.ink : *f.small, tx, y+int(4*k), gtxt(nd->name));
+  std::string line;
+  if(!known)
+    line = br.pct>0 ? "nieznana, od " + std::to_string(br.pct) + "% biegłości" : std::string("nieznana");
+  else {
+    line = skillKey(s);
+    if(line.empty())
+      line = "bez klawisza";
+    }
+  text(p, known && !skillKey(s).empty() ? *f.redS : *f.small, tx, y+int(10*k)+f.ink->pixelSize(), gtxt(line));
+  Hit h; h.r = Rect(x, y, w, is); h.kind = H_Skill; h.id = int(s);
+  hits.push_back(h);
+  return is;
+  }
+
+void ArpgMenu::paintSkillIndex(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
+  auto& trees = ArpgSkills::trees();
+  auto  pr    = progress();
+  const auto    hero    = heroOf(pl);
+  const int32_t freePts = pr!=nullptr ? pr->freePoints(hero.level) : 0;
+  auto inTree = [&](size_t i) {
+    return pr!=nullptr ? pr->treePoints(i)+pr->rank(ArpgSkills::NodeId{i,-1,0}) : 0;
+    };
+  auto treeIcon = [&](const Rect& ic, size_t i, bool on) {
+    drawSlot(p, ic, on, false);
+    if(auto itm = iconItem(trees[i].icon)) {
+      const int d = ic.w/7;
+      items.drawItem(ic.x+d, ic.y+d, ic.w-2*d, ic.h-2*d, *itm);
+      }
+    };
+
+  // ---- left page: the passive trees ----
+  int y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Pasywne"));
+  y += f.title->pixelSize()+int(2*k);
+  y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Drzewka zwykłych ruchów i biegłości w broni - działają same. Kliknij drzewko, by je otworzyć."))+int(10*k);
+  drawRule(p, cl.x, y, cl.w);
+  y += int(10*k);
+  const int eh = int(84*k);
+  for(size_t i=0; i<trees.size(); ++i) {
+    if(hasSkills(trees[i]))
+      continue;
+    const Rect r(cl.x, y, cl.w, eh);
+    const bool hv = r.contains(mouse);
+    if(hv) {
+      fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.06f));
+      frame(p, r, RuleC, std::max(1, int(2*k)));
+      }
+    const Rect ic(r.x+int(6*k), r.y+int(6*k), eh-int(12*k), eh-int(12*k));
+    treeIcon(ic, i, false);
+    const int tx = ic.x+ic.w+int(12*k);
+    text(p, hv ? *f.red : *f.ink, tx, r.y+int(12*k), gtxt(trees[i].name));
+    char buf[160] = {};
+    if(trees[i].weapons) {
+      std::snprintf(buf, sizeof(buf), "1H %d%%,  2H %d%%,  łuk %d%%,  kusza %d%%",
+                    int(hero.pct[1]), int(hero.pct[2]), int(hero.pct[3]), int(hero.pct[4]));
+      } else {
+      const std::string keys = treeKeys(trees[i]);
+      std::snprintf(buf, sizeof(buf), "%s,  punkty: %d", keys.c_str(), int(inTree(i)));
+      }
+    text(p, *f.small, tx, r.y+int(18*k)+f.ink->pixelSize(), gtxt(buf));
+    Hit h; h.r = r; h.kind = H_Tree; h.id = int(i);
+    hits.push_back(h);
+    y += eh+int(6*k);
+    }
+  y += int(6*k);
+  drawRule(p, cl.x, y, cl.w);
+  y += int(12*k);
+  {
+    char buf[16] = {};
+    std::snprintf(buf, sizeof(buf), "%d", int(std::max(0, freePts)));
+    text(p, *f.ink, cl.x, y, gtxt("Punkty umiejętności:"));
+    textRight(p, freePts>0 ? *f.red : *f.ink, cl.x+cl.w, y, buf);
+    y += f.ink->pixelSize()+int(6*k);
+  }
+  wrap(p, *f.small, cl.x, y, cl.w, gtxt("1 za poziom, u nauczycieli 5 punktów nauki = 1. Całe drzewka zmienia nauczyciel za złoto."));
+
+  // ---- right page: the trees of skills and their skills (keys 3-0) ----
+  y = cr.y;
+  text(p, *f.title, cr.x, y, gtxt("Umiejętności"));
+  y += f.title->pixelSize()+int(2*k);
+  y += wrap(p, *f.small, cr.x, y, cr.w, gtxt("Najedź na umiejętność i naciśnij klawisz 3 - 0, by ją tam przypisać. Kliknij drzewko, by je otworzyć."))+int(10*k);
+  drawRule(p, cr.x, y, cr.w);
+  y += int(10*k);
+  for(size_t i=0; i<trees.size(); ++i) {
+    if(!hasSkills(trees[i]))
+      continue;
+    const int  hh = int(40*k);
+    const int  sh = int(54*k);
+    const Rect r(cr.x, y, cr.w, hh+sh+int(12*k));
+    const Rect head(cr.x, y, cr.w, hh);
+    const bool hv = head.contains(mouse);
+    if(hv) {
+      fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.06f));
+      frame(p, r, RuleC, std::max(1, int(2*k)));
+      }
+    const Rect ic(head.x+int(4*k), head.y+int(4*k), hh-int(8*k), hh-int(8*k));
+    treeIcon(ic, i, false);
+    text(p, hv ? *f.red : *f.ink, ic.x+ic.w+int(10*k), head.y+(hh-f.ink->pixelSize())/2, gtxt(trees[i].name));
+    char buf[64] = {};
+    std::snprintf(buf, sizeof(buf), "punkty: %d", int(inTree(i)));
+    textRight(p, *f.small, head.x+head.w-int(6*k), head.y+(hh-f.small->pixelSize())/2, gtxt(buf));
+    Hit h; h.r = head; h.kind = H_Tree; h.id = int(i);
+    hits.push_back(h);
+    // the skills of the tree, side by side
+    int n = 0;
+    for(auto& b:trees[i].branches)
+      if(b.skill>=0)
+        ++n;
+    const int cw = cr.w/std::max(1, n);
+    int col = 0;
+    for(auto& b:trees[i].branches) {
+      if(b.skill<0)
+        continue;
+      skillEntry(p, f, items, cr.x+int(8*k)+col*cw, y+hh+int(4*k), cw-int(12*k), ArpgSkills::Active(b.skill));
+      ++col;
+      }
+    y += r.h+int(8*k);
+    }
+  }
+
+void ArpgMenu::paintTree(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
+  auto& trees = ArpgSkills::trees();
   auto& t  = trees[size_t(tree)];
   auto  pr = progress();
   const auto    hero    = heroOf(pl);
@@ -1289,37 +1602,33 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
   auto rankOf = [&](int b, int n) {
     return pr!=nullptr ? pr->rank(ArpgSkills::NodeId{size_t(tree), b, n}) : 0;
     };
-  lockedNodes.clear();
 
-  // what the cursor is on: -1 nothing, 0 the root, 1 a node, 2 the keystone
-  int selKind = -1, selB = 0, selN = 0;
-
-  // ---- right page: the tree as a graph (root - trunk - branches - keystone) ----
-  int y = cr.y;
-  text(p, *f.title, cr.x, y, gtxt(t.name));
-  textRight(p, *f.red, cr.x+cr.w, y+(f.title->pixelSize()-f.red->pixelSize())/2, gtxt(treeKeys(t)));
+  // ---- left page: the tree as a graph (root - trunk - branches - keystone) ----
+  int y = cl.y;
+  text(p, *f.title, cl.x, y, gtxt(t.name));
+  textRight(p, *f.red, cl.x+cl.w, y+(f.title->pixelSize()-f.red->pixelSize())/2, gtxt(treeKeys(t)));
   y += f.title->pixelSize()+int(2*k);
-  y += wrap(p, *f.small, cr.x, y, cr.w, gtxt(t.root))+int(6*k);
-  drawRule(p, cr.x, y, cr.w);
+  y += wrap(p, *f.small, cl.x, y, cl.w, gtxt(t.root))+int(6*k);
+  drawRule(p, cl.x, y, cl.w);
   y += int(8*k);
 
   const int rows  = std::max(1, int(t.branches.size()));
   const int gy    = y;
-  const int rh    = (cr.y+cr.h-gy)/rows;
-  const int colW  = cr.w/5;
+  const int rh    = (cl.y+cl.h-gy)/rows;
+  const int colW  = cl.w/5;
   const int nameH = f.redS->pixelSize()+int(4*k);      // branch name over the first node
   const int below = f.redS->pixelSize()+2*f.small->pixelSize()+int(6*k);
   const int ns    = std::max(int(24*k), std::min({int(64*k), colW-int(26*k), rh-nameH-below}));
   const int lw    = std::max(2, int(3*k));
   auto nodeRect = [&](int col, int row) {
-    return Rect(cr.x+col*colW+(colW-ns)/2, gy+row*rh+nameH, ns, ns);
+    return Rect(cl.x+col*colW+(colW-ns)/2, gy+row*rh+nameH, ns, ns);
     };
   auto midY = [](const Rect& r) { return r.y+r.h/2; };
   auto grow = [](const Rect& r, int d) { return Rect(r.x-d, r.y-d, r.w+2*d, r.h+2*d); };
 
   // lines (under the nodes): the way to learned nodes in red
   const Rect root   = grow(nodeRect(0, rows/2), int(4*k));
-  const int  trunkX = cr.x+colW;
+  const int  trunkX = cl.x+colW;
   const bool any    = pr!=nullptr && pr->treePoints(size_t(tree))>0;
   fill(p, root.x+root.w, midY(root)-lw/2, trunkX-(root.x+root.w)+lw, lw, any ? LineRedC : LineC);
   fill(p, trunkX, midY(nodeRect(1,0))-lw/2, lw, midY(nodeRect(1,rows-1))-midY(nodeRect(1,0))+lw, LineC);
@@ -1346,7 +1655,7 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     keyRow += b;
   keyRow = (keyRow+int(from.size())/2)/std::max(1, int(from.size()));
   const Rect key   = grow(nodeRect(4, keyRow), int(6*k));
-  const int  collX = cr.x+4*colW-lw;
+  const int  collX = cl.x+4*colW-lw;
   int ymin = midY(key), ymax = midY(key);
   for(int b:from) {
     auto&      br = t.branches[size_t(b)];
@@ -1361,7 +1670,7 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     }
 
   // nodes: Gothic's slot frames with item models; learned = the red frame of worn things,
-  // not open yet = dimmed (over the model, in paintOverlay)
+  // not open yet = dimmed (over the model, in paintOverlay); the one under the cursor goes on the note
   auto node = [&](const Rect& r, const char* icon, int kind, int b, int n) {
     const bool hv = r.contains(mouse);
     bool learned = (kind==0), open = true;
@@ -1371,7 +1680,8 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
       std::string why;
       open = learned || pr->canAdd(id, hero, &why) || why=="Brak wolnych punktów umiejętności";
       }
-    drawSlot(p, r, learned, hv);
+    const bool chosen = (kind==noteKind && (kind!=1 || (b==noteB && n==noteN)));
+    drawSlot(p, r, learned, hv || chosen);
     if(auto itm = iconItem(icon)) {
       const int d = r.w/7;
       items.drawItem(r.x+d, r.y+d, r.w-2*d, r.h-2*d, *itm);
@@ -1379,9 +1689,11 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     if(!open)
       lockedNodes.push_back(r);
     if(hv) {
-      selKind = kind;
-      selB    = b;
-      selN    = n;
+      noteKind = kind;
+      noteB    = b;
+      noteN    = n;
+      if(kind==1 && n==0 && t.branches[size_t(b)].skill>=0)
+        hoverSkill = ArpgSkills::Active(t.branches[size_t(b)].skill);
       }
     Hit h; h.r = r; h.kind = H_Node; h.id = b*16+n; h.count = kind;
     hits.push_back(h);
@@ -1395,13 +1707,19 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     const Rect n0 = nodeRect(1, b);
     if(t.weapons && b<4 && pr!=nullptr) {
       char buf[128] = {};
-      const int32_t eb = Gothic::inst().player()!=nullptr ? equipBonus(*Gothic::inst().player(), b+1) : 0;
+      const int32_t eb = equipBonus(pl, b+1);
       if(eb!=0)
         std::snprintf(buf, sizeof(buf), "%s   %d%% %+d%% z broni  (nauka do %d%%)", br.name, int(hero.pct[b+1]), int(eb), int(pr->cap(b+1))); else
         std::snprintf(buf, sizeof(buf), "%s   %d%%  (nauka do %d%%)", br.name, int(hero.pct[b+1]), int(pr->cap(b+1)));
       text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(buf));
       } else {
-      text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(br.name));
+      std::string name = br.name;
+      if(br.skill>=0) {
+        const std::string sk = skillKey(ArpgSkills::Active(br.skill));
+        if(!sk.empty())
+          name += "  (" + sk + ")";
+        }
+      text(p, *f.redS, n0.x-int(2*k), n0.y-nameH, gtxt(name));
       }
     for(int n=0; n<int(br.nodes.size()); ++n) {
       auto&      nd = br.nodes[size_t(n)];
@@ -1421,59 +1739,24 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
                gtxt(rankOf(-1,0)>0 ? "kluczowy, poznany" : "kluczowy"));
     }
 
-  // ---- left page: the trees, the points, the note on the node under the cursor ----
-  y = cl.y;
-  text(p, *f.title, cl.x, y, gtxt("Umiejętności"));
-  y += f.title->pixelSize()+int(8*k);
-  // Diathic: more than 4 trees - two columns, shorter entries
-  const int cols = trees.size()>4 ? 2 : 1;
-  const int gap  = int(8*k);
-  const int ew   = cols>1 ? (cl.w-gap)/2 : cl.w;
-  const int eh   = cols>1 ? int(62*k) : (trees.size()>3 ? int(70*k) : int(84*k));
-  for(size_t i=0; i<trees.size(); ++i) {
-    const int  col = int(i)%cols;
-    const Rect r(cl.x+col*(ew+gap), y, ew, eh);
-    const bool on = (int(i)==tree), hv = r.contains(mouse);
-    if(on) {
-      fill(p, r.x, r.y, r.w, r.h, Color(0.55f, 0.09f, 0.05f, 0.08f));
-      frame(p, r, LineRedC, std::max(1, int(2*k)));
-      } else if(hv) {
-      frame(p, r, RuleC, std::max(1, int(2*k)));
-      }
-    const Rect ic(r.x+int(6*k), r.y+int(6*k), eh-int(12*k), eh-int(12*k));
-    drawSlot(p, ic, on, false);
-    if(auto itm = iconItem(trees[i].icon)) {
-      const int d = ic.w/7;
-      items.drawItem(ic.x+d, ic.y+d, ic.w-2*d, ic.h-2*d, *itm);
-      }
-    int32_t inTree = 0;
-    if(pr!=nullptr)
-      inTree = pr->treePoints(i)+pr->rank(ArpgSkills::NodeId{i,-1,0});
-    char buf[128] = {};
-    const std::string keys = treeKeys(trees[i]);
-    if(cols>1)
-      std::snprintf(buf, sizeof(buf), "%s,  punkty: %d", keys.empty() ? "zawsze" : keys.c_str(), int(inTree)); else
-    if(keys.empty())
-      std::snprintf(buf, sizeof(buf), "zawsze działa,  punkty w drzewku: %d", int(inTree)); else
-      std::snprintf(buf, sizeof(buf), "klawisz %s,  punkty w drzewku: %d", keys.c_str(), int(inTree));
-    auto& fn = on ? *f.red : *f.ink;
-    const int tx = ic.x+ic.w+int(12*k);
-    text(p, fn,       tx, r.y+int(12*k), gtxt(trees[i].name));
-    text(p, *f.small, tx, r.y+int(16*k)+fn.pixelSize(), gtxt(buf));
-    Hit h; h.r = r; h.kind = H_Tree; h.id = int(i);
-    hits.push_back(h);
-    if(col==cols-1 || i+1==trees.size())
-      y += eh+int(6*k);
-    }
-  y += int(6*k);
-  drawRule(p, cl.x, y, cl.w);
-  y += int(12*k);
+  // ---- right page: back to the contents, the points, the note on the node ----
+  y = cr.y;
   {
+    const std::string back = gtxt("Wróć do spisu");
+    const int  bw = f.ink->textSize(back).w+int(44*k);
+    const int  bh = int(44*k);
+    const Rect br(cr.x+cr.w-bw, y, bw, bh);
+    const bool hv = br.contains(mouse);
+    letter(p, br, hv ? 1.f : 0.8f);
+    textCenter(p, hv ? *f.red : *f.ink, br.x+br.w/2, br.y+(br.h-f.ink->pixelSize())/2, back);
+    Hit h; h.r = br; h.kind = H_Back;
+    hits.push_back(h);
     char buf[16] = {};
     std::snprintf(buf, sizeof(buf), "%d", int(std::max(0, freePts)));
-    text(p, *f.ink, cl.x, y, gtxt("Punkty umiejętności:"));
-    textRight(p, freePts>0 ? *f.red : *f.ink, cl.x+cl.w, y, buf);
-    y += f.ink->pixelSize()+int(4*k);
+    const std::string pts = gtxt("Punkty umiejętności: ");
+    text(p, *f.ink, cr.x, y+(bh-f.ink->pixelSize())/2, pts);
+    text(p, freePts>0 ? *f.red : *f.ink, cr.x+f.ink->textSize(pts).w, y+(bh-f.ink->pixelSize())/2, buf);
+    y += bh+int(10*k);
   }
   {
     // points found for one branch (stone tablets)
@@ -1487,12 +1770,12 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
       extra += buf;
       }
     if(!extra.empty())
-      y += wrap(p, *f.redS, cl.x, y, cl.w, gtxt(extra))+int(2*k);
+      y += wrap(p, *f.redS, cr.x, y, cr.w, gtxt(extra))+int(2*k);
   }
-  y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("1 za poziom, u nauczycieli 5 punktów nauki = 1. LPM na węźle = punkt, PPM = cofnięcie punktu dodanego teraz; całe drzewka zmienia nauczyciel za złoto."))+int(14*k);
+  y += wrap(p, *f.small, cr.x, y, cr.w, gtxt("LPM na węźle = punkt, PPM = cofnięcie punktu dodanego teraz."))+int(14*k);
 
   // the note: on a sheet of the game's letters
-  const Rect nr(cl.x-int(16*k), y, cl.w+int(32*k), cl.y+cl.h-y);
+  const Rect nr(cr.x-int(16*k), y, cr.w+int(32*k), cr.y+cr.h-y);
   letter(p, nr, 1.f);
   const int pad = int(30*k);
   const int nx  = nr.x+pad;
@@ -1501,20 +1784,25 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
   std::string name, desc, branch;
   int  maxRank = 0, curRank = 0;
   bool isNode  = false;
+  int  skill   = -1;
   ArpgSkills::NodeId id{size_t(tree), 0, 0};
-  switch(selKind) {
+  if(noteKind==1 && (noteB>=int(t.branches.size()) || noteN>=int(t.branches[size_t(noteB)].nodes.size())))
+    noteKind = -1;
+  if(noteKind==2 && !hasKey)
+    noteKind = -1;
+  switch(noteKind) {
     case 1: {
-      auto& br = t.branches[size_t(selB)];
-      auto& nd = br.nodes[size_t(selN)];
+      auto& br = t.branches[size_t(noteB)];
+      auto& nd = br.nodes[size_t(noteN)];
       name    = nd.name;
       desc    = nd.desc;
       maxRank = nd.max;
       branch  = std::string("Gałąź: ")+br.name;
-      if(selN==0 && br.skill>=0)
-        branch += ", umiejętność pod "+ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Action(br.skill)));
-      if(selN==0 && br.pct>0)
+      if(noteN==0 && br.pct>0)
         branch += ", od "+std::to_string(br.pct)+"% biegłości";
-      id      = ArpgSkills::NodeId{size_t(tree), selB, selN};
+      if(noteN==0 && br.skill>=0)
+        skill = br.skill;
+      id      = ArpgSkills::NodeId{size_t(tree), noteB, noteN};
       isNode  = true;
       break;
       }
@@ -1529,7 +1817,7 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     default:
       name   = t.name;
       desc   = t.root;
-      branch = !treeKeys(t).empty() ? std::string("Klawisz: ")+treeKeys(t) : std::string("Działa zawsze (bez klawisza)");
+      branch = hasSkills(t) ? std::string("Umiejętności na klawisze 3 - 0") : std::string("Działa: ")+treeKeys(t);
       break;
     }
   if(isNode && pr!=nullptr)
@@ -1553,10 +1841,57 @@ void ArpgMenu::paintTrees(Painter& p, const Fonts& f, const Rect& cl, const Rect
     if(pr->canRemove(id, undoBase))
       ny += wrap(p, *f.ink, nx, ny, nw, gtxt("PPM: cofnij punkt"))+int(4*k);
     }
-  if(selKind<=0)
+  if(skill>=0) {
+    // the key of the skill
+    const std::string sk = skillKey(ArpgSkills::Active(skill));
+    ny += int(6*k);
+    if(curRank>0)
+      ny += wrap(p, sk.empty() ? *f.ink : *f.redS, nx, ny, nw,
+                 gtxt((sk.empty() ? std::string("Bez klawisza") : "Umiejętność: "+sk)+". Najedź na węzeł i naciśnij 3 - 0, by ją przypisać."))+int(4*k);
+    else
+      ny += wrap(p, *f.small, nx, ny, nw, gtxt("Po nauce umiejętność trafi na wolny klawisz 3 - 0."))+int(4*k);
+    }
+  if(noteKind<0)
     wrap(p, *f.small, nx, ny, nw, gtxt("Najedź na węzeł drzewka, żeby przeczytać jego opis."));
   text(p, *f.small, nx, nr.y+nr.h-pad-f.small->pixelSize(),
        gtxt(t.weapons ? "Biegłość działa od razu (procent Gothica)." : "Punkty działają od razu w walce."));
+  }
+
+void ArpgMenu::paintTurn(Painter& p) {
+  // Diathic: a page turning over the book: the sheet bends at the spine, shrinks on one side and grows on the other
+  if(turnAt==0)
+    return;
+  const uint64_t now = Application::tickCount();
+  if(now>=turnAt+TurnMs) {
+    turnAt = 0;
+    return;
+    }
+  const float t     = float(now-turnAt)/float(TurnMs);
+  const int   spine = pageR.x;
+  // forward: the right page goes over to the left; back: the left one over to the right
+  const bool  first = t<0.5f;
+  const float a     = std::abs(std::cos(t*float(M_PI)));  // 1 -> 0 -> 1
+  const bool  onR   = turnBack ? !first : first;          // the sheet over the right page now
+  const Rect& pg    = onR ? pageR : pageL;
+  const int   sw    = std::max(1, int(float(pg.w)*a));
+  const Rect  sheet = onR ? Rect(spine, pg.y, sw, pg.h) : Rect(spine-sw, pg.y, sw, pg.h);
+  // the shadow it throws on the page under it (darker close to its free edge)
+  const int   sh    = int(float(pg.w)*0.18f*(1.f-a*0.5f));
+  const int   edge  = onR ? sheet.x+sheet.w : sheet.x;
+  for(int i=0; i<8; ++i) {
+    const float al = 0.30f*(1.f-float(i)/8.f)*(1.f-a*0.6f);
+    const int   x  = onR ? edge+i*sh/8 : edge-(i+1)*sh/8;
+    fill(p, x, pg.y, std::max(1, sh/8), pg.h, Color(0.f, 0.f, 0.f, al));
+    }
+  drawPage(p, sheet, !onR);
+  // the bent sheet is darker the more it stands up
+  fill(p, sheet.x, sheet.y, sheet.w, sheet.h, Color(0.f, 0.f, 0.f, 0.35f*(1.f-a)));
+  // the fold at the spine
+  const int fw = std::max(2, int(float(sheet.w)*0.12f));
+  for(int i=0; i<4; ++i) {
+    const int x = onR ? sheet.x+i*fw/4 : sheet.x+sheet.w-(i+1)*fw/4;
+    fill(p, x, sheet.y, std::max(1, fw/4), sheet.h, Color(0.f, 0.f, 0.f, 0.18f*(1.f-float(i)/4.f)));
+    }
   }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1751,6 +2086,7 @@ void ArpgMenu::paintOverlay(Painter& p, float /*scale*/, Npc&) {
     p.setBrush(Brush(Color(0.10f, 0.07f, 0.04f, 0.55f), Painter::Alpha));
     for(auto& r:lockedNodes)
       p.drawRect(r.x, r.y, r.w, r.h);
+    paintTurn(p); // Diathic: over the models of the nodes too
     return;
     }
   if(page!=P_Equip && page!=P_Trade)

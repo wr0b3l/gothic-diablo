@@ -40,7 +40,7 @@ class DamageCalculator {
     static bool    checkDamageMask(Npc& src, Npc& other, const Bullet* b);
 
     static Val     rangeDamage(Npc& src, Npc& other, const Bullet& b, const CollideMask bMsk);
-    static Val     rangeDamage(Npc& src, Npc& other, Damage dmg, const CollideMask bMsk);
+    static Val     rangeDamage(Npc& src, Npc& other, Damage dmg, const CollideMask bMsk, bool arpgHero = false);
     static Val     swordDamage(Npc& src, Npc& other);
   };
 

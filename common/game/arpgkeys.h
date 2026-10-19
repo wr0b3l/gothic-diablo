@@ -11,10 +11,8 @@ namespace ArpgKeys {
   enum Action : uint8_t {
     Dodge,          // fikołek
     Weapon,         // dobycie / schowanie broni
+    InPlace,        // przytrzymany: LPM = atak w miejscu w stronę kursora (umiejętności drzewek: klawisze 3-0)
     SwapWeapon,     // broń biała <-> łuk / kusza
-    SkillA,         // pierwsza umiejętność broni w ręku (drzewko broni)
-    SkillB,         // druga umiejętność broni w ręku
-    SkillBlock,     // umiejętność drzewka Blok
     Walk,           // chód / bieg
     Sneak,          // skradanie
     PotionHealth,

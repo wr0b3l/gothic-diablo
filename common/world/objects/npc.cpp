@@ -889,7 +889,12 @@ void Npc::dropTorch(bool burnout) {
   }
 
 Tempest::Vec3 Npc::animMoveSpeed(uint64_t dt) const {
-  return visual.pose().animMoveSpeed(owner.tickCount(),dt);
+  auto v = visual.pose().animMoveSpeed(owner.tickCount(),dt);
+  if(arpgNoPushUntil>owner.tickCount()) {
+    v.x = 0; // Diathic: staggered by a parry: the stumble in place, not pushed back
+    v.z = 0;
+    }
+  return v;
   }
 
 void Npc::setVisual(const Skeleton* v) {
@@ -2443,6 +2448,7 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
      owner.tickCount()<=arpgParadeLast+100 && owner.tickCount()<=arpgParadeStart+parryWin &&
      fghAlgo.isInFocusAngle(*this,other)) {
     const uint64_t extra = mk!=nullptr ? uint64_t(mk->staggerAdd*1000.f) : 0;
+    other.arpgNoPushUntil = owner.tickCount()+ArpgStatus::StaggerMs+extra;
     other.arpgApplyStatus(ArpgStatus::Stagger, ArpgStatus::StaggerMs+extra, 0.f, this);
     owner.arpgPopup(position()+Tempest::Vec3(0,200.f,0), 4, 5); // "Parowanie!"
     arpgParrySound();
@@ -2454,10 +2460,12 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
     return;
     }
 
+  // Diathic: the others block the hero's hits like he blocks theirs (2026-10-19): the charges, the leak when worn
+  const bool blockWears = arpgParry || (!isPlayer() && other.isPlayer() && Camera::isArpgEnabled());
   if(!(isBlock || isJumpb) || (b!=nullptr && !arrowBlock)) {
     takeDamage(other,b,COLL_DOEVERYTHING,0,false);
     }
-  else if(arpgParry && isBlock && arpgBlockCh<=0 && !bastion) {
+  else if(blockWears && isBlock && arpgBlockCh<=0 && !bastion) {
     // Diathic: the block is worn out: one more below 0 (to -BlockDebt), 25% of the damage through for each
     arpgBlockCh = std::max(arpgBlockCh-1, -ArpgStatus::BlockDebt);
     arpgDmgScale  = std::min(1.f, float(-arpgBlockCh)*ArpgStatus::BlockLeak);
@@ -2469,7 +2477,7 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
       visual.emitBlockEffect(*this,other);
     }
   else {
-    if(arpgParry && isBlock && !bastion)
+    if(blockWears && isBlock && !bastion)
       arpgBlockCh = std::max(0, arpgBlockCh-1); // Diathic: one hit of the block's 3
     if(Camera::isArpgEnabled() && (other.isPlayer() || isPlayer()))
       owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 2); // gothic-diablo: "blocked"
@@ -2483,6 +2491,11 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
         other.arpgDirectDamage(*this, std::max<int32_t>(1, int32_t(std::lround(float(v.value)*mk->retaliate))));
       }
     }
+  }
+
+bool Npc::arpgBlockWorn(const Npc& tg) const {
+  // Diathic: fighting the hero, the block worn out (its charges used): the fight AI does something else (FightAlgo)
+  return !isPlayer() && tg.isPlayer() && Camera::isArpgEnabled() && arpgBlockCh<=0;
   }
 
 int32_t Npc::arpgBlockMax() const {
@@ -2995,6 +3008,18 @@ void Npc::tick(uint64_t dt) {
     else if(now>=arpgBlockRegen) {
       arpgBlockCh   += 1;
       arpgBlockRegen = now+regen;
+      }
+    }
+  else if(!isPlayer() && Camera::isArpgEnabled()) {
+    // Diathic: people and monsters block like the hero (the charges worn by his hits): one back a second out of
+    // the block (Gothic's parade)
+    const uint64_t now = owner.tickCount();
+    if(visual.pose().isDefence(now) || arpgBlockCh>=arpgBlockMax()) {
+      arpgBlockRegen = now+ArpgStatus::BlockRegenMs;
+      }
+    else if(now>=arpgBlockRegen) {
+      arpgBlockCh   += 1;
+      arpgBlockRegen = now+ArpgStatus::BlockRegenMs;
       }
     }
   arpgTickStatus();

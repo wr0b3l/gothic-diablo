@@ -38,6 +38,12 @@ namespace ArpgStatus {
   constexpr uint64_t BlockRegenMs  = 1000;  // one charge back, the block lowered
   constexpr uint64_t BastionMs     = 3000;  // Bastion: the block all round after a parry
 
+  // Diathic: the hero's swings and shots (2026-10-19): the protection takes a part of the damage, not all of it:
+  // (strength or dexterity + weapon) x ArmorK / (ArmorK + protection); a swing without Gothic's full damage
+  // (chance = the weapon percent) gives NormalHit of it, not 10%. Spells and the hits of others stay Gothic's
+  constexpr float    ArmorK        = 100.f;
+  constexpr float    NormalHit     = 0.5f;
+
   // Diathic: the weapon trees (balance)
   constexpr float    RageDmg       = 0.3f;  // Szał najemnika: +damage below 30% of health ...
   constexpr float    RageLeech     = 0.03f; // ... and leech
@@ -48,7 +54,7 @@ namespace ArpgStatus {
   constexpr uint64_t LockHoldMs    = 400;
   constexpr float    LockRange     = 1500.f;
 
-  // Diathic: the skills of the weapon trees (G / F / B, ArpgKeys); s, cm, multipliers of the hit of the weapon in hand
+  // Diathic: the skills of the trees (keys 3-0); s, cm, multipliers of the hit of the weapon in hand
   constexpr float    BashCd        = 6.f;   // Uderzenie (B): a dash in the block pose, the enemy in front staggered
   constexpr float    BashDist      = 150.f;
   constexpr float    BashSpeed     = 600.f;
@@ -62,8 +68,12 @@ namespace ArpgStatus {
   constexpr float    ThrustMul     = 1.5f;
   constexpr float    ThrustBleed   = 0.1f;
   constexpr float    DanceCd       = 8.f;   // Taniec ostrzy (1H, E): cuts one after another, each at the cursor
-  constexpr float    DanceSpeed    = 0.6f;  // + attack speed
-  constexpr float    DanceCutMax   = 0.8f;  // s: the next cut at the latest
+  constexpr float    DanceSpeed    = 0.6f;  // + attack speed (the swing animations)
+  constexpr float    DanceCutTime  = 0.36f; // s: one cut; the skill deals each cut's damage itself (not the animation)
+  constexpr float    DanceHitAt    = 0.17f; // s into a cut: its hit
+  constexpr float    DanceMul      = 1.f;   // each cut: x the hit of the weapon in hand
+  constexpr float    DanceArc      = 150.f; // degrees in front of the hero
+  constexpr float    DanceStep     = 600.f; // cm/s: up to the enemy in front before the hit, when out of reach
   constexpr float    LeapCd        = 8.f;   // Skok (2H, Q): to the cursor with an overhead swing, knocks down around
   constexpr float    LeapDist      = 500.f;
   constexpr float    LeapSpeed     = 1100.f;

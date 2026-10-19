@@ -741,10 +741,10 @@ void GameMenu::paintModernKeys(Painter& p, GthFont& fItem, GthFont& fSel, GthFon
     "Lewy przycisk myszy - ruch, rozmowa, podnoszenie, atak",
     "Prawy przycisk - atak ładowany (przytrzymaj)",
     "Środkowy przycisk - blok, z łukiem odepchnięcie, bez broni obrót kamery",
-    "Ctrl + lewy przycisk - atak w miejscu / na każdego",
+    "Ctrl + lewy przycisk - atak na każdego (w puste miejsce: w miejscu)",
     "Ctrl przytrzymany - namierzenie celu (wł. / wył.), krótki Ctrl - zmiana celu",
     "Kółko myszy - przybliżenie kamery",
-    "3 - 0 - runy i zwoje (przypisanie w ekwipunku)",
+    "3 - 0 - umiejętności (przypisanie w księdze), runy i zwoje (w ekwipunku)",
     "Ruch klawiaturą i skok - z ustawień Gothica (Opcje)",
     };
   for(auto t:fixed) {

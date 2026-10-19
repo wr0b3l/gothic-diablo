@@ -201,6 +201,7 @@ class Npc final {
     bool       arpgHasStatus(ArpgStatus::Id id) const;
     // Diathic: the hero's block: charges (ArpgStatus::BlockCharges .. -BlockDebt), the block held now
     int32_t    arpgBlockCharges() const { return arpgBlockCh; }
+    bool       arpgBlockWorn(const Npc& tg) const; // Diathic: its block is worn out against the hero (AI: no parade)
     int32_t    arpgBlockMax() const;       // Diathic: ArpgStatus::BlockCharges + Twarda garda
     bool       arpgBlockHeld() const;
     Npc*       arpgTakeRiposte() { auto r = arpgRiposteTg; arpgRiposteTg = nullptr; return r; } // Diathic: Riposta
@@ -613,12 +614,13 @@ class Npc final {
     const VisualFx* arpgBurnFx = nullptr;
     uint64_t  arpgParadeLast  = 0;     // hero: the last frame the block was held
     uint64_t  arpgParadeStart = 0;     // hero: when the block held now started (parry)
-    int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hero: hits the block still holds (below 0: damage leaks)
+    int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hits the block still holds (below 0: damage leaks); everyone
     uint64_t  arpgBlockRegen  = 0;     // hero: the next charge back
     float     arpgDmgScale    = 1.f;   // a hit through the block: part of the damage
     bool      arpgBlockLeak   = false; // a hit through the block: no stumble (the block stays)
     uint64_t  arpgBastionUntil = 0;    // hero: Bastion after a parry
     uint64_t  arpgNoCommitUntil = 0;   // hero: a skill deals the damage of its swing itself
+    uint64_t  arpgNoPushUntil   = 0;   // Diathic: staggered by a parry - the stumble does not move it back
     float     arpgSkillSpeed   = 0;    // hero: + attack speed during a skill (Taniec ostrzy)
     uint64_t  arpgMillUntil    = 0;    // hero: Młyn
     uint32_t  arpgCommitN      = 0;    // hero: swings that dealt their hit (Taniec ostrzy waits for it)

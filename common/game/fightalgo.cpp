@@ -174,6 +174,23 @@ FightAlgo::Action FightAlgo::nextFromQueue(Npc& npc, Npc& tg, GameScript& owner)
         break;
         }
       case FightAiMove::PARRY:{
+        // Diathic: the block holds 3 hits of the hero like his own; worn out, the NPC does something else until a
+        // charge is back: attacks, jumps back or steps aside (Npc::arpgBlockWorn)
+        if(npc.arpgBlockWorn(tg)) {
+          const uint32_t r = owner.rand(4);
+          if(r<2) {
+            tr[0] = owner.rand(2) ? MV_ATTACKL : MV_ATTACKR;
+            tr[1] = MV_ATTACK;
+            }
+          else if(r==2) {
+            tr[0] = MV_JUMPBACK;
+            }
+          else {
+            tr[0] = owner.rand(2) ? MV_STRAFEL : MV_STRAFER;
+            tr[1] = FightAlgo::MV_STRAFE_E;
+            }
+          break;
+          }
         tr[0] = MV_BLOCK;
         break;
         }

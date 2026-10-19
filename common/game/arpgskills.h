@@ -16,7 +16,7 @@ namespace ArpgSkills {
     const char*       name;
     std::vector<Node> nodes;
     int               pct   = 0;   // weapon trees: the first node needs this percent of Biegłość in the tree's weapon
-    int               skill = -1;  // the first node unlocks the skill under this key (ArpgKeys::Action)
+    int               skill = -1;  // the first node unlocks this skill (Active), put on one of the keys 3-0
     int               needs = -1;  // the first node needs a point in the first node of this branch (it changes that skill)
     };
   struct KeyReq {
@@ -39,6 +39,10 @@ namespace ArpgSkills {
     int                  keyPct  = 0;     // the keystone needs this percent of Biegłość in the weapon
     };
 
+  // Diathic: the skills of the trees (2026-10-19: put on the keys 3-0 like Gothic's runes; before: G / F / B)
+  enum Active : uint8_t { SkNone, SkBash, SkThrust, SkDance, SkLeap, SkMill, SkRain, SkDisengage, SkCount };
+  constexpr int SlotCount = 8; // keys 3..9, 0 (Gothic's spell slots)
+
   constexpr int32_t PctPerRank = 5;
   constexpr int32_t BasePct    = 10;  // Gothic's hero starts with 10% in every weapon
   constexpr int32_t FreeCap    = 30;  // without a teacher (like Gothic: further only after lessons)
@@ -52,6 +56,8 @@ namespace ArpgSkills {
   // where a node is: branch -1 = the keystone (node is ignored)
   struct NodeId { size_t tree = 0; int branch = 0; int node = 0; };
 
+  // Diathic: the node that unlocks a skill (the first one of its branch); nullptr: none. tree / branch: where it is
+  const Node* skillNode(Active s, size_t* tree = nullptr, int* branch = nullptr);
   size_t      weaponsTree();             // index of Biegłość
   size_t      treeOf(std::string_view name); // index of a tree by its name, size_t(-1): none
   // percent of Biegłość that counts for a weapon tree (bow tree: bow or crossbow); pct: index = talent 1..4
@@ -198,12 +204,21 @@ class ArpgProgress final {
     // all ranks away (a teacher's reset); out: the percents to take from the hero for each talent (index 1..4)
     void     resetRanks(int32_t pctBack[5]);
 
+    // Diathic: the skills on the keys 3-0 (slot 0 = key 3 ... slot 7 = key 0); a skill is on one key at most
+    ArpgSkills::Active slotSkill(int slot) const;
+    int      slotOf (ArpgSkills::Active s) const;              // -1: on no key
+    void     setSlot(int slot, ArpgSkills::Active s);          // SkNone: the key empty
+    bool     slotsReady() const { return slotsInit; }          // false: a game from before the slots (put them once)
+    void     setSlotsReady() { slotsInit = true; }
+
     int32_t  bought = 0;  // from teachers (learning points turned into skill points)
     Ranks    found;       // branchKey -> points from finds (stone tablets), only for that branch
     Ranks    caps;        // talent ("1".."4") -> percent a teacher unlocked
     bool     weaponsInit = false;
 
   private:
+    uint8_t  slots[ArpgSkills::SlotCount] = {};
+    bool     slotsInit = false;
     Ranks    rk;          // nodeKey -> rank
     mutable ArpgPerks perksCache;
     mutable bool      perksDirty = true;
