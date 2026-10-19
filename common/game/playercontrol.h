@@ -1,6 +1,9 @@
 #pragma once
 
 #include "world/focus.h"
+#include "game/arpgnav.h"
+#include "game/arpgkeys.h"
+#include "game/arpgskills.h"
 #include "utils/keycodec.h"
 #include "constants.h"
 
@@ -40,6 +43,7 @@ class PlayerControl final {
     bool  interact(Item&        item);
 
     void  clearInput();
+    void  arpgKeyUp(int ak); // Diathic: a key of ArpgKeys released (held keys: camera turn, skills)
 
     void  setTarget(Npc* other);
     void  actionFocus(Npc& other);
@@ -71,6 +75,7 @@ class PlayerControl final {
     void  arpgChargeRelease();                   // right mouse button up: release it
     float arpgSpecialLeft() const;               // 0..1 of the cooldown left
     void  arpgPush();                            // middle mouse button with a bow: push the enemies in front away
+    void  arpgSkillKey(int slot);                // Diathic: a key 3-0 with a skill of the trees on it (slot 0 = key 3)
     void  arpgStop();                            // a window opened: drop every mouse order / charge / request
     bool  arpgCanPush() const;                   // a bow / crossbow is drawn
     float arpgPushLeft() const;                  // 0..1 of the push cooldown left
@@ -85,6 +90,20 @@ class PlayerControl final {
       bool        charging   = false;    // right mouse button held
       };
     ArpgBar arpgBar() const;
+    // Diathic: the skills of the trees, on the keys 3-0 (ArpgProgress::slotSkill; the same order as ArpgSkills::Active)
+    enum ArpgSkill : uint8_t { SkNone, SkBash, SkThrust, SkDance, SkLeap, SkMill, SkRain, SkDisengage, SkCount };
+    struct ArpgSkillSlot {
+      ArpgSkill   skill  = SkNone;  // on the key (slot 0 = key 3)
+      const char* icon   = nullptr; // the item model of the node
+      bool        known  = false;
+      bool        usable = false;   // the weapon in hand fits, or the hero has one that fits (the key draws it)
+      bool        active = false;   // going on now
+      float       left   = 0;       // 0..1 of the cooldown left
+      float       total  = 0;       // s of the cooldown
+      };
+    ArpgSkillSlot arpgSkillSlot(int slot) const;
+    bool      arpgSkillKnown(ArpgSkill s) const;
+    void      arpgTickSlots(Npc& pl);              // a game from before the slots: the skills learned go on free keys
     // charged attack: -1 = not charging, otherwise seconds charged
     float arpgChargeTime() const { return arpgCharge==ChargeHold ? arpgChargeT : -1.f; }
     static constexpr float ChargeFull   = 2.0f;  // s to fully charge (without the skill tree)
@@ -106,6 +125,8 @@ class PlayerControl final {
     void  arpgVisibleObjects(std::vector<Focus>& out) const; // items and usable objects the hero can see
     float arpgCeiling() const;                   // indoors: everything above is cut away
     bool  arpgIsEnemy(const Npc& npc) const;     // would be attacked by a click
+    bool  arpgCanAttack(const Npc& npc) const;   // Diathic: a click attacks it now (enemy, or anyone with Ctrl held)
+    Npc*  arpgLockTarget() const;                // Diathic: the locked target (Ctrl held 0.4 s, like Dark Souls) or null
     bool  arpgCursorOnEnemy() const;             // Diathic: a living enemy under the mouse cursor (red sword cursor)
     bool  arpgAttackQueued() const;              // an attack waits for its moment (combo window)
 
@@ -205,6 +226,7 @@ class PlayerControl final {
     bool           ctrl[Action::Last]={};
     bool           wctrl[WeaponAction::Last]={};
     bool           actrl[7]={};
+    bool           arpgHeld[ArpgKeys::Count]={}; // Diathic: keys of ArpgKeys held down
 
     WeaponAction   wctrlLast = WeaponAction::WeaponMele; //!< Reminder for weapon toggle.
 
@@ -250,6 +272,9 @@ class PlayerControl final {
       int                        clearCount  = 0;      // path planning: checks in a row with a clear straight line
       int                        blockCount  = 0;      // path planning: checks in a row with a blocked straight line
       Tempest::Vec3              pathDest    = {};     // destination the current path was planned for
+      bool                       gridPath    = false;  // Diathic: the path is from ArpgNav (around furniture)
+      bool                       replan      = false;  // Diathic: stuck - plan again from here
+      bool                       gridFailed  = false;  // Diathic: no way on the grid to this destination (not again)
       int                        swings      = 0;
       bool                       swingCheck  = false;  // a swing was started: does its animation really play?
       float                      actTimer    = 0;      // s, waiting in range for the action to succeed
@@ -264,13 +289,22 @@ class PlayerControl final {
     ArpgCursor     arpgCursor;
     ArpgClick      arpgClick;
     Focus          arpgHover;
+    // Diathic: lock on a target (Ctrl held ArpgLockHold ms = on / off, short Ctrl over another one = switch)
+    Npc*           arpgLock       = nullptr;
+    const World*   arpgLockWorld  = nullptr;
+    uint64_t       arpgCtrlDownAt = 0;     // world time when Ctrl went down, 0 = up
+    bool           arpgCtrlUsed   = false; // a click or the lock happened during this hold
+    Focus          arpgPickRaw;            // what is under the cursor (arpgHover is the locked target while locked)
     Tempest::Vec3  arpgGround      = {};
     bool           arpgGroundValid = false;
 
     Focus          arpgPick();
     ArpgStep       arpgClickTick(Npc& pl, float& rot, int& rotation, bool allowRot, uint64_t dt);
-    Tempest::Vec3  arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, uint64_t dt);
-    bool           arpgLineClear(const Tempest::Vec3& from, const Tempest::Vec3& to) const;
+    Tempest::Vec3  arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, float reach, uint64_t dt);
+    bool           arpgLineClear(const Tempest::Vec3& from, const Tempest::Vec3& to) const;  // a shot (a ray at 90 cm)
+    bool           arpgWalkClear(const Tempest::Vec3& from, const Tempest::Vec3& to);        // a walk (ArpgNav)
+    bool           arpgGridPath (Npc& pl, const Tempest::Vec3& dest, float reach);
+    ArpgNav        arpgNav;
     bool           arpgStartDodge(Npc& pl, float& rot);
     void           arpgPlanPath(Npc& pl, const Tempest::Vec3& dest);
     void           arpgPullPath(const Tempest::Vec3& pos);
@@ -296,6 +330,36 @@ class PlayerControl final {
     bool           arpgChargeLate   = false; // released late, with Pewna ręka: x2
     float          arpgSpecialCd    = 0;  // s left of the special attack cooldown (not a world tick: survives loading)
     float          arpgPushCd       = 0;  // s left of the bow push cooldown
+    // Diathic: the skills of the weapon trees (PlayerControl::arpgSkillStart / arpgSkillRun)
+    float          arpgSkillCd[SkCount] = {};  // s left of each cooldown
+    int            arpgSkillReq   = -1;        // a key pressed (slot 0..7 = keys 3-0), waiting for the hero to be able
+    ArpgSkill      arpgSkillReqSk = SkNone;    // the skill on that key when it was pressed
+    int            arpgSkillKeyOf = -1;        // the slot of the skill going on (Młyn: held)
+    bool           arpgSlotDown[ArpgSkills::SlotCount] = {}; // keys 3-0 held down
+    float          arpgSkillWait  = 0;
+    bool           arpgSkillDraw  = false;     // the weapon is being drawn for it
+    ArpgSkill      arpgSkillNow   = SkNone;    // going on
+    float          arpgSkillT     = 0;         // s since it started
+    float          arpgSkillLen   = 0;         // s it takes (dashes), the most it takes (Młyn)
+    float          arpgSkillDist  = 0;         // cm of the dash left
+    float          arpgSkillSpeed = 0;         // cm/s of the dash
+    Tempest::Vec3  arpgSkillDir;               // of the dash (unit, flat)
+    float          arpgSkillStep  = 0;         // Taniec: s of this cut, Młyn: s to the next hit, Odskok: the 2nd arrow
+    int            arpgSkillN     = 0;         // Taniec: cuts done; Odskok: arrows shot
+    bool           arpgDanceHit     = false;   // Taniec: the hit of this cut dealt
+    uint32_t       arpgDanceCommits = 0;       // Taniec: the swing hits counted when the cut started
+    Npc*           arpgSkillTg    = nullptr;   // Odskok: shot at
+    std::vector<Npc*> arpgSkillHit;            // hit once already (Pchnięcie, Szarża)
+    float          arpgRiposteT   = 0;         // Riposta: s of the counter swing left
+    // Deszcz strzał: goes on by itself where it fell
+    Tempest::Vec3  arpgRainAt;
+    float          arpgRainLeft   = 0;
+    float          arpgRainNext   = 0;
+    float          arpgRainR      = 0;
+    bool  arpgSkillStart(Npc& pl, float& rot);
+    bool  arpgSkillRun  (Npc& pl, float& rot, float dtF);
+    void  arpgSkillEnd  (Npc& pl);
+    void  arpgTickRain  (Npc& pl, float dtF);
     bool           arpgPushReq      = false;
     float          arpgPushWait     = 0;
     uint8_t        arpgPotionReq    = 0;  // potion key pressed: 1 = health, 2 = mana
@@ -309,6 +373,9 @@ class PlayerControl final {
     void           arpgSpellKey(uint8_t slot, bool pressed);
     bool           arpgCursorAim(const Npc& pl, Tempest::Vec3& out) const;
     Npc*           arpgNextEnemy(Npc& pl, const Npc* except, float range) const;
+    void           arpgTickLock(Npc& pl);
+    void           arpgToggleLock(Npc& pl);
+    void           arpgSetLock(Npc* n);
     int            arpgStartRoll(Npc& pl, float& rot);
     float          arpgRollCd       = 0;  // s until the next dodge roll
     void           arpgPotion(uint8_t kind);

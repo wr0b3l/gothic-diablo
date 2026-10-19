@@ -1,5 +1,6 @@
 #include "crashlog.h"
 #include "commandline.h"
+#include "arpgcrash.h"
 
 #include <Tempest/Except>
 #include <Tempest/Platform>
@@ -36,8 +37,9 @@ static char gpuName[64]="?";
 #ifdef __WINDOWS__
 #include <windows.h>
 
-static LONG WINAPI exceptionHandler(PEXCEPTION_POINTERS) {
+static LONG WINAPI exceptionHandler(PEXCEPTION_POINTERS ptrs) {
   SetUnhandledExceptionFilter(nullptr);
+  ArpgCrash::setException(ptrs); // Diathic: exception and minidump in the report
   CrashLog::dumpStack("ExceptionFilter", nullptr);
   return EXCEPTION_EXECUTE_HANDLER;
   }
@@ -164,6 +166,8 @@ void CrashLog::dumpStack(const char *sig, const char *extGpuLog) {
   tracebackLinux(fout);
 #endif
   fout.flush();
+  fout.close();
+  ArpgCrash::report(sig); // Diathic: raporty\crash-<date> for testers
   }
 
 void CrashLog::tracebackStd(std::ostream &out) {

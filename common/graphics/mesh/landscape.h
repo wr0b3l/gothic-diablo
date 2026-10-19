@@ -22,8 +22,10 @@ class Landscape final {
       Item mesh;
       };
 
-    std::vector<Block>     blocks;
+    // Diathic: mesh before blocks - members are destroyed in reverse order, and freeing a block reads the mesh
+    // (VisualObjects::free -> updateRtAs -> StaticMesh::blas); the other way round = crash on loading a save with RT
     StaticMesh             mesh;
+    std::vector<Block>     blocks;
     Tempest::StorageBuffer meshletDesc;
 
     Tempest::StorageBuffer bvhNodes;

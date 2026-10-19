@@ -171,7 +171,7 @@ void VisualObjects::updateInstance(size_t id, Matrix4x4* pos) {
     }
   }
 
-void VisualObjects::updateRtAs(size_t id) {
+void VisualObjects::updateRtAs(size_t id, bool freeing) {
   auto& obj = objects[id];
   auto& mat = obj.bucketId->mat;
 
@@ -184,6 +184,11 @@ void VisualObjects::updateRtAs(size_t id) {
   if(!useBlas)
     return;
 
+  if(freeing) {
+    // Diathic: the mesh may be gone already (owner destroyed before its items): rebuild the TLAS without reading it
+    notifyTlas(mat, toRtCategory(obj.type));
+    return;
+    }
   auto& mesh = *obj.bucketId->staticMesh;
   if(auto b = mesh.blas(obj.iboOff, obj.iboLen)) {
     (void)b;
@@ -322,7 +327,7 @@ void VisualObjects::free(size_t id) {
 
   drawCmd.addClusters(obj.cmdId, -meshletCount);
   clustersMem.free(obj.clusterId, numCluster);
-  updateRtAs(id);
+  updateRtAs(id, true);
 
   if(obj.wind==zenkit::AnimationType::NONE)
     objectsWind.erase(id);

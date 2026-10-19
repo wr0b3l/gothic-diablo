@@ -4,6 +4,7 @@
 #include "graphics/mesh/animation.h"
 #include "graphics/meshobjects.h"
 #include "graphics/mdlvisual.h"
+#include "game/arpgstatus.h"
 #include "game/gametime.h"
 #include "game/movealgo.h"
 #include "game/inventory.h"
@@ -195,6 +196,25 @@ class Npc final {
     auto       lastMoveFail() const -> const MoveAlgo::MoveFail& { return mvAlgo.lastMoveFail(); } // gothic-diablo
     auto       comboTiming() const -> Pose::ComboTiming;                                        // gothic-diablo
     void       arpgHoldParade();         // gothic-diablo: block held
+    // Diathic: negative statuses (game/arpgstatus.h); value: damage per second for damage over time
+    void       arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from);
+    bool       arpgHasStatus(ArpgStatus::Id id) const;
+    // Diathic: the hero's block: charges (ArpgStatus::BlockCharges .. -BlockDebt), the block held now
+    int32_t    arpgBlockCharges() const { return arpgBlockCh; }
+    bool       arpgBlockWorn(const Npc& tg) const; // Diathic: its block is worn out against the hero (AI: no parade)
+    int32_t    arpgBlockMax() const;       // Diathic: ArpgStatus::BlockCharges + Twarda garda
+    bool       arpgBlockHeld() const;
+    Npc*       arpgTakeRiposte() { auto r = arpgRiposteTg; arpgRiposteTg = nullptr; return r; } // Diathic: Riposta
+    // Diathic: a skill of the weapon trees deals damage: x mul; knock: throws down; stagger: ms of a stagger; bleed: part
+    // of the damage per second for 3 s
+    struct ArpgSkillHit {
+      float    mul     = 1.f;
+      bool     knock   = false;
+      uint64_t stagger = 0;
+      float    bleed   = 0;
+      };
+    void       arpgSkillDamage(Npc& tg, const ArpgSkillHit& h);
+    void       arpgDirectDamage(Npc& from, int32_t v); // Diathic: damage without a hit (bleeding, Odwet)
     void       arpgHoldAttack();         // gothic-diablo: charged attack held in its wind-up
     void       arpgStartSpecial(float mul, bool knock = true); // gothic-diablo: the next swing: x mul (knock: throws down)
     const ArpgPerks* arpgPerks() const;    // gothic-diablo: what the hero's skill trees give (ARPG view; others: nullptr)
@@ -217,6 +237,15 @@ class Npc final {
       uint8_t       kind  = 0;  // 3 = whirl, 4 = shock wave
       };
     const ArpgFx& arpgFx() const { return arpgFxLast; }
+    void       arpgSetFx(const ArpgFx& f) { arpgFxLast = f; }
+    // Diathic: the skills of the weapon trees (PlayerControl): no damage from the swing's own hit until 'until' (the
+    // skill deals it), faster swings, Młyn (not stopped by hits), hits dealt so far, an arrow of a skill
+    void       arpgNoCommit(uint64_t until) { arpgNoCommitUntil = until; }
+    void       arpgSetSkillSpeed(float s)   { arpgSkillSpeed = s; }
+    void       arpgSetMill(uint64_t until)  { arpgMillUntil = until; }
+    uint32_t   arpgCommits() const          { return arpgCommitN; }
+    bool       arpgSkillArrow(const Tempest::Vec3* from, const Tempest::Vec3& vel, const Npc* tg, float mul);
+    bool       arpgUseArrow(); // one arrow / bolt of the weapon in hand used up (Kołczan: sometimes not); false: none
     bool       arpgInReach(const Npc& tg, float mul) const; // gothic-diablo: in reach of a swing (flat, height tolerant)
     void       arpgSetShotMul(float mul) { arpgShotMul = mul; } // gothic-diablo: the next arrow: damage x mul, always hits
     bool       arpgKnockBack(Npc& from, float speed);  // gothic-diablo: push away without damage
@@ -260,6 +289,7 @@ class Npc final {
     uint32_t   instanceSymbol() const;
     uint32_t   guild() const;
     bool       isMonster() const;
+    static constexpr float ArpgMonsterSenseCut = 0.2f; // Diathic: creatures sense the hero at 80% of senses_range
     bool       isHuman() const;
     void       setTrueGuild(int32_t g);
     int32_t    trueGuild() const;
@@ -573,17 +603,33 @@ class Npc final {
     uint64_t  arpgSpinUntil      = 0;     // hero: Wir, turning round
     bool      arpgShadowOn       = false;
     bool      arpgSpecialKill    = false; // hero: the charged attack killed someone (Pęd bitewny)
-    struct ArpgDot {
-      float    dps   = 0;
+    // Diathic: negative statuses (ArpgStatus): stagger, burning, bleeding...
+    struct ArpgStatusState {
+      float    value = 0;      // damage over time: per second
       uint64_t until = 0;
-      uint64_t next  = 0;
+      uint64_t next  = 0;      // damage over time: the next tick
       Npc*     from  = nullptr;
       };
-    ArpgDot   arpgBleed, arpgBurn;     // bleeding (Głębokie rany), fire (Gniew Innosa)
+    ArpgStatusState arpgSt[ArpgStatus::Count];
     const VisualFx* arpgBurnFx = nullptr;
+    uint64_t  arpgParadeLast  = 0;     // hero: the last frame the block was held
+    uint64_t  arpgParadeStart = 0;     // hero: when the block held now started (parry)
+    int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hits the block still holds (below 0: damage leaks); everyone
+    uint64_t  arpgBlockRegen  = 0;     // hero: the next charge back
+    float     arpgDmgScale    = 1.f;   // a hit through the block: part of the damage
+    bool      arpgBlockLeak   = false; // a hit through the block: no stumble (the block stays)
+    uint64_t  arpgBastionUntil = 0;    // hero: Bastion after a parry
+    uint64_t  arpgNoCommitUntil = 0;   // hero: a skill deals the damage of its swing itself
+    uint64_t  arpgNoPushUntil   = 0;   // Diathic: staggered by a parry - the stumble does not move it back
+    float     arpgSkillSpeed   = 0;    // hero: + attack speed during a skill (Taniec ostrzy)
+    uint64_t  arpgMillUntil    = 0;    // hero: Młyn
+    uint32_t  arpgCommitN      = 0;    // hero: swings that dealt their hit (Taniec ostrzy waits for it)
+    uint64_t  arpgButcherUntil = 0;    // hero: Rzeźnik after a kill with a 2H weapon
+    Npc*      arpgRiposteTg    = nullptr; // hero: Riposta, the enemy just parried
+    const ArpgSkillHit* arpgHitSkill = nullptr; // hero: a skill of the weapon trees deals damage now
     ArpgFx    arpgFxLast;
-    void      arpgDot(ArpgDot& d, float dps, uint64_t ms, Npc& from);
-    void      arpgTickDots();
+    void      arpgTickStatus();
+    void      arpgParrySound();
     void      arpgTickShadow();
     Npc*      updateNearestEnemy();
     Npc*      updateNearestBody();

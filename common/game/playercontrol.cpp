@@ -17,6 +17,9 @@
 #include "game/arpgskills.h"
 #include "game/arpgkeys.h"
 #include "ui/arpgmenu.h"
+#include "physics/dynamicworld.h"
+
+#include <Tempest/Log>
 
 // gothic-diablo: what the hero's skill trees give (defaults without a game)
 static const ArpgPerks& heroPerks() {
@@ -25,6 +28,19 @@ static const ArpgPerks& heroPerks() {
     return gs->arpgProgress().perks();
   return none;
   }
+
+static ArpgProgress* heroProgress() {
+  auto gs = Gothic::inst().gameSession();
+  return gs!=nullptr ? &gs->arpgProgress() : nullptr;
+  }
+
+// Diathic: the skill on a key 3-0 (slot 0 = key 3)
+static PlayerControl::ArpgSkill slotSkill(int slot) {
+  auto pr = heroProgress();
+  return pr!=nullptr ? PlayerControl::ArpgSkill(pr->slotSkill(slot)) : PlayerControl::SkNone;
+  }
+static_assert(int(PlayerControl::SkDisengage)==int(ArpgSkills::SkDisengage) && int(PlayerControl::SkCount)==int(ArpgSkills::SkCount),
+              "PlayerControl::ArpgSkill and ArpgSkills::Active: the same order");
 
 float PlayerControl::arpgChargeTimeFull() const {
   return heroPerks().chargeTime;
@@ -86,6 +102,12 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
 
   if(w!=nullptr && w->isCutsceneLock())
     return;
+
+  if(c!=nullptr && c->isArpgActive()) {
+    const int ak = ArpgKeys::actionOf(key);
+    if(ak>=0)
+      arpgHeld[ak] = true;
+    }
 
   // Diathic: a key of the ARPG mode does not move the hero as well (Gothic's binding of the same key)
   if(!(pl!=nullptr && c!=nullptr && c->isArpgActive() && ArpgKeys::actionOf(key)>=0))
@@ -152,13 +174,24 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
     if(ak>=0)
       return; // the windows / map / labels: MainWindow
     if(a>=Action::WeaponMage3 && a<=Action::WeaponMage10) {
-      // 3-0: cast the spell of that slot at the cursor (Gothic: draw the rune, then cast with the action key)
+      // Diathic: 3-0: a skill of the trees on the key, otherwise cast the spell of that slot at the cursor
+      // (Gothic: draw the rune, then cast with the action key)
+      const int k = int(a-Action::WeaponMage3);
+      arpgSlotDown[k] = true;
+      if(slotSkill(k)!=SkNone) {
+        arpgSkillKey(k);
+        return;
+        }
       arpgSpellKey(uint8_t(a-Action::WeaponMage3+3), true);
       return;
       }
     if(a==KeyCodec::ActionGeneric && key==Tempest::KeyEvent::K_LControl) {
       // Ctrl is only a modifier for the mouse here (attack anyone / in place; with a bow: aim at the cursor),
-      // not Gothic's action key (it would aim the bow and shoot only on release)
+      // not Gothic's action key (it would aim the bow and shoot only on release); held = lock on (arpgTickLock)
+      if(!ctrl[a] && arpgCtrlDownAt==0) {
+        arpgCtrlDownAt = std::max<uint64_t>(1, w->tickCount()); // key repeat does not restart the hold
+        arpgCtrlUsed   = false;
+        }
       ctrl[a] = true;
       return;
       }
@@ -308,8 +341,20 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
 
 void PlayerControl::onKeyReleased(KeyCodec::Action a, KeyCodec::Mapping mapping) {
   ctrl[a] = false;
-  if(a>=Action::WeaponMage3 && a<=Action::WeaponMage10)
+  if(a==KeyCodec::ActionGeneric && arpgCtrlDownAt!=0) {
+    // Diathic: a short Ctrl while locked, the cursor on another living one = lock on it
+    auto w0  = Gothic::inst().world();
+    auto pl0 = w0!=nullptr ? w0->player() : nullptr;
+    auto n   = arpgPickRaw.npc;
+    if(pl0!=nullptr && !arpgCtrlUsed && arpgLockTarget()!=nullptr && w0->tickCount()-arpgCtrlDownAt<ArpgStatus::LockHoldMs &&
+       n!=nullptr && n!=arpgLock && n!=pl0 && !n->isDead() && !n->isDown())
+      arpgSetLock(n);
+    arpgCtrlDownAt = 0;
+    }
+  if(a>=Action::WeaponMage3 && a<=Action::WeaponMage10) {
+    arpgSlotDown[a-Action::WeaponMage3] = false;
     arpgSpellKey(uint8_t(a-Action::WeaponMage3+3), false); // gothic-diablo: end investing
+    }
 
   handleMovementAction(KeyCodec::ActionMapping{a, mapping}, false);
 
@@ -388,8 +433,13 @@ void PlayerControl::tickFocus() {
   if(camera!=nullptr && camera->isArpgActive() && arpgCursor.valid) {
     // gothic-diablo: focus is whatever is under the mouse cursor
     currentFocus = arpgPick();
+    arpgPickRaw  = currentFocus;
+    if(auto lk = arpgLockTarget())
+      currentFocus = Focus(*lk); // Diathic: locked: clicks, skills, spells and the bow go at the target
     arpgHover    = currentFocus;
-    if(arpgClick.kind==ArpgClick::Attack && arpgClick.target.npc!=nullptr)
+    if(auto lk = arpgLockTarget())
+      setTarget(lk);
+    else if(arpgClick.kind==ArpgClick::Attack && arpgClick.target.npc!=nullptr)
       setTarget(arpgClick.target.npc);
     else if(arpgClick.kind==ArpgClick::Strike)
       setTarget(nullptr); // shooting at a point: straight ahead
@@ -397,8 +447,8 @@ void PlayerControl::tickFocus() {
       setTarget(currentFocus.npc);
     // the enemy under the cursor and the one being attacked glow a little (shader: scene.arpgHi)
     {
-      auto glow = [this](const Npc* n) {
-        if(n==nullptr || n->isDead() || !arpgIsEnemy(*n))
+      auto glow = [this](const Npc* n, bool attacked) {
+        if(n==nullptr || n->isDead() || !(attacked || arpgCanAttack(*n)))
           return Tempest::Vec4();
         const auto  b  = n->bounds();
         const auto  sz = b.bbox[1]-b.bbox[0];
@@ -408,8 +458,8 @@ void PlayerControl::tickFocus() {
         };
       const Npc* hov = arpgHover.npc;
       const Npc* tgt = (arpgClick.kind==ArpgClick::Attack) ? arpgClick.target.npc : nullptr;
-      camera->arpgSetHighlight(0, glow(hov));
-      camera->arpgSetHighlight(1, tgt!=hov ? glow(tgt) : Tempest::Vec4());
+      camera->arpgSetHighlight(0, glow(hov, hov!=nullptr && hov==tgt));
+      camera->arpgSetHighlight(1, tgt!=hov ? glow(tgt, true) : Tempest::Vec4());
     }
     return;
     }
@@ -589,8 +639,15 @@ bool PlayerControl::canInteract() const {
   return true;
   }
 
+void PlayerControl::arpgKeyUp(int ak) {
+  if(ak>=0 && ak<int(ArpgKeys::Count))
+    arpgHeld[ak] = false;
+  }
+
 void PlayerControl::clearInput() {
   movement.reset();
+  std::memset(arpgHeld,0,sizeof(arpgHeld));
+  std::memset(arpgSlotDown,0,sizeof(arpgSlotDown));
   std::memset(ctrl, 0,sizeof(ctrl));
   std::memset(actrl,0,sizeof(actrl));
   std::memset(wctrl,0,sizeof(wctrl));
@@ -716,6 +773,8 @@ bool PlayerControl::tickMove(uint64_t dt) {
   arpgSpecialCd = std::max(0.f, arpgSpecialCd-dtF);
   arpgPushCd    = std::max(0.f, arpgPushCd-dtF);
   arpgRollCd    = std::max(0.f, arpgRollCd-dtF);
+  for(auto& c:arpgSkillCd)
+    c = std::max(0.f, c-dtF);
   if(!arpgSecondRoll) {
     arpgSecondT -= dtF;
     if(arpgSecondT<=0.f)
@@ -742,13 +801,20 @@ bool PlayerControl::tickMove(uint64_t dt) {
 
   if(pl==nullptr)
     return true;
+  arpgTickRain(*pl, dtF); // Diathic: Deszcz strzał goes on by itself
+  if(camera!=nullptr && camera->isArpgActive()) {
+    arpgTickLock(*pl);  // Diathic: lock on a target
+    arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
+    }
+  else
+    arpgSetLock(nullptr);
 
-  // gothic-diablo: Q/E (turn keys) rotate the ARPG camera, whatever the hero is doing
+  // gothic-diablo: the camera turn keys of ArpgKeys (arrows) rotate the ARPG camera, whatever the hero is doing
   if(camera!=nullptr && camera->isArpgActive() && !dlg.isActive()) {
     const float camSpeed = 120.f*dtF;
-    if(this->wantsToTurnLeft())
+    if(arpgHeld[ArpgKeys::CamLeft])
       camera->arpgRotate(+camSpeed);
-    if(this->wantsToTurnRight())
+    if(arpgHeld[ArpgKeys::CamRight])
       camera->arpgRotate(-camSpeed);
     }
 
@@ -872,6 +938,9 @@ void PlayerControl::implMove(uint64_t dt) {
     const float dtF = float(dt)/1000.f;
     if(arpgDodgeLock>0.f) {
       const auto& pk = heroPerks();
+      if(arpgSkillNow!=SkNone)
+        arpgSkillEnd(pl); // Diathic: a roll out of a skill
+      arpgRiposteT   = 0;
       arpgDodgeLock -= dtF;
       runAngleDest   = 0;
       if(arpgRollTotal>0.f)
@@ -900,6 +969,26 @@ void PlayerControl::implMove(uint64_t dt) {
     } else {
     arpgDodgeReq  = false;
     arpgDodgeLock = 0;
+    }
+
+  // Diathic: the skills of the trees (keys 3-0) and Riposta's counter swing
+  if(arpg) {
+    const float dtF = float(dt)/1000.f;
+    if(arpgSkillRun(pl, rot, dtF))
+      return;
+    if(arpgSkillReq>=0) {
+      arpgSkillWait -= dtF;
+      if(arpgSkillWait<=0.f || casting || pl.isFalling() || pl.isInAir() || pl.isJump() ||
+         pl.isSwim() || pl.isDive() || pl.isInWater()) {
+        arpgSkillReq  = -1;
+        arpgSkillDraw = false;
+        }
+      else if(arpgSkillStart(pl, rot)) {
+        return;
+        }
+      }
+    } else if(arpgSkillNow!=SkNone) {
+    arpgSkillEnd(pl);
     }
 
   // gothic-diablo: potion keys 1 / 2: drunk at once, weapon stays in hand
@@ -1427,9 +1516,11 @@ void PlayerControl::implMove(uint64_t dt) {
     // W/S/A/D (and arrows) move up/down/left/right on screen, hero turns to the move direction
     const float fb = movement.forwardBackward.value();
     const float lr = movement.strafeRightLeft.value();
-    if(fb!=0.f || lr!=0.f)
+    // Diathic: locked: a click (attack) wins over W/S/A/D, so the hero can circle and hit
+    const bool lockAtk = arpgLockTarget()!=nullptr && arpgClick.kind==ArpgClick::Attack;
+    if((fb!=0.f || lr!=0.f) && !lockAtk)
       arpgClick = ArpgClick(); // keyboard overrides mouse
-    if(fb==0.f && lr==0.f && arpgClick.kind!=ArpgClick::None) {
+    if(((fb==0.f && lr==0.f) || lockAtk) && arpgClick.kind!=ArpgClick::None) {
       // left mouse button: walk / interact / attack
       switch(arpgClickTick(pl, rot, rotation, pl.isRotationAllowed(), dt)) {
         case ArpgStop: ani = Npc::Anim::Idle; rotation = 0; break;
@@ -1440,17 +1531,45 @@ void PlayerControl::implMove(uint64_t dt) {
       }
     else if(fb!=0.f || lr!=0.f) {
       const float dest = camera->arpgYaw() + std::atan2(-lr, fb)*180.f/float(M_PI);
-      const float da   = std::remainder(dest-rot, 360.f);
-      if(allowRot) {
-        const float step = 900.f*(float(dt)/1000.f);
-        rot += std::clamp(da, -step, step);
-        }
-      if(std::fabs(da)<100.f || !allowRot) {
-        ani = Npc::Anim::Move;
+      if(auto lk = arpgLockTarget()) {
+        // Diathic: locked (like Dark Souls): the hero faces the target, W/S/A/D (screen directions) =
+        // towards it / back / Gothic's side steps around it
+        const auto  d    = lk->position()-pl.position();
+        const float face = std::atan2(d.z,d.x)*180.f/float(M_PI);
+        const float da   = std::remainder(face-rot, 360.f);
+        if(allowRot) {
+          const float step = 720.f*(float(dt)/1000.f);
+          rot += std::clamp(da, -step, step);
+          }
+        const float rel = std::remainder(dest-face, 360.f);
+        if(std::fabs(rel)<=50.f)
+          ani = Npc::Anim::Move;
+        else if(std::fabs(rel)>=130.f)
+          ani = Npc::Anim::MoveBack;
+        else
+          ani = (rel>0.f) ? Npc::Anim::MoveL : Npc::Anim::MoveR;
         } else {
-        ani      = Npc::Anim::Idle;
-        rotation = (da>0.f) ? -1 : 1;
+        const float da = std::remainder(dest-rot, 360.f);
+        if(allowRot) {
+          const float step = 900.f*(float(dt)/1000.f);
+          rot += std::clamp(da, -step, step);
+          }
+        if(std::fabs(da)<100.f || !allowRot) {
+          ani = Npc::Anim::Move;
+          } else {
+          ani      = Npc::Anim::Idle;
+          rotation = (da>0.f) ? -1 : 1;
+          }
         }
+      }
+    else if(auto lk = arpgLockTarget(); lk!=nullptr && allowRot && !pl.isAttackAnim()) {
+      // Diathic: locked, standing: turn to the target
+      const auto  d    = lk->position()-pl.position();
+      const float da   = std::remainder(std::atan2(d.z,d.x)*180.f/float(M_PI)-rot, 360.f);
+      const float step = 540.f*(float(dt)/1000.f);
+      rot += std::clamp(da, -step, step);
+      if(std::fabs(da)>8.f)
+        rotation = (da>0.f) ? -1 : 1;
       }
     }
   else if(this->wantsToStrafeLeft()) {
@@ -1885,8 +2004,34 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
       }
     }
 
+  if(ctrl[KeyCodec::ActionGeneric])
+    arpgCtrlUsed = true; // Ctrl + click: no lock from this hold
   arpgHover = f;
   const bool force = ctrl[KeyCodec::ActionGeneric]; // Ctrl + click: attack anyone
+  if(arpgHeld[ArpgKeys::InPlace]) {
+    // Diathic: Shift held (like Diablo): the attack in place towards the cursor (locked: towards the target), no walking;
+    // the one in reach is hit
+    const Npc* lk = arpgLockTarget();
+    const Npc* at = lk!=nullptr ? lk : ((f.npc!=nullptr && !f.npc->isDown() && f.npc!=pl) ? f.npc : nullptr);
+    arpgClick.kind  = ArpgClick::Strike;
+    arpgClick.point = at!=nullptr ? at->position()
+                                  : (arpgGroundValid ? arpgGround
+                                                     : pl->position() + Tempest::Vec3(std::cos(pl->rotationRad())*200.f, 0, std::sin(pl->rotationRad())*200.f));
+    if(pl->weaponState()==WeaponState::NoWeapon)
+      arpgDrawPreferred(*pl);
+    arpgClick.stuckPos = pl->position();
+    return;
+    }
+  if(auto lk = arpgLockTarget()) {
+    // Diathic: locked (like Dark Souls): a click anywhere attacks the target
+    arpgHover          = Focus(*lk);
+    arpgClick.kind     = ArpgClick::Attack;
+    arpgClick.target   = Focus(*lk);
+    arpgClick.stuckPos = pl->position();
+    if(pl->weaponState()==WeaponState::NoWeapon)
+      arpgDrawPreferred(*pl);
+    return;
+    }
   if(force && (f.npc==nullptr || f.npc->isDown())) {
     // Ctrl + click on no one: attack in place towards the cursor
     arpgClick.kind = ArpgClick::Strike;
@@ -1935,48 +2080,103 @@ bool PlayerControl::arpgLineClear(const Tempest::Vec3& from, const Tempest::Vec3
   return !w->physic()->ray(from+up, to+up).hasCol;
   }
 
-Tempest::Vec3 PlayerControl::arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, uint64_t dt) {
+namespace {
+// Diathic: ArpgNav asks the physics of the world
+struct NavScene : ArpgNav::Scene {
+  explicit NavScene(World& w):w(w) {}
+  bool ray(const Tempest::Vec3& from, const Tempest::Vec3& to, Tempest::Vec3& hit) const override {
+    const auto r = w.physic()->ray(from, to);
+    hit = r.v;
+    return r.hasCol;
+    }
+  bool sweepDown(const Tempest::Vec3& from, const Tempest::Vec3& to, float r) const override {
+    return w.physic()->sweep(from, to, r).hasCol;
+    }
+  uint64_t    time() const override { return w.tickCount(); }
+  const void* id()   const override { return &w; }
+  World& w;
+  };
+}
+
+bool PlayerControl::arpgWalkClear(const Tempest::Vec3& from, const Tempest::Vec3& to) {
+  auto w = Gothic::inst().world();
+  if(w==nullptr)
+    return true;
+  return arpgNav.lineClear(NavScene(*w), from, to);
+  }
+
+bool PlayerControl::arpgGridPath(Npc& pl, const Tempest::Vec3& dest, float reach) {
+  // Diathic: around tables, chairs, benches... on a grid tested with the hero's body (ArpgNav)
+  auto  w = Gothic::inst().world();
+  auto& c = arpgClick;
+  if(w==nullptr)
+    return false;
+  std::vector<Tempest::Vec3> way;
+  if(!arpgNav.findPath(NavScene(*w), pl.position(), dest, reach, way))
+    return false;
+  c.path     = std::move(way);
+  c.pathIdx  = 0;
+  c.pathDest = dest;
+  c.gridPath = true;
+  return true;
+  }
+
+Tempest::Vec3 PlayerControl::arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, float reach, uint64_t dt) {
   auto&       c   = arpgClick;
-  auto        w   = Gothic::inst().world();
   const auto  pos = pl.position();
   const float dtF = float(dt)/1000.f;
 
-  // re-plan a few times a second, with hysteresis: a straight line while it is clear,
-  // the waynet only after the line was blocked twice in a row (or when stuck); back to straight
-  // when the line is clear twice in a row; the path is shortened to the farthest visible point
-  (void)w;
+  // a few times a second: straight on while the walk is clear (tested with the hero's body, ArpgNav), else a way
+  // around on the grid near the hero; the waynet for far places; the path is shortened to the farthest point
+  // that can be walked to straight
   c.repathTimer -= dtF;
-  if(c.repathTimer<=0.f) {
+  if(c.repathTimer<=0.f || c.replan) {
     c.repathTimer = 0.4f;
-    const bool clear = arpgLineClear(pos,dest);
-    c.clearCount = clear ? c.clearCount+1 : 0;
-    c.blockCount = clear ? 0 : c.blockCount+1;
     const auto  md       = dest-c.pathDest;
     const bool  destMove = (md.x*md.x+md.z*md.z) > 200.f*200.f;
-    if(c.path.empty()) {
-      if(c.useWaynet || c.blockCount>=2)
-        arpgPlanPath(pl,dest);
-      }
-    else if(!c.useWaynet && c.clearCount>=2) {
+    const bool  clear    = !c.replan && arpgWalkClear(pos,dest);
+    c.clearCount = clear ? c.clearCount+1 : 0;
+    c.blockCount = clear ? 0 : c.blockCount+1;
+    if(clear) {
       c.path.clear();
-      c.pathIdx = 0;
+      c.pathIdx  = 0;
+      c.gridPath = false;
       }
-    else if(destMove) {
-      arpgPlanPath(pl,dest);
+    else if(c.path.empty() || destMove || c.replan) {
+      if(destMove || c.replan)
+        c.gridFailed = false;
+      c.replan   = false;
+      c.gridPath = false;
+      // the grid costs a little: after it found nothing for this destination it is not asked every 0.4 s
+      const bool grid = !c.gridFailed && arpgGridPath(pl, dest, reach);
+      if(!grid)
+        c.gridFailed = true;
+      if(!grid) {
+        arpgPlanPath(pl, dest);
+        // a far place: the waynet; around things close by: the grid to the next point of it
+        if(c.pathIdx<c.path.size() && !arpgWalkClear(pos, c.path[c.pathIdx])) {
+          const auto rest = std::vector<Tempest::Vec3>(c.path.begin()+long(c.pathIdx), c.path.end());
+          if(arpgGridPath(pl, rest.front(), ArpgNav::Cell)) {
+            c.path.insert(c.path.end(), rest.begin()+1, rest.end());
+            c.pathDest = dest;
+            }
+          }
+        }
       }
     else {
       arpgPullPath(pos);
       }
     }
 
+  const float near = c.gridPath ? 35.f : 90.f; // the corners of a way around furniture: closely
   while(c.pathIdx<c.path.size()) {
     const auto d = c.path[c.pathIdx]-pos;
-    if(d.x*d.x+d.z*d.z > 90.f*90.f)
+    if(d.x*d.x+d.z*d.z > near*near)
       break;
     ++c.pathIdx;
     }
 
-  // no progress for 0.4 s: try the other side, then the waynet, then give up (~1.6 s)
+  // no progress for 0.4 s: what is in front of him is closed on the grid, plan again; give up after ~1.6 s
   c.stuckTimer += dtF;
   if(c.stuckTimer>=0.4f) {
     const auto  d      = pos-c.stuckPos;
@@ -1987,12 +2187,9 @@ Tempest::Vec3 PlayerControl::arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, u
       c.stuckCount++;
       c.avoidSide  = (c.avoidSide==0) ? 1 : -c.avoidSide;
       c.detourTime = 0;
-      if(c.stuckCount==2 && !c.useWaynet) {
-        c.useWaynet   = true;
-        c.repathTimer = 0;
-        c.path.clear();
-        c.pathIdx     = 0;
-        }
+      const float a = pl.rotationRad();
+      arpgNav.block(pos + Tempest::Vec3(std::cos(a), 0, std::sin(a))*(ArpgNav::Radius+ArpgNav::Cell));
+      c.replan = true;
       if(c.stuckCount>=4)
         c.kind = ArpgClick::None;
       }
@@ -2079,8 +2276,9 @@ float PlayerControl::arpgSteer(Npc& pl, const Tempest::Vec3& next, uint64_t dt) 
     }
 
   // 3. feelers: something ahead -> turn away from it, preferring the side we already avoid on
+  //    (not on a way around furniture from the grid: it is clear already, the feelers would only push him off it)
   const float len = std::min(110.f, dist-20.f);
-  if(len>=40.f && !arpgFeelerClear(pl, want, len)) {
+  if(!c.gridPath && len>=40.f && !arpgFeelerClear(pl, want, len)) {
     const int s0 = (c.avoidSide!=0) ? c.avoidSide : 1;
     for(float off:{30.f, 60.f, 90.f}) {
       for(int side:{s0, -s0}) {
@@ -2151,7 +2349,9 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
       reach = 150.f;
       break;
     case ArpgClick::Strike:
-      if(c.held && arpgGroundValid)
+      if(auto lk = arpgLockTarget())
+        c.point = lk->position(); // Diathic: locked - towards the target
+      else if(c.held && arpgGroundValid)
         c.point = arpgGround; // holding the button: keep hitting towards the cursor
       dest  = (c.target.npc!=nullptr && !c.held) ? c.target.npc->position() : c.point;
       reach = 1e6f;           // never walks
@@ -2179,7 +2379,17 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
 
   if(!inRange) {
     const auto kind = c.kind;
-    arpgNextPoint(pl, dest, dt);
+    // how close the way has to lead: a bit less than what counts as "in range" (Diathic: ArpgNav)
+    float navReach = ArpgNav::Cell;
+    switch(kind) {
+      case ArpgClick::PickUp: navReach = reach*0.8f; break;
+      case ArpgClick::Use:    navReach = reach*0.8f; break;
+      case ArpgClick::Talk:   navReach = reach*0.8f; break;
+      case ArpgClick::Loot:   navReach = reach*0.8f; break;
+      case ArpgClick::Attack: navReach = 110.f;      break;
+      default:                navReach = ArpgNav::Cell; break;
+      }
+    arpgNextPoint(pl, dest, navReach, dt);
     if(c.kind==ArpgClick::None) {
       // stuck (furniture, shelves): close enough still counts for using things
       if(kind!=ArpgClick::Ground && kind!=ArpgClick::Attack && dist2<=320.f*320.f) {
@@ -2367,7 +2577,8 @@ int PlayerControl::arpgStartRoll(Npc& pl, float& rot) {
   pl.arpgSetInvulnerable(uint64_t(std::min(len,1.f)*650.f + pk.rollInvuln*1000.f));
   arpgDodgeReq  = false;
   arpgDodgeLock = std::clamp(len*0.85f, 0.4f, 1.f);         // the end blends into running
-  arpgRollCd    = std::max(0.1f, arpgDodgeLock + 0.25f - pk.rollCdCut); // Lekki krok
+  arpgRollCd    = std::max(0.1f, arpgDodgeLock + 0.25f - pk.rollCdCut -   // Lekki krok
+                           (pl.weaponState()==WeaponState::W1H ? pk.rollCd1H : 0.f)); // Diathic: Zwinny krok
   arpgClick     = ArpgClick();
   runAngleDest  = 0;
   if(chain) {
@@ -2537,13 +2748,81 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
 
 bool PlayerControl::arpgCursorOnEnemy() const {
   auto n = arpgHover.npc;
-  return n!=nullptr && !n->isDead() && !n->isDown() && arpgIsEnemy(*n);
+  return n!=nullptr && !n->isDead() && !n->isDown() && arpgCanAttack(*n);
+  }
+
+bool PlayerControl::arpgCanAttack(const Npc& npc) const {
+  if(arpgIsEnemy(npc) || &npc==arpgLockTarget())
+    return true;
+  // Ctrl + click attacks anyone (arpgMouseDown): red cursor, label and glow show it before the click
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  return ctrl[KeyCodec::ActionGeneric] && pl!=nullptr && &npc!=pl && !npc.isDead() && !npc.isDown();
   }
 
 bool PlayerControl::arpgIsEnemy(const Npc& npc) const {
   auto w  = Gothic::inst().world();
   auto pl = w!=nullptr ? w->player() : nullptr;
-  return pl!=nullptr && &npc!=pl && !npc.isDown() && arpgIsHostile(*pl,npc);
+  if(pl==nullptr || &npc==pl || npc.isDown())
+    return false;
+  return &npc==arpgLockTarget() || arpgIsHostile(*pl,npc); // Diathic: the locked one is fought, friend or not
+  }
+
+Npc* PlayerControl::arpgLockTarget() const {
+  auto w = Gothic::inst().world();
+  return (arpgLock!=nullptr && w!=nullptr && w==arpgLockWorld) ? arpgLock : nullptr;
+  }
+
+void PlayerControl::arpgSetLock(Npc* n) {
+  arpgLock      = n;
+  arpgLockWorld = n!=nullptr ? Gothic::inst().world() : nullptr;
+  if(n!=nullptr)
+    setTarget(n);
+  }
+
+void PlayerControl::arpgToggleLock(Npc& pl) {
+  if(arpgLockTarget()!=nullptr) {
+    arpgSetLock(nullptr);
+    return;
+    }
+  // the one under the cursor (anyone living: people in town too), otherwise the nearest enemy in sight
+  Npc* n = arpgPickRaw.npc;
+  if(n!=nullptr && (n==&pl || n->isDead() || n->isDown()))
+    n = nullptr;
+  if(n==nullptr)
+    n = arpgNextEnemy(pl, nullptr, ArpgStatus::LockRange);
+  if(n==nullptr) {
+    Gothic::inst().onPrint(ArpgMenu::gtxt("Brak celu"));
+    return;
+    }
+  arpgSetLock(n);
+  }
+
+void PlayerControl::arpgTickLock(Npc& pl) {
+  auto w = Gothic::inst().world();
+  if(!ctrl[KeyCodec::ActionGeneric])
+    arpgCtrlDownAt = 0; // the release got lost (window switch)
+  if(arpgCtrlDownAt!=0 && !arpgCtrlUsed && w->tickCount()-arpgCtrlDownAt>=ArpgStatus::LockHoldMs) {
+    arpgCtrlUsed = true;
+    arpgToggleLock(pl);
+    }
+  if(arpgLock==nullptr)
+    return;
+  Focus f;
+  f.npc = arpgLock;
+  if(arpgLockWorld!=w || w->validateFocus(f).npc==nullptr || dlg.isActive()) {
+    arpgSetLock(nullptr); // removed from the world, another world, a dialog
+    return;
+    }
+  Npc& t = *arpgLock;
+  if(t.isDead() || t.isDown()) {
+    // like Dark Souls: the next enemy close by, otherwise the lock ends
+    arpgSetLock(arpgNextEnemy(pl, &t, ArpgStatus::LockRange));
+    return;
+    }
+  const auto d = t.position()-pl.position();
+  if(d.x*d.x+d.z*d.z > ArpgStatus::LockRange*ArpgStatus::LockRange || std::abs(d.y)>600.f)
+    arpgSetLock(nullptr);
   }
 
 bool PlayerControl::arpgAttackQueued() const {
@@ -2640,7 +2919,7 @@ void PlayerControl::arpgPullPath(const Tempest::Vec3& pos) {
   // "string pulling": go straight to the farthest point of the path that can be seen
   auto& c = arpgClick;
   for(size_t k=c.path.size(); k>c.pathIdx+1; --k) {
-    if(arpgLineClear(pos, c.path[k-1])) {
+    if(arpgWalkClear(pos, c.path[k-1])) {
       c.pathIdx = k-1;
       return;
       }
@@ -2832,6 +3111,15 @@ float PlayerControl::arpgPushLeft() const {
   }
 
 void PlayerControl::arpgStop() {
+  arpgSkillReq   = -1;
+  arpgSkillDraw  = false;
+  arpgRiposteT   = 0;
+  if(arpgSkillNow!=SkNone) {
+    auto w = Gothic::inst().world();
+    if(auto pl = (w!=nullptr ? w->player() : nullptr))
+      arpgSkillEnd(*pl);
+    arpgSkillNow = SkNone;
+    }
   arpgClick      = ArpgClick();
   arpgDodgeReq   = false;
   arpgPotionReq  = 0;
@@ -2963,4 +3251,687 @@ PlayerControl::ArpgBar PlayerControl::arpgBar() const {
     b.potion[k] = arpgPickPotion(*pl, uint8_t(k+1), b.potions[k]);
   b.charging = (arpgCharge!=ChargeNone);
   return b;
+  }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Diathic: the skills of the trees (Blok, Jednoręczna, Dwuręczna, Łuk i kusza) on the keys 3-0, put there in the book
+// (ArpgMenu). A skill controls the hero while it goes on (PlayerControl::implMove -> arpgSkillRun).
+
+namespace {
+struct SkillInfo {
+  const char* tree;
+  const char* node;   // the node that unlocks it (its model on the bar)
+  int32_t     popup;  // World::arpgPopup, kind 5
+  };
+}
+
+static const SkillInfo& skillInfo(PlayerControl::ArpgSkill s) {
+  static const SkillInfo infos[PlayerControl::SkCount] = {
+    {"",            "",              0 },
+    {"Blok",        "Uderzenie",     5 },
+    {"Jednoręczna", "Pchnięcie",     7 },
+    {"Jednoręczna", "Taniec ostrzy", 8 },
+    {"Dwuręczna",   "Skok",          10},
+    {"Dwuręczna",   "Młyn",          11},
+    {"Łuk i kusza", "Deszcz strzał", 12},
+    {"Łuk i kusza", "Odskok",        13},
+    };
+  return infos[s<PlayerControl::SkCount ? s : 0];
+  }
+
+static const char* skillIcon(PlayerControl::ArpgSkill s) {
+  auto&        si = skillInfo(s);
+  const size_t t  = ArpgSkills::treeOf(si.tree);
+  if(t==size_t(-1))
+    return nullptr;
+  for(auto& b:ArpgSkills::trees()[t].branches)
+    for(auto& n:b.nodes)
+      if(std::string_view(n.name)==si.node)
+        return n.icon;
+  return nullptr;
+  }
+
+static float skillCooldown(PlayerControl::ArpgSkill s, const ArpgPerks& pk) {
+  switch(s) {
+    case PlayerControl::SkBash:      return std::max(1.f, ArpgStatus::BashCd-pk.bashCdCut);
+    case PlayerControl::SkThrust:    return ArpgStatus::ThrustCd;
+    case PlayerControl::SkDance:     return std::max(1.f, ArpgStatus::DanceCd-pk.danceCdCut);
+    case PlayerControl::SkLeap:      return ArpgStatus::LeapCd;
+    case PlayerControl::SkMill:      return ArpgStatus::MillCd;
+    case PlayerControl::SkRain:      return ArpgStatus::RainCd;
+    case PlayerControl::SkDisengage: return ArpgStatus::DisengageCd;
+    case PlayerControl::SkNone:
+    case PlayerControl::SkCount:
+      break;
+    }
+  return 0.f;
+  }
+
+// the weapon a skill needs
+static bool skillFits(PlayerControl::ArpgSkill s, WeaponState ws) {
+  switch(s) {
+    case PlayerControl::SkBash:      return ws==WeaponState::Fist || ws==WeaponState::W1H || ws==WeaponState::W2H;
+    case PlayerControl::SkThrust:
+    case PlayerControl::SkDance:     return ws==WeaponState::W1H;
+    case PlayerControl::SkLeap:
+    case PlayerControl::SkMill:      return ws==WeaponState::W2H;
+    case PlayerControl::SkRain:
+    case PlayerControl::SkDisengage: return ws==WeaponState::Bow || ws==WeaponState::CBow;
+    case PlayerControl::SkNone:
+    case PlayerControl::SkCount:
+      break;
+    }
+  return false;
+  }
+
+static bool skillRanged(PlayerControl::ArpgSkill s) {
+  return s==PlayerControl::SkRain || s==PlayerControl::SkDisengage;
+  }
+
+// the weapon state the hero gets by drawing what he wears for this skill; NoWeapon: he wears nothing that fits
+static WeaponState skillDraws(PlayerControl::ArpgSkill s, Npc& pl) {
+  if(skillRanged(s)) {
+    if(auto r = pl.currentRangedWeapon())
+      return (ItmFlags(r->handle().flags) & ITM_CROSSBOW) ? WeaponState::CBow : WeaponState::Bow;
+    return WeaponState::NoWeapon;
+    }
+  if(auto m = pl.currentMeleeWeapon())
+    return m->is2H() ? WeaponState::W2H : WeaponState::W1H;
+  return WeaponState::Fist;
+  }
+
+static const char* skillNeeds(PlayerControl::ArpgSkill s) {
+  switch(s) {
+    case PlayerControl::SkThrust:
+    case PlayerControl::SkDance:     return "broni jednoręcznej";
+    case PlayerControl::SkLeap:
+    case PlayerControl::SkMill:      return "broni dwuręcznej";
+    case PlayerControl::SkRain:
+    case PlayerControl::SkDisengage: return "łuku albo kuszy";
+    default:                         return "broni białej albo pięści";
+    }
+  }
+
+bool PlayerControl::arpgSkillKnown(ArpgSkill s) const {
+  const auto& pk = heroPerks();
+  switch(s) {
+    case SkBash:      return pk.bash;
+    case SkThrust:    return pk.thrust;
+    case SkDance:     return pk.bladeDance;
+    case SkLeap:      return pk.leap;
+    case SkMill:      return pk.mill;
+    case SkRain:      return pk.rain;
+    case SkDisengage: return pk.disengage;
+    case SkNone:
+    case SkCount:
+      break;
+    }
+  return false;
+  }
+
+PlayerControl::ArpgSkillSlot PlayerControl::arpgSkillSlot(int slot) const {
+  ArpgSkillSlot r;
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl==nullptr)
+    return r;
+  r.skill = slotSkill(slot);
+  if(r.skill==SkNone)
+    return r;
+  r.icon   = skillIcon(r.skill);
+  r.known  = arpgSkillKnown(r.skill);
+  r.usable = skillFits(r.skill, pl->weaponState()) || skillFits(r.skill, skillDraws(r.skill, *pl));
+  r.active = (arpgSkillNow==r.skill) || (r.skill==SkRain && arpgRainLeft>0.f);
+  r.total  = skillCooldown(r.skill, heroPerks());
+  r.left   = r.total>0.f ? std::clamp(arpgSkillCd[r.skill]/r.total, 0.f, 1.f) : 0.f;
+  return r;
+  }
+
+void PlayerControl::arpgSkillKey(int slot) {
+  arpgSkillReq   = slot;
+  arpgSkillReqSk = slotSkill(slot);
+  arpgSkillWait  = 0.5f; // pressed during a swing: as soon as the hero can
+  arpgSkillDraw  = false;
+  }
+
+void PlayerControl::arpgTickSlots(Npc& pl) {
+  // a game from before the keys 3-0 (G / F / B): the skills learned go on free keys once
+  auto pr = heroProgress();
+  if(pr==nullptr || pr->slotsReady())
+    return;
+  pr->setSlotsReady();
+  for(uint8_t s=SkBash; s<SkCount; ++s)
+    if(arpgSkillKnown(ArpgSkill(s)) && pr->slotOf(ArpgSkills::Active(s))<0)
+      ArpgMenu::putSkillOnKey(ArpgSkills::Active(s), -1, pl, false);
+  }
+
+bool PlayerControl::arpgSkillStart(Npc& pl, float& rot) {
+  auto w = Gothic::inst().world();
+  if(w==nullptr) {
+    arpgSkillReq = -1;
+    return false;
+    }
+  const int       slot = arpgSkillReq;
+  const ArpgSkill sk   = arpgSkillReqSk;
+  const auto      ws   = pl.weaponState();
+  if(sk==SkNone) {
+    arpgSkillReq = -1;
+    return false;
+    }
+  if(!arpgSkillKnown(sk)) {
+    auto& si = skillInfo(sk);
+    arpgSkillReq = -1;
+    Gothic::inst().onPrint(ArpgMenu::gtxt(std::string(si.node)+" - jeszcze nie znasz (drzewko "+si.tree+", "+
+                                          ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills))+")"));
+    return false;
+    }
+  if(!skillFits(sk, ws)) {
+    // the weapon the skill needs first (the one the hero wears), the skill goes off when it is in hand
+    if(!skillFits(sk, skillDraws(sk, pl))) {
+      arpgSkillReq  = -1;
+      arpgSkillDraw = false;
+      Gothic::inst().onPrint(ArpgMenu::gtxt(std::string(skillInfo(sk).node)+" wymaga "+skillNeeds(sk)));
+      return false;
+      }
+    if(!arpgSkillDraw) {
+      if(skillRanged(sk))
+        wctrl[WeaponBow]  = true; else
+        wctrl[WeaponMele] = true;
+      arpgSkillDraw = true;
+      arpgSkillWait = std::max(arpgSkillWait, 2.f);
+      }
+    return false;
+    }
+  const auto& pk = heroPerks();
+  arpgSkillReq   = -1;
+  arpgSkillDraw  = false;
+  if(arpgSkillCd[sk]>0.f)
+    return false;
+  arpgSkillKeyOf = slot;
+  const bool ranged = (ws==WeaponState::Bow || ws==WeaponState::CBow);
+  if(ranged && !pl.hasAmmunition()) {
+    Gothic::inst().onPrint(ArpgMenu::gtxt("Brak amunicji"));
+    return false;
+    }
+  if(arpgCharge!=ChargeNone)
+    arpgChargeCancel(pl);
+  arpgClick    = ArpgClick();
+  runAngleDest = 0;
+
+  // where to: the enemy / the point under the cursor, otherwise straight ahead
+  const auto    pos    = pl.position();
+  Tempest::Vec3 aim    = pos;
+  const bool    hasAim = arpgCursorAim(pl, aim);
+  Tempest::Vec3 d      = aim-pos;
+  d.y = 0;
+  float dl = std::sqrt(d.x*d.x+d.z*d.z);
+  if(!hasAim || dl<30.f) {
+    const float rad = rot*float(M_PI)/180.f;
+    d  = Tempest::Vec3(std::cos(rad), 0, std::sin(rad));
+    dl = 0;
+    } else {
+    d /= dl;
+    }
+  float face = std::atan2(d.z, d.x)*180.f/float(M_PI);
+
+  arpgSkillNow  = sk;
+  arpgSkillT    = 0;
+  arpgSkillLen  = 0;
+  arpgSkillStep = 0;
+  arpgSkillN    = 0;
+  arpgSkillDist = 0;
+  arpgSkillDir  = d;
+  arpgSkillTg   = nullptr;
+  arpgSkillHit.clear();
+  arpgSkillCd[sk] = skillCooldown(sk, pk);
+  pl.setAnimRotate(0);
+  int32_t popup = skillInfo(sk).popup;
+
+  switch(sk) {
+    case SkBash: {
+      // in the block pose (it blocks and parries on the way); Szarża: further, to the cursor
+      arpgSkillDist  = pk.bashRun ? ArpgStatus::BashRunDist+pk.bashRunDist : ArpgStatus::BashDist;
+      if(pk.bashRun && dl>0.f)
+        arpgSkillDist = std::clamp(dl, ArpgStatus::BashDist, arpgSkillDist);
+      arpgSkillSpeed = pk.bashRun ? ArpgStatus::BashRunSpeed : ArpgStatus::BashSpeed;
+      if(pk.bashRun)
+        popup = 6;
+      pl.stopAnim("");
+      rot = face;
+      pl.setDirection(rot);
+      if(ws==WeaponState::Fist)
+        pl.blockFist(); else
+        pl.blockSword();
+      pl.arpgHoldParade();
+      break;
+      }
+    case SkThrust: {
+      arpgSkillDist  = ArpgStatus::ThrustDist+pk.thrustDist;
+      if(dl>0.f)
+        arpgSkillDist = std::min(arpgSkillDist, std::max(dl, 150.f));
+      arpgSkillSpeed = ArpgStatus::ThrustSpeed;
+      pl.stopAnim("");
+      rot = face;
+      pl.setDirection(rot);
+      pl.swingSword();
+      pl.arpgNoCommit(w->tickCount()+1500); // the skill deals the damage of this swing
+      break;
+      }
+    case SkDance: {
+      pl.arpgSetSkillSpeed(ArpgStatus::DanceSpeed);
+      break;
+      }
+    case SkLeap: {
+      arpgSkillDist  = ArpgStatus::LeapDist+pk.leapDist;
+      if(dl>0.f)
+        arpgSkillDist = std::min(arpgSkillDist, dl);
+      arpgSkillSpeed = ArpgStatus::LeapSpeed;
+      pl.stopAnim("");
+      rot = face;
+      pl.setDirection(rot);
+      pl.swingSword();
+      pl.arpgNoCommit(w->tickCount()+2000);
+      break;
+      }
+    case SkMill: {
+      arpgSkillLen  = ArpgStatus::MillTime+pk.millTime;
+      arpgSkillStep = 0.15f; // the first hit soon
+      pl.stopAnim("");
+      rot = face;
+      pl.setDirection(rot);
+      if(!pl.swingSwordL())
+        pl.swingSwordR();
+      pl.arpgHoldAttack();
+      pl.arpgSetMill(w->tickCount()+300);
+      break;
+      }
+    case SkRain: {
+      // the hero shoots up for a moment; the rain goes on by itself (arpgTickRain)
+      arpgRainAt   = hasAim ? aim : pos+d*600.f;
+      arpgRainLeft = ArpgStatus::RainTime+pk.rainTime;
+      arpgRainNext = 0.3f;
+      arpgRainR    = ArpgStatus::RainRadius+pk.rainRadius;
+      arpgSkillLen = 0.4f;
+      rot = face;
+      pl.setDirection(rot);
+      pl.aimBow();
+      Npc::ArpgFx fx;
+      fx.time  = w->tickCount();
+      fx.pos   = arpgRainAt;
+      fx.arc   = 360.f;
+      fx.reach = arpgRainR;
+      fx.kind  = 3;
+      pl.arpgSetFx(fx);
+      break;
+      }
+    case SkDisengage: {
+      // the target: under the cursor or the nearest enemy; the jump: away from it (or from the cursor)
+      Npc* tg = nullptr;
+      if(arpgHover.npc!=nullptr && arpgIsEnemy(*arpgHover.npc))
+        tg = arpgHover.npc; else
+        tg = arpgNextEnemy(pl, nullptr, arpgShotRange());
+      Tempest::Vec3 away = Tempest::Vec3(-d.x, 0, -d.z);
+      if(tg!=nullptr) {
+        auto        t = tg->position()-pos;
+        const float l = std::sqrt(t.x*t.x+t.z*t.z);
+        if(l>1.f) {
+          away = Tempest::Vec3(-t.x/l, 0, -t.z/l);
+          face = std::atan2(t.z, t.x)*180.f/float(M_PI);
+          }
+        }
+      arpgSkillTg    = tg;
+      arpgSkillDir   = away;
+      arpgSkillDist  = ArpgStatus::DisengageDist+pk.disengageDist;
+      arpgSkillSpeed = ArpgStatus::DisengageSpeed;
+      pl.stopAnim("");
+      rot = face;
+      pl.setDirection(rot);
+      pl.setAnimAngGet(Npc::Anim::MoveBack); // the jump back, when the weapon has one
+      break;
+      }
+    case SkNone:
+    case SkCount:
+      break;
+    }
+  if(popup!=0)
+    w->arpgPopup(pos+Tempest::Vec3(0,230.f,0), popup, 5);
+  Tempest::Log::i("Diathic: skill ", skillInfo(sk).node);
+  return true;
+  }
+
+bool PlayerControl::arpgSkillRun(Npc& pl, float& rot, float dtF) {
+  auto w = Gothic::inst().world();
+  if(w==nullptr)
+    return false;
+  const auto ws = pl.weaponState();
+
+  // Riposta: a parry - the counter swing at once (the block waits for it)
+  if(Npc* rt = pl.arpgTakeRiposte()) {
+    const bool melee = (ws==WeaponState::Fist || ws==WeaponState::W1H || ws==WeaponState::W2H);
+    if(melee && arpgSkillNow==SkNone && !rt->isDown()) {
+      pl.stopAnim("");
+      const auto t = rt->position()-pl.position();
+      if(t.x*t.x+t.z*t.z>1.f) {
+        rot = std::atan2(t.z, t.x)*180.f/float(M_PI);
+        pl.setDirection(rot);
+        }
+      setTarget(rt);
+      if(ws==WeaponState::Fist ? pl.fistShoot() : pl.swingSword()) {
+        arpgRiposteT = ArpgStatus::RiposteTime;
+        w->arpgPopup(pl.position()+Tempest::Vec3(0,230.f,0), 14, 5);
+        }
+      }
+    }
+  if(arpgRiposteT>0.f) {
+    arpgRiposteT -= dtF;
+    runAngleDest  = 0;
+    return true;
+    }
+
+  if(arpgSkillNow==SkNone)
+    return false;
+  arpgSkillT  += dtF;
+  runAngleDest = 0;
+  const auto& pk = heroPerks();
+
+  // a dash: the hero is moved along arpgSkillDir; false: done (the distance is gone or the way is blocked)
+  auto dash = [&]() -> bool {
+    if(arpgSkillDist<=0.f)
+      return false;
+    const float step = std::min(arpgSkillDist, arpgSkillSpeed*dtF);
+    arpgSkillDist -= step;
+    if(!pl.tryMove(arpgSkillDir*step)) {
+      arpgSkillDist = 0;
+      return false;
+      }
+    return arpgSkillDist>0.f;
+    };
+  // enemies around a point (flat distance, up to 2 m up or down); cosHalf: only in front of the dash (-2: all round)
+  auto enemies = [&](const Tempest::Vec3& at, float r, float cosHalf, auto fn) {
+    w->detectNpc(at, r+100.f, [&](Npc& n) {
+      if(&n==&pl || n.isDown() || !arpgIsEnemy(n))
+        return;
+      const auto  dd = n.position()-at;
+      const float l2 = dd.x*dd.x+dd.z*dd.z;
+      if(l2>r*r || std::abs(dd.y)>200.f)
+        return;
+      if(cosHalf>-1.5f && l2>60.f*60.f) {
+        const float l = std::sqrt(l2);
+        if((dd.x*arpgSkillDir.x+dd.z*arpgSkillDir.z)/l<cosHalf)
+          return;
+        }
+      fn(n);
+      });
+    };
+  auto once = [&](Npc& n) {
+    if(std::find(arpgSkillHit.begin(), arpgSkillHit.end(), &n)!=arpgSkillHit.end())
+      return false;
+    arpgSkillHit.push_back(&n);
+    return true;
+    };
+  auto ring = [&](const Tempest::Vec3& at, float r) {
+    Npc::ArpgFx fx;
+    fx.time  = w->tickCount();
+    fx.pos   = at;
+    fx.ang   = pl.rotation();
+    fx.arc   = 360.f;
+    fx.reach = r;
+    fx.kind  = 3;
+    pl.arpgSetFx(fx);
+    };
+
+  switch(arpgSkillNow) {
+    case SkBash: {
+      pl.arpgHoldParade(); // the block held on the way
+      const bool going = dash();
+      const auto pos   = pl.position();
+      if(pk.bashRun) {
+        // Szarża: everyone on the way falls
+        Npc::ArpgSkillHit h;
+        h.mul   = ArpgStatus::BashMul;
+        h.knock = true;
+        enemies(pos, 120.f, -2.f, [&](Npc& n) { if(once(n)) pl.arpgSkillDamage(n, h); });
+        }
+      Npc* front = nullptr;
+      enemies(pos, 130.f, 0.5f, [&](Npc& n) {
+        if(std::find(arpgSkillHit.begin(), arpgSkillHit.end(), &n)==arpgSkillHit.end())
+          front = &n;
+        });
+      if(going && front==nullptr)
+        return true;
+      // the bash: the enemies in front staggered
+      Npc::ArpgSkillHit h;
+      h.mul     = ArpgStatus::BashMul+pk.bashDmg;
+      h.stagger = ArpgStatus::BashStaggerMs+uint64_t((pk.bashStagger+pk.staggerAdd)*1000.f);
+      enemies(pos, 170.f, 0.5f, [&](Npc& n) { if(once(n)) pl.arpgSkillDamage(n, h); });
+      pl.emitSoundEffect("WHOOSH", 1500.f, true);
+      arpgSkillEnd(pl);
+      return false;
+      }
+    case SkThrust: {
+      const bool going = dash();
+      Npc::ArpgSkillHit h;
+      h.mul   = ArpgStatus::ThrustMul+pk.thrustDmg;
+      h.bleed = ArpgStatus::ThrustBleed;
+      enemies(pl.position(), 160.f, 0.3f, [&](Npc& n) { if(once(n)) pl.arpgSkillDamage(n, h); });
+      if(going)
+        return true;
+      arpgSkillEnd(pl);
+      return false;
+      }
+    case SkDance: {
+      if(ws!=WeaponState::W1H) {
+        arpgSkillEnd(pl);
+        return false;
+        }
+      // Diathic: every cut has its own time and its hit is dealt here (the swing animation's own hit does nothing),
+      // so 3 (Czwarte cięcie: 4) cuts always hit, whatever the animation does
+      arpgSkillStep += dtF;
+      if(arpgSkillN==0 || arpgSkillStep>=ArpgStatus::DanceCutTime) {
+        if(arpgSkillN>=pk.danceHits) {
+          arpgSkillEnd(pl);
+          return false;
+          }
+        // the next cut, at the cursor (the enemy under it, the nearest close one); right and left by turns
+        const float face = arpgFightFace(pl, rot);
+        pl.stopAnim("");
+        rot = face;
+        pl.setDirection(rot);
+        pl.arpgNoCommit(w->tickCount()+2000);
+        if(!((arpgSkillN%2==0) ? pl.swingSwordR() : pl.swingSwordL()))
+          pl.swingSword();
+        arpgDanceCommits = pl.arpgCommits();
+        arpgSkillStep = 0;
+        arpgDanceHit  = false;
+        arpgSkillN++;
+        return true;
+        }
+      if(arpgDanceHit)
+        return true;
+      // the enemies in front, in reach of the swing
+      const float rad     = rot*float(M_PI)/180.f;
+      const float fx      = std::cos(rad), fz = std::sin(rad);
+      const float cosHalf = std::cos(ArpgStatus::DanceArc*0.5f*float(M_PI)/180.f);
+      std::vector<Npc*> inReach;
+      Npc*  close = nullptr;
+      float best  = 0;
+      w->detectNpc(pl.position(), 400.f, [&](Npc& n) {
+        if(&n==&pl || n.isDown() || !arpgIsEnemy(n))
+          return;
+        const auto  dd = n.position()-pl.position();
+        const float l  = std::sqrt(dd.x*dd.x+dd.z*dd.z);
+        if(std::abs(dd.y)>200.f || (l>60.f && (dd.x*fx+dd.z*fz)/l<cosHalf))
+          return;
+        if(pl.arpgInReach(n, 1.15f))
+          inReach.push_back(&n);
+        else if(close==nullptr || l<best) {
+          close = &n;
+          best  = l;
+          }
+        });
+      if(arpgSkillStep<ArpgStatus::DanceHitAt) {
+        // a step up to the enemy in front, when none is in reach yet
+        if(inReach.empty() && close!=nullptr && best<300.f) {
+          const auto  t = close->position()-pl.position();
+          const float l = std::sqrt(t.x*t.x+t.z*t.z);
+          if(l>1.f)
+            pl.tryMove(Tempest::Vec3(t.x/l, 0, t.z/l)*std::min(l, ArpgStatus::DanceStep*dtF));
+          }
+        return true;
+        }
+      Npc::ArpgSkillHit h;
+      h.mul = ArpgStatus::DanceMul;
+      for(auto n:inReach)
+        pl.arpgSkillDamage(*n, h);
+      arpgDanceHit = true;
+      return true;
+      }
+    case SkLeap: {
+      if(dash())
+        return true;
+      // the landing: everyone around falls
+      const auto pos = pl.position();
+      Npc::ArpgSkillHit h;
+      h.mul   = ArpgStatus::LeapMul+pk.leapDmg;
+      h.knock = true;
+      enemies(pos, ArpgStatus::LeapRadius, -2.f, [&](Npc& n) { pl.arpgSkillDamage(n, h); });
+      ring(pos, ArpgStatus::LeapRadius);
+      pl.emitSoundEffect("WHOOSH", 1500.f, true);
+      arpgSkillEnd(pl);
+      return false;
+      }
+    case SkMill: {
+      const bool held = arpgSkillKeyOf>=0 && arpgSkillKeyOf<ArpgSkills::SlotCount && arpgSlotDown[arpgSkillKeyOf];
+      if((!held && arpgSkillT>0.4f) || arpgSkillT>=arpgSkillLen || ws!=WeaponState::W2H) {
+        arpgSkillEnd(pl);
+        return false;
+        }
+      pl.arpgHoldAttack();
+      pl.arpgSetMill(w->tickCount()+300);
+      rot += ArpgStatus::MillTurn*dtF;
+      pl.setDirection(rot);
+      // slowly towards the cursor
+      Tempest::Vec3 aim;
+      if(arpgCursorAim(pl, aim)) {
+        auto        t = aim-pl.position();
+        const float l = std::sqrt(t.x*t.x+t.z*t.z);
+        if(l>50.f)
+          pl.tryMove(Tempest::Vec3(t.x/l, 0, t.z/l)*std::min(l, ArpgStatus::MillMove*dtF));
+        }
+      arpgSkillStep -= dtF;
+      if(arpgSkillStep<=0.f) {
+        arpgSkillStep += ArpgStatus::MillTick;
+        const auto pos = pl.position();
+        Npc::ArpgSkillHit h;
+        h.mul = ArpgStatus::MillMul+pk.millDmg;
+        enemies(pos, ArpgStatus::MillRadius, -2.f, [&](Npc& n) { pl.arpgSkillDamage(n, h); });
+        ring(pos, ArpgStatus::MillRadius);
+        }
+      return true;
+      }
+    case SkRain: {
+      if(arpgSkillT<arpgSkillLen) {
+        pl.aimBow();
+        return true;
+        }
+      arpgSkillEnd(pl);
+      return false;
+      }
+    case SkDisengage: {
+      auto shot = [&]() {
+        const Npc* tg = arpgSkillTg;
+        if(tg!=nullptr && tg->isDown())
+          tg = nullptr;
+        if(tg!=nullptr) {
+          const auto t = tg->position()-pl.position();
+          if(t.x*t.x+t.z*t.z>1.f) {
+            rot = std::atan2(t.z, t.x)*180.f/float(M_PI);
+            pl.setDirection(rot);
+            }
+          }
+        const float   rad = rot*float(M_PI)/180.f;
+        Tempest::Vec3 vel = Tempest::Vec3(std::cos(rad), 0, std::sin(rad))*DynamicWorld::bulletSpeed;
+        if(pl.arpgSkillArrow(nullptr, vel, tg, ArpgStatus::DisengageMul))
+          pl.arpgUseArrow();
+        };
+      if(arpgSkillN==0) {
+        if(dash())
+          return true;
+        shot();
+        arpgSkillN    = 1;
+        arpgSkillStep = 0;
+        if(pk.doubleShot && pl.hasAmmunition())
+          return true;
+        arpgSkillEnd(pl);
+        return false;
+        }
+      arpgSkillStep += dtF;
+      if(arpgSkillStep<0.15f)
+        return true;
+      shot(); // Podwójny strzał
+      arpgSkillEnd(pl);
+      return false;
+      }
+    case SkNone:
+    case SkCount:
+      break;
+    }
+  arpgSkillEnd(pl);
+  return false;
+  }
+
+void PlayerControl::arpgSkillEnd(Npc& pl) {
+  switch(arpgSkillNow) {
+    case SkDance: {
+      pl.arpgSetSkillSpeed(0);
+      // the last cut's own hit still to come: it does nothing (a short while), otherwise nothing is held back
+      auto w = Gothic::inst().world();
+      if(w!=nullptr && pl.arpgCommits()==arpgDanceCommits)
+        pl.arpgNoCommit(w->tickCount()+500); else
+        pl.arpgNoCommit(0);
+      break;
+      }
+    case SkMill:
+      pl.arpgSetMill(0);
+      pl.stopAnim(""); // drop the held swing
+      break;
+    case SkBash:
+      if(!arpgBlocking)
+        pl.stopAnim(""); // the block pose (held on: the block goes on)
+      break;
+    default:
+      break;
+    }
+  arpgSkillNow  = SkNone;
+  arpgSkillDist = 0;
+  arpgSkillTg   = nullptr;
+  arpgSkillHit.clear();
+  }
+
+void PlayerControl::arpgTickRain(Npc& pl, float dtF) {
+  // Deszcz strzał: arrows from the sky on random points of the circle; the volley uses one arrow at the end
+  if(arpgRainLeft<=0.f)
+    return;
+  auto w = Gothic::inst().world();
+  if(w==nullptr) {
+    arpgRainLeft = 0;
+    return;
+    }
+  arpgRainLeft -= dtF;
+  arpgRainNext -= dtF;
+  while(arpgRainNext<=0.f && arpgRainLeft>0.f) {
+    arpgRainNext += ArpgStatus::RainEvery;
+    const float a  = float(w->script().rand(3600))*0.1f*float(M_PI)/180.f;
+    const float r  = arpgRainR*std::sqrt(float(w->script().rand(1000))/1000.f);
+    const auto  at = arpgRainAt+Tempest::Vec3(std::cos(a)*r, ArpgStatus::RainHeight, std::sin(a)*r);
+    const auto  v  = Tempest::Vec3(0.f, -DynamicWorld::bulletSpeed*0.8f, 0.f);
+    if(!pl.arpgSkillArrow(&at, v, nullptr, ArpgStatus::RainMul)) {
+      arpgRainLeft = 0; // the bow went away
+      break;
+      }
+    }
+  if(arpgRainLeft<=0.f) {
+    arpgRainLeft = 0;
+    pl.arpgUseArrow();
+    }
   }

@@ -18,7 +18,7 @@ class InventoryRenderer;
 class InventoryMenu;
 class GthFont;
 
-// gothic-diablo: the ARPG window: equipment, character, skill trees.
+// gothic-diablo: the ARPG window: equipment, character, skill trees, the diary (Diathic).
 // The hero himself is not drawn here: while it is open the camera stands in front of him (Camera::setArpgPortrait),
 // so he is seen in the middle of the screen between the two pages, with his idle animation and his real equipment.
 // Drawn as an open book of the game (BOOK_BROWN_L/R pages, the book fonts, LETTERS sheets, INV_SLOT frames)
@@ -34,9 +34,12 @@ class ArpgMenu final {
       P_Character,
       P_Skills,
       P_Trade,     // trade, a chest, looting: opened and closed with Gothic's menu (InventoryMenu keeps the state)
+      P_Log,       // Diathic: the diary (quests and notes of Gothic's quest log) as a book
       };
 
     bool   isOpen()  const { return page!=P_Closed; }
+    // Diathic: the model of an item instance as an icon (the skill bar shows the nodes of the weapon trees)
+    const Item* skillIcon(const char* instance) { return iconItem(instance); }
     Page   current() const { return page; }
     void   open(Page p);
     void   close();
@@ -53,11 +56,20 @@ class ArpgMenu final {
     void   mouseUp   (const Tempest::Point& pos, bool right, Npc& pl);
     void   mouseMove (const Tempest::Point& pos);
     void   mouseWheel(int delta);
-    bool   spellKey  (uint8_t slot, Npc& pl);   // 3..10: the rune / scroll under the cursor goes to that key
+    // 3..10: the rune / scroll under the cursor goes to that key; Diathic: in the skill book, the skill under the cursor
+    bool   spellKey  (uint8_t slot, Npc& pl);
+    bool   backKey   ();                          // Diathic: Backspace in the skill book: back to its contents
+    void   logKey    (int dy, bool page);         // the diary: up / down the list (page: Page Up / Down = the text)
     void   setInventoryMenu(InventoryMenu* m) { invMenu = m; }
 
     // UTF-8 text for Gothic's fonts (they draw the bytes of the game's code page; Polish game = Windows-1250)
     static std::string gtxt(std::string_view utf8);
+
+    // Diathic: a skill of the trees onto a key 3-0 (slot 0 = key 3; -1: the first free one); a rune / scroll there
+    // moves to a free key (none: off the keys, it stays in the backpack). A rune / scroll onto a key: the skill there
+    // goes off the keys
+    static void putSkillOnKey(ArpgSkills::Active s, int slot, Npc& pl, bool announce);
+    static void putSpellOnKey(size_t cls, uint8_t gothicSlot, Npc& pl);
 
   private:
     enum HitKind : uint8_t {
@@ -71,6 +83,10 @@ class ArpgMenu final {
       H_Other,    // trade / chest / looting: a thing on the other's page
       H_CatL,     // trade / chest / looting: kind of things on the other's page
       H_TakeAll,  // chest / looting: take everything
+      H_LogCat,   // the diary: kind of entries (current, done, failed, notes)
+      H_Quest,    // the diary: a quest (id = index in the quest log)
+      H_Back,     // Diathic: the skill book: back to the contents
+      H_Skill,    // Diathic: the skill book's contents: a skill (id = ArpgSkills::Active); a click opens its tree
       };
     struct Hit {
       Tempest::Rect r;
@@ -86,12 +102,27 @@ class ArpgMenu final {
     Page                 page   = P_Closed;
     int                  cat    = 0;   // backpack: kind of items shown
     int                  tree   = 0;   // skill tree shown
+    // Diathic: the skill book: its contents (passive trees left, the trees of skills right), a click turns the page to
+    // a tree on two pages (left the tree, right the note on a node); the button / Backspace turns back
+    bool                 treeOpen  = false;
+    uint64_t             turnAt    = 0;      // a page turned then (Application::tickCount), 0: none
+    bool                 turnBack  = false;  // turned back to the contents (from left to right)
+    int                  noteKind  = -1;     // the node on the note: -1 none (the tree), 0 the root, 1 a node, 2 the keystone
+    int                  noteB = 0, noteN = 0;
+    ArpgSkills::Active   hoverSkill = ArpgSkills::SkNone; // under the cursor (a key 3-0 puts it there)
     int                  scroll = 0;   // backpack: rows scrolled
     int                  maxScroll = 0;
     int                  catL      = 0; // trade / chest / looting: the other's page
     int                  scrollL   = 0;
     int                  maxScrollL = 0;
     InventoryMenu*       invMenu   = nullptr;
+    // the diary
+    int                  logCat     = 0;   // 0 current, 1 done, 2 failed / obsolete, 3 notes
+    int                  logSel     = -1;  // quest index in the quest log
+    int                  logScrollL = 0, logMaxScrollL = 0;  // the list: rows
+    int                  logScrollR = 0, logMaxScrollR = 0;  // the text: lines
+    int                  logRowsL   = 1;   // rows of the list that fit (from the last drawing)
+    std::vector<int>     logList;          // the quests of the kind shown, newest first (from the last drawing)
     float                k      = 1;   // size of the window: 1 = 1080 lines
     Tempest::Point       mouse;
     std::vector<Hit>     hits;
@@ -139,9 +170,15 @@ class ArpgMenu final {
     void   paintEquip(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
     void   paintStats(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, Npc& pl);
     void   paintTrees(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    void   paintSkillIndex(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    void   paintTree (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    void   paintTurn (Tempest::Painter& p);
+    void   turnTo    (bool open, int tree);
+    int    skillEntry(Tempest::Painter& p, const Fonts& f, InventoryRenderer& items, int x, int y, int w, ArpgSkills::Active s);
     void   paintInfo (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& r, InventoryRenderer& items, const Item* it,
                       std::string_view extra = {}, std::string_view help = {}) const;
     void   paintTrade(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    void   paintLog  (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right);
     void   tradeMove (bool fromOther, size_t cls, int32_t count, bool equipped, Npc& pl);
     void   tradeDrop (const Tempest::Point& pos, Npc& pl);
   };

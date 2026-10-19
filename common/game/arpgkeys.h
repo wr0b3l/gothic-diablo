@@ -11,6 +11,7 @@ namespace ArpgKeys {
   enum Action : uint8_t {
     Dodge,          // fikołek
     Weapon,         // dobycie / schowanie broni
+    InPlace,        // przytrzymany: LPM = atak w miejscu w stronę kursora (umiejętności drzewek: klawisze 3-0)
     SwapWeapon,     // broń biała <-> łuk / kusza
     Walk,           // chód / bieg
     Sneak,          // skradanie
@@ -23,6 +24,8 @@ namespace ArpgKeys {
     Minimap,        // minimapa -> mapa na grze -> nic
     Labels,         // przytrzymany: etykiety
     Log,            // dziennik (Gothic's MENU_LOG)
+    CamLeft,        // obrót kamery (trzymany)
+    CamRight,
     Count
     };
 

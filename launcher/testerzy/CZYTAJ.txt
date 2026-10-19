@@ -48,7 +48,12 @@ Klawisze można zmienić w menu głównym: "Sterowanie" (także w grze pod Esc).
 
 Lewy przycisk myszy     chodzenie, rozmowa, podnoszenie, otwieranie, atak
                         (przytrzymanie = kolejne ciosy)
-Ctrl + lewy przycisk    atak w miejscu w stronę kursora / na dowolną postać
+Ctrl + lewy przycisk    atak na dowolną postać (np. w mieście) / w miejscu
+Ctrl (przytrzymaj)      namierzenie celu, także postaci w mieście: postać zwrócona
+                        do celu, lewy przycisk zawsze go atakuje, W/S/A/D krąży
+                        wokół niego; krótki Ctrl nad inną postacią = zmiana celu,
+                        ponowne przytrzymanie = koniec
+G / F / B               umiejętności broni 1 / 2 / umiejętność bloku
 Prawy przycisk          atak ładowany: przytrzymaj, puść, gdy pasek jest złoty
 Środkowy przycisk       blok (z łukiem: odepchnięcie, bez broni: obrót kamery)
 Spacja                  fikołek (przewrót)
@@ -69,9 +74,12 @@ Esc                     menu gry (zapis, wczytanie, ustawienia, sterowanie)
 
 ZGŁASZANIE BŁĘDÓW
 -----------------
+Gdy gra się wyłączy (crash), uruchom launcher i kliknij "Zgłoś błąd"
+(po crashu link świeci na żółto). Na pulpicie powstanie plik
+Diathic-raport-<data>.zip z logami, raportem błędu, wersją gry,
+danymi karty graficznej i ostatnim zapisem.
+
 Wyślij osobie, od której masz tę paczkę:
+- plik Diathic-raport-<data>.zip,
 - co się stało i co robiłeś tuż przed tym (gdzie, z kim, jaką bronią),
-- numer wersji (widać go w launcherze, np. "Wersja testowa #3670"),
-- plik log.txt (i crash.log, jeśli jest) z folderu gra\dane
-  – w launcherze link "Zapisy i logi",
-- jeśli możesz: zrzut ekranu i plik zapisu (save_slot_*.sav z tego samego folderu).
+- jeśli możesz: zrzut ekranu.

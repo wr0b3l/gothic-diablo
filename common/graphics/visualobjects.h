@@ -139,7 +139,7 @@ class VisualObjects final {
 
     void     notifyTlas(const Material& m, RtScene::Category cat);
     void     updateInstance(size_t id, Tempest::Matrix4x4* pos = nullptr);
-    void     updateRtAs(size_t id);
+    void     updateRtAs(size_t id, bool freeing = false);
 
     void     dbgDraw(Tempest::Painter& p, Tempest::Vec2 wsz, const Camera& cam, const DrawClusters::Cluster& cx);
     void     dbgDrawBBox(Tempest::Painter& p, Tempest::Vec2 wsz, const Camera& cam, const DrawClusters::Cluster& c);
