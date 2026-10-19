@@ -40,8 +40,8 @@ class GameMenu : public Tempest::Widget {
     bool isModern() const { return modern; }
     // the mouse over the menu (MenuRoot coordinates): selects the item under it; the other menus in the new style too
     bool modernMouse(const Tempest::Point& pos, bool click); // true: over an item (click: executed)
-    bool modernKeyDown(Tempest::KeyEvent& e); // the "Sterowanie" page: Esc back, a new key (true: used)
-    bool modernBack();                        // right button: back from "Sterowanie" (true: was there)
+    bool modernKeyDown(Tempest::KeyEvent& e); // the pages "Sterowanie" / "Grafika Diathic": Esc back, a new key (true: used)
+    bool modernBack();                        // right button: back from a page (true: was there)
 
   protected:
     void paintEvent (Tempest::PaintEvent& event) override;
@@ -96,16 +96,23 @@ class GameMenu : public Tempest::Widget {
     void                                  paintModern(Tempest::Painter& p);
     void                                  paintModernKeys(Tempest::Painter& p, GthFont& fItem, GthFont& fSel, GthFont& fInfo,
                                                           const std::function<void(const Tempest::Rect&)>& band);
+    void                                  paintModernGfx(Tempest::Painter& p, GthFont& fSel, GthFont& fInfo,
+                                                         const std::function<void(const Tempest::Rect&)>& band);
     std::vector<int>                      modernOrder();
     void                                  modernActivate();
+    void                                  modernGfxActivate(int dir); // 0 = Enter / click, +1 / -1 = right / left
     bool                                  skinMouse(const Tempest::Point& pos, bool click); // widget coordinates
     bool                                  modern      = false;
-    int                                   modernPage  = 0;     // 0 = the list, 1 = "Sterowanie"
+    int                                   modernPage  = 0;     // 0 = the list, 1 = "Sterowanie", 2 = "Grafika Diathic"
     bool                                  keysItemSel = false; // "Sterowanie" selected in the list
     int                                   keysSel     = 0;     // row on the "Sterowanie" page
     bool                                  keysCapture = false; // waiting for the new key
     Tempest::Rect                         keysItemRect;
     std::vector<Tempest::Rect>            keysRows;
+    bool                                  gfxItemSel  = false; // "Grafika Diathic" selected in the list
+    int                                   gfxSel      = 0;     // row on the "Grafika Diathic" page
+    Tempest::Rect                         gfxItemRect;
+    std::vector<Tempest::Rect>            gfxRows;
     std::vector<std::pair<int32_t,Tempest::Rect>> questRows; // Diathic: the diary's list as drawn (quest number, place)
     void                                  drawSlider(Tempest::Painter& p, Item& it, int x, int y, int w, int h);
     void                                  drawQuestList(Tempest::Painter& p, Item& it, int x, int y, int w, int h,
