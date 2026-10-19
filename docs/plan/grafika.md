@@ -34,7 +34,7 @@ Pierwszy krok: jedno pytanie do użytkownika, od czego zacząć — przed kodem:
 
 ## Podział plików z agentem rozgrywki
 - Twoje: nowe `shader/arpg_*` (poza `arpg.glsl` i `arpg_dof.frag`), nowe `common/graphics/arpggfx.cpp` / `.h`, nowe pliki w `assets/diathic/`, sekcja „Faza 12 — grafika” w GOTHIC-DIABLO.md, sekcja „Faza 12” w docs/plan/decyzje.md, ten plik.
-- Wspólne — tylko punkt zaczepienia (wywołanie), wymienione w opisie PR: `common/graphics/renderer.cpp`, `shaders.cpp` / `.h`, `shader/CMakeLists.txt`, `common/resources.cpp`, `common/mainwindow.cpp`, `shader/arpg.glsl` (mgła wojny), `shader/materials/main.frag` (`arpgHidden`: wycięcia sufitów, prześwit, drzewa, podświetlenie wroga — nie przerabiać).
+- Wspólne — tylko punkt zaczepienia (wywołanie), wymienione w opisie PR: `common/graphics/renderer.cpp`, `common/graphics/drawcommands.cpp` (punkt próbnika tekstur), `shaders.cpp` / `.h`, `shader/CMakeLists.txt`, `common/resources.cpp`, `common/mainwindow.cpp`, `shader/arpg.glsl` (mgła wojny), `shader/materials/main.frag` (`arpgHidden`: wycięcia sufitów, prześwit, drzewa, podświetlenie wroga — nie przerabiać).
 - Nie ruszać: `common/game/*`, PlayerControl, Npc, ArpgMenu, GameMenu (stronę ustawień grafiki robi agent rozgrywki, Krok 5), ArpgSkills, ArpgStatus, tabela klawiszy ArpgKeys (potrzebny klawisz → zapytaj użytkownika; przełączniki przez Gothic.ini).
 
 ## Zasady grafiki
@@ -98,8 +98,8 @@ Pierwszy krok: jedno pytanie do użytkownika, od czego zacząć — przed kodem:
 - Prawa: żadnych oryginalnych tekstur z VDF ani ich przeróbek w repozytorium lub paczce Diathic; ewentualna paczka pozostaje plikiem instalowanym przez gracza.
 
 ## Stan
-- 2026-10-17: PR #12 otwarty do `faza11-drzewka-broni`; korekcja koloru ARPG czeka na CI i test użytkownika.
-- Następne: audyt próbkowania tekstur świata i dostępności mipmap; pierwszy kandydat to anizotropia dla kamery izometrycznej, tylko ARPG, z przełącznikiem `[DIATHIC] gfxAnisotropy`.
-- Po tym kroku: ocena DLSS Super Resolution przez Streamline/Vulkan jako osobnego ulepszenia obrazu; DLSS nie zastępuje tekstur HD.
-- Panel ustawień uzgodniony (Krok 5): tabela `ArpgGfx::options()` dodać razem z anizotropią; stronę „Grafika Diathic” w menu robi agent rozgrywki po scaleniu PR #10.
+- 2026-10-19: dodano tabelę `ArpgGfx::options()` dla panelu agenta rozgrywki i przełącznik `gfxAnisotropy` działający tylko w ARPG; tryb klasyczny zachowuje dotychczasowy sampler.
+- Tabela zawiera `gfxColorGrade` i `gfxAnisotropy`; anizotropia ogranicza dostępne poziomy możliwościami GPU. Renderer odświeża ustawienia przez `onSettingsChanged`, bez odczytu INI co klatkę.
+- Build/clang nieuruchomione w tym środowisku; PR #12 i nowy kod czekają na build oraz test użytkownika w tych samych lokacjach przed/po.
+- Następne: porównanie próbkowania tekstur i mipmap; potem DLSS Super Resolution jako opcjonalny krok. Stronę „Grafika Diathic” implementuje agent rozgrywki po scaleniu PR #10.
 - Jeśli próbkowanie nie wystarczy, przygotować narzędzie lub paczkę HD instalowaną przez gracza; tekstury gry ani ich przeróbki nie trafią do repozytorium ani paczki projektu.
