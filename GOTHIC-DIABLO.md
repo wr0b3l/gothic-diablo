@@ -247,11 +247,12 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Pasek: bez grupy G / F / B; na 3–0 umiejętność (model węzła, czerwona poświata, odnowienie, przyciemniona bez wiedzy albo bez broni) albo runa; w ekwipunku rząd 3–0 pokazuje też umiejętności | `MainWindow::paintArpgBar` / `paintArpgBarOverlay`, `PlayerControl::arpgSkillSlot`, `ArpgMenu::paintEquip` |
 | Księga umiejętności: spis — lewa strona pasywne (Cios, Atak ładowany, Fikołek, Biegłość z procentami broni), prawa umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, pod każdym jego umiejętności z klawiszem); klik w drzewko / umiejętność = przewrócenie strony (0,45 s, kartka zgina się przy grzbiecie, cień, dźwięk strony gry albo MENU_BROWSE): lewa strona drzewko, prawa „Wróć do spisu”, punkty i opis węzła (ostatniego pod kursorem; przy umiejętności jej klawisz); Backspace = powrót | `ArpgMenu::paintTrees`, `paintSkillIndex`, `skillEntry`, `paintTree`, `paintTurn`, `turnTo`, `backKey`, `mouseDown` (`H_Tree`, `H_Back`, `H_Skill`) |
 
-## Poprawki rozgrywki (gałąź poprawki-kopanie)
+## Poprawki rozgrywki (gałęzie poprawki-kopanie, poprawki-crash-kursor)
 
 | Co | Gdzie w kodzie |
 |---|---|
 | Skarby Grega (krzyże na ziemi, kopanie kilofem): miejsca bez nazwy fokusu — wskazywanie, LPM i etykiety Z biorą też obiekty bez nazwy, jeśli mają akcję skryptu (funkcja stanu albo wymagany przedmiot); etykieta „Miejsce do kopania” (inne takie obiekty: „Użyj”); obiekt na ziemi albo lekko w niej widoczny, gdy promień do punktu 60 cm wyżej jest wolny | `PlayerControl::arpgUsableMob`, `arpgPick`, `arpgVisibleObjects`, `arpgCanSee`; `Interactive::arpgUseItem` / `arpgStateFunc`; `MainWindow` (`arpgLabelName`) |
+| Crash przy rysowaniu kursora (raport testera, tester-3697: `arpgCursorOnEnemy` → `Npc::isDead` na nieistniejącej postaci): postać pod kursorem jest wybierana raz na klatkę, a mogła zniknąć (usunięta przez skrypt, wczytany zapis, inny świat; rysowanie trwa też przy pauzie). Każde użycie postaci spod kursora poza `tickFocus` sprawdza, czy jeszcze istnieje; zmiana świata czyści kursor | `PlayerControl::arpgValid` (`World::validateFocus`), `arpgCursorOnEnemy`, `arpgCursorAim`, `arpgFightFace`, `implMove` (łuk), `arpgSkillStart`, `arpgToggleLock`, `onKeyReleased`, `clearFocus` |
 
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
