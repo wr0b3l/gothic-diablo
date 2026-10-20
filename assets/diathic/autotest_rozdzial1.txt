@@ -9,6 +9,8 @@
 #   koniec                             zabij <postać> [...]                  zabierz <przedmiot> [cm]
 #   zaloz <przedmiot>                  uzyj <przedmiot>                      spij <GG:MM>
 #   czekaj <warunek> [na <s>]          sprawdz <warunek>                     zapisz <nazwa>   (-save bot_<nazwa>)
+#   ? <krok>                           krok opcjonalny (gdy nie wyjdzie: pominięty, nie błąd)
+#   jesli <warunek> to <krok>          krok tylko, gdy warunek spełniony (inaczej pominięty)
 #   etykieta <nazwa>                   (start od etykiety: -autotest-od <nazwa>, z zapisu bot_<nazwa>: przed każdą etykietą jest zapisz)
 # Warunki: info <DIA_...> | zmienna <NAZWA> <op> <liczba|stała> | przedmiot <IT...> [<op> N] | dziennik <TOPIC_...> [aktywny|sukces]
 #          martwy <postać> | gildia <GIL_...> | rozdzial <N> | blisko <postać> <punkt> <cm> | obok <postać> <cm> | godzina GG:MM GG:MM
@@ -62,8 +64,12 @@ sprawdz przedmiot ItMW_Addon_Knife01
 zaloz ItMW_Addon_Knife01
 rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_LETSKILLBANDITS
 zabij BDT_1013_Bandit_L BDT_1014_Bandit_L BDT_1015_Bandit_L
-rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_BragoKilled
-sprawdz przedmiot ItWr_SaturasFirstMessage_Addon_Sealed
+# Cavalorn daje list, gdy stoi przy bandytach (NW_XARDAS_BANDITS_LEFT); inaczej list jest u Brago (łup) - wtedy otwarty,
+# bo Vatras przyjmie zapieczętowany tylko od Cavalorna (MIS_Addon_Cavalorn_Letter2Vatras), a otwarty zawsze
+? rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_BragoKilled
+jesli zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to sprawdz przedmiot ItWr_SaturasFirstMessage_Addon_Sealed
+jesli nie zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to uzyj ItWr_SaturasFirstMessage_Addon_Sealed
+jesli nie zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to sprawdz przedmiot ItWr_SaturasFirstMessage_Addon
 
 # ---------------------------------------------------------------- Canthar: przepustka do miasta (zadanie 4)
 zapisz canthar
@@ -85,7 +91,8 @@ zapisz vatras
 etykieta vatras
 rozmowa VLK_439_Vatras DIA_Vatras_GREET
 rozmowa VLK_439_Vatras DIA_Addon_Vatras_Cavalorn
-wybor DIA_Addon_Vatras_Cavalorn_Cavalorn
+jesli zmienna MIS_Addon_Cavalorn_KillBrago == LOG_SUCCESS to wybor DIA_Addon_Vatras_Cavalorn_Cavalorn
+jesli nie zmienna MIS_Addon_Cavalorn_KillBrago == LOG_SUCCESS to wybor DIA_Addon_Vatras_Cavalorn_Bandit
 sprawdz zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_SUCCESS
 rozmowa VLK_439_Vatras DIA_Addon_Vatras_WannaBeRanger
 wybor DIA_Vatras_INFLUENCE_FIRST_TRUTH

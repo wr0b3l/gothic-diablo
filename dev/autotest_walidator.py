@@ -207,6 +207,17 @@ def main():
         t = raw.split('#', 1)[0].split()
         if not t:
             continue
+        if t[0] == '?':
+            t = t[1:]
+        if t and t[0] == 'jesli':
+            if 'to' not in t or t.index('to') == len(t) - 1:
+                errors.append(f'linia {no}: jesli <warunek> to <krok>')
+                continue
+            k = t.index('to')
+            cond(t[1:k], no)
+            t = t[k + 1:]
+        if not t:
+            continue
         v, r = t[0], t[1:]
         if v == 'gdy':
             for x in r:

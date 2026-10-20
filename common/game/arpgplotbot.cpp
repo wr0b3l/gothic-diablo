@@ -29,6 +29,7 @@
 #include "world/objects/npc.h"
 #include "world/waypath.h"
 #include "world/world.h"
+#include "physics/dynamicworld.h"
 
 using namespace Tempest;
 
@@ -39,7 +40,7 @@ namespace {
   constexpr uint64_t kTalkClickMs   = 2500;    // a click on the npc again when the talk does not start
   constexpr uint64_t kTalkStartMs   = 30000;   // the talk does not start: error
   constexpr uint64_t kLineWaitMs    = 10000;   // the line asked for does not show up in the list: error
-  constexpr uint64_t kStrayStuckMs  = 30000;   // a talk nobody expected does not end: closed by force
+  constexpr uint64_t kStrayStuckMs  = 12000;   // a talk nobody expected does not end: closed by force
   constexpr uint64_t kCheckMs       = 3000;    // "sprawdz": the script has this long to do its part
   constexpr uint64_t kWaitMs        = 60000;   // "czekaj" without "na N"
   constexpr uint64_t kStepMs        = 900000;  // any step: 15 minutes at most
@@ -65,16 +66,20 @@ namespace {
   constexpr float    kDrawRange     = 1500.f;  // an enemy this close: the weapon out
   constexpr float    kQuietRange    = 1500.f;  // no enemy this close: time to heal, loot, pick up
   constexpr int64_t  kParryLeadMs   = 180;     // the block starts this long before the enemy's hit (ArpgStatus::ParryWindowMs 250)
+  constexpr int64_t  kWindUpMs      = 650;     // a swing this far from its hit: the answer is chosen, a parry stops attacking
   constexpr float    kParryChance   = 0.75f;   // a decent player: not every swing is answered
+  constexpr uint64_t kDodgeGapMs    = 3000;    // at most one dodge in this time
+  constexpr uint64_t kReachMs       = 5000;    // no closer to the target in this time (and not in reach): out of reach
+  constexpr uint64_t kIgnoreMs      = 20000;
   constexpr float    kChargeChance  = 0.35f;
   constexpr uint64_t kSkillGapMs    = 1500;
   constexpr float    kHealBelow     = 0.70f;   // between fights: eat below this part of life ...
   constexpr float    kHealUpTo      = 0.90f;   // ... up to this part
   constexpr float    kPotionBelow   = 0.50f;   // ... and a potion only below this part (when there is no food)
   constexpr uint64_t kHealGapMs     = 1600;    // one bite / gulp at a time (the animation)
-  constexpr float    kLootRange     = 2000.f;
-  constexpr float    kPickRange     = 900.f;
-  constexpr uint64_t kChoreMs       = 25000;   // a body / an item the bot cannot reach in this time is left
+  constexpr float    kLootRange     = 600.f;   // bodies right where the fight was (no going back for them)
+  constexpr float    kPickRange     = 500.f;   // things close by, in sight, and ahead on the way
+  constexpr uint64_t kChoreMs       = 8000;    // a body / an item the bot cannot reach in this time is left
   constexpr float    kDefendLeave   = 1800.f;
   constexpr float    kTakeRange     = 3000.f;
 
@@ -371,6 +376,23 @@ void ArpgPlotBot::parse(const std::string& text) {
     s.text = verb;
     for(auto& x:s.arg)
       s.text += " " + x;
+    if(s.verb=="?" && !s.arg.empty()) {
+      // "? krok": optional
+      s.optional = true;
+      s.verb     = s.arg[0];
+      s.arg.erase(s.arg.begin());
+      }
+    if(s.verb=="jesli") {
+      // "jesli <warunek> to <krok>": the step only when the condition holds
+      auto to = std::find(s.arg.begin(), s.arg.end(), "to");
+      if(to!=s.arg.end() && to+1!=s.arg.end()) {
+        s.cond.assign(s.arg.begin(), to);
+        s.verb = *(to+1);
+        s.arg.assign(to+2, s.arg.end());
+        } else {
+        s.verb = "jesli?"; // no "to": an invalid step
+        }
+      }
     steps.push_back(std::move(s));
     }
   }
@@ -473,27 +495,27 @@ void ArpgPlotBot::validate(World& w) {
   size_t bad = 0;
   for(auto& s:steps) {
     std::string why;
-    bool        ok = true;
+    bool        ok = s.cond.empty() || checkCond(w, s.cond, 0, why);
     const auto& v  = s.verb;
     auto at = [&](size_t i) -> std::string { return i<s.arg.size() ? s.arg[i] : std::string(); };
     if(v=="rozmowa") {
-      ok = checkName(w, at(0), "npc", why);
+      ok = checkName(w, at(0), "npc", why) && ok;
       if(s.arg.size()>1)
         ok = checkName(w, at(1), "info", why) && ok;
       }
     else if(v=="wybor")
-      ok = checkName(w, at(0), "line", why);
+      ok = checkName(w, at(0), "line", why) && ok;
     else if(v=="zabij") {
       for(auto& x:s.arg)
         ok = checkName(w, x, "npc", why) && ok;
       ok = ok && !s.arg.empty();
       }
     else if(v=="zabierz" || v=="zaloz" || v=="uzyj")
-      ok = checkName(w, at(0), "item", why);
+      ok = checkName(w, at(0), "item", why) && ok;
     else if(v=="idz" || v=="przenies")
-      ok = checkName(w, at(0), "place", why);
+      ok = checkName(w, at(0), "place", why) && ok;
     else if(v=="czekaj" || v=="sprawdz")
-      ok = checkCond(w, s.arg, 0, why);
+      ok = checkCond(w, s.arg, 0, why) && ok;
     else if(v=="spij")
       ok = at(0).size()==5 && at(0)[2]==':';
     else if(v=="koniec" || v=="etykieta" || v=="zapisz")
@@ -625,7 +647,41 @@ void ArpgPlotBot::event(const char* kind, const std::string& text, bool pic) {
   std::fflush(fEvents);
   }
 
+void ArpgPlotBot::skipStep(const std::string& why) {
+  const Step& s = steps[cur];
+  ++nSkip;
+  log("POM  " + std::to_string(cur+1) + " l." + std::to_string(s.line) + " " + s.text + " - " + why);
+  if(fSteps!=nullptr) {
+    const std::string ln = "k({n:" + std::to_string(cur+1) + ",l:" + std::to_string(s.line) + ",t:" + js(s.text) +
+                           ",r:\"pom\",ms:" + std::to_string(Application::tickCount()-stepT0) + ",u:" + js(why) + "});\n";
+    std::fputs(ln.c_str(), fSteps);
+    std::fflush(fSteps);
+    }
+  recentSteps.push_back({s.text, why, 3});
+  if(recentSteps.size()>kPanelDone)
+    recentSteps.erase(recentSteps.begin());
+  note.clear();
+  doing.clear();
+  walkWhat.clear();
+  goalOn         = false;
+  fightWalkUntil = 0;
+  walk     = Walk();
+  phase    = 0;
+  picked   = false;
+  stepT0   = phaseT0 = Application::tickCount();
+  if(hooks.player!=nullptr)
+    hooks.player->arpgBotRelease();
+  ++cur;
+  writeState();
+  if(cur>=steps.size())
+    finish("koniec scenariusza");
+  }
+
 void ArpgPlotBot::nextStep(bool ok, const std::string& why) {
+  if(!ok && steps[cur].optional) {
+    skipStep("opcjonalny, nie wyszedł: " + why);
+    return;
+    }
   const Step&    s   = steps[cur];
   const uint64_t ms  = Application::tickCount()-stepT0;
   std::string    img, sav;
@@ -654,6 +710,8 @@ void ArpgPlotBot::nextStep(bool ok, const std::string& why) {
     std::fputs(ln.c_str(), fSteps);
     std::fflush(fSteps);
     }
+  goalOn         = false;
+  fightWalkUntil = 0;
   recentSteps.push_back({s.text, u, ok ? 1 : 2});
   if(recentSteps.size()>kPanelDone)
     recentSteps.erase(recentSteps.begin());
@@ -769,6 +827,16 @@ float ArpgPlotBot::roll01() {
 bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
   if(hooks.player==nullptr)
     return false;
+  for(size_t i=0; i<ignored.size();)
+    if(ignored[i].second<now)
+      ignored.erase(ignored.begin()+int(i)); else
+      ++i;
+  auto isIgnored = [&](const Npc* n) {
+    for(auto& i:ignored)
+      if(i.first==n)
+        return true;
+    return false;
+    };
   if(defend!=nullptr) {
     const bool gone = defend->isDead() || defend->isDown() ||
                       dist2d(defend->position(), pl.position())>kDefendLeave || now-defendT0>kDefendMs;
@@ -782,7 +850,13 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
       walk.bestT    = now;
       return false;
       }
-    fightTick(w, pl, *defend, now);
+    if(fightTick(w, pl, *defend, now)<0) {
+      event("obrona", "nie dosięga: " + nameOf(*defend) + " – zostawiony na " + std::to_string(kIgnoreMs/1000) + " s", false);
+      ignored.push_back({defend, now+kIgnoreMs});
+      defend = nullptr;
+      fightEnd(pl);
+      return false;
+      }
     doing = "obrona: " + nameOf(*defend) + " (" + std::to_string(defend->attribute(ATR_HITPOINTS)) + "/" +
             std::to_string(defend->attribute(ATR_HITPOINTSMAX)) + "), " + meters(dist2d(defend->position(), pl.position())) +
             (lastMove.empty() ? std::string() : " | " + lastMove);
@@ -795,7 +869,7 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
   w.detectNpc(pl.position(), kDrawRange, [&](Npc& npc) {
     if(&npc==&pl || npc.isDead() || npc.isDown() || std::abs(npc.position().y-pl.position().y)>350.f)
       return;
-    if(!hooks.player->arpgIsEnemy(npc))
+    if(!hooks.player->arpgIsEnemy(npc) || isIgnored(&npc))
       return;
     near = true;
     const float d     = dist2d(npc.position(), pl.position());
@@ -813,7 +887,7 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
     return false;
   defend    = best;
   lastEnemy = nameOf(*best);
-  defendT0  = attackT = now;
+  defendT0  = now;
   event("obrona", nameOf(*best) + " (" + std::to_string(int(bestD)) + " cm)", false);
   fightTick(w, pl, *best, now);
   return true;
@@ -827,19 +901,36 @@ void ArpgPlotBot::fightEnd(Npc& pl) {
     hooks.player->arpgBlock(false);
   if(charging)
     hooks.player->arpgChargeRelease();
-  blocking = charging = false;
+  blocking  = charging = false;
+  plan      = Plan::None;
+  clickedTg = nullptr;
+  fightFor  = nullptr;
   hooks.player->arpgBotLock(nullptr);
   hooks.player->arpgBotRelease();
   lastMove.clear();
   }
 
-void ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
+int ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
   auto P = hooks.player;
   if(P==nullptr)
-    return;
-  P->arpgBotLock(&tg); // like Ctrl held: the charge, the skills and the clicks go at the target
+    return 0;
   const float d   = dist2d(pl.position(), tg.position());
   const float hpK = float(pl.attribute(ATR_HITPOINTS))/float(std::max(1, pl.attribute(ATR_HITPOINTSMAX)));
+
+  // reachability: closer and closer, or in reach / swinging; otherwise (stairs, a rock between) out of reach
+  if(fightFor!=&tg) {
+    fightFor   = &tg;
+    fightBest  = d;
+    fightBestT = now;
+    }
+  if(d<fightBest-50.f) {
+    fightBest  = d;
+    fightBestT = now;
+    }
+  if(d<=300.f || pl.isAttackAnim() || blocking)
+    fightBestT = now;
+  if(now-fightBestT>kReachMs)
+    return -1;
 
   // who swings at the hero now, and when the soonest hit lands
   int     swings  = 0;
@@ -856,66 +947,85 @@ void ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
       }
     });
 
-  // the block held: let go after the hit; a parried enemy is staggered (x4 for the next hit)
+  // the block held, facing the one who swings: let go after the hit; a parried enemy is staggered (x4 for the next hit)
   if(blocking) {
-    const bool hitGone = (who==nullptr || who!=answered) && now-blockT0>150;
-    if(hitGone || now-blockT0>700) {
-      P->arpgBlock(false);
-      blocking = false;
-      if(answered!=nullptr && answered->arpgHasStatus(ArpgStatus::Stagger)) {
-        ++nParryOk;
-        lastMove = "parowanie udane – kontra x4";
-        }
-      attackT = 0; // the counter at once
+    if(answered!=nullptr)
+      P->arpgBotLock(const_cast<Npc*>(answered));
+    const bool hitGone = (who==nullptr || who!=answered) && now-blockT0>120;
+    if(!hitGone && now-blockT0<=800)
+      return 0;
+    P->arpgBlock(false);
+    blocking  = false;
+    clickedTg = nullptr; // the counter at once
+    if(answered!=nullptr && answered->arpgHasStatus(ArpgStatus::Stagger)) {
+      ++nParryOk;
+      lastMove = "parowanie udane – kontra x4";
+      P->arpgBotLock(const_cast<Npc*>(answered));
+      P->arpgBotClick(Focus(*const_cast<Npc*>(answered)), true, true);
+      clickedTg = answered;
+      return 0;
       }
-    else
-      return;
+    lastMove = "blok";
     }
+  P->arpgBotLock(&tg); // like Ctrl held: the charge, the skills and the clicks go at the target
 
-  // the charge: released when full; a swing coming = out of it with a dodge
+  // the charge: released when full; a swing coming: released at once
   if(charging) {
-    if(who!=nullptr && soonest<250) {
-      charging = false;
-      const auto  a   = pl.position()-who->position();
-      const float dir = std::atan2(a.z, a.x)*180.f/float(M_PI) + (roll01()<0.5f ? 60.f : -60.f);
-      P->arpgBotDodge(dir);
-      ++nDodge;
-      lastMove = "unik z ładowania";
-      return;
-      }
-    if(P->arpgChargeTime()>=P->arpgChargeTimeFull() || now-chargeT0>4000) {
+    if((who!=nullptr && soonest<300) || P->arpgChargeTime()>=P->arpgChargeTimeFull() || now-chargeT0>4000) {
       P->arpgChargeRelease();
       charging = false;
       ++nCharge;
       lastMove = "atak ładowany";
       }
-    return;
+    return 0;
     }
 
-  // a swing on its way: one answer for it - dodge (more of them, low life, no block), parry, or take it
-  if(who!=nullptr && soonest<=kParryLeadMs) {
+  // a swing on its way: the answer is chosen once (wind-up), then carried out at the right moment
+  if(who!=nullptr && soonest<=kWindUpMs) {
     const uint64_t at = now+uint64_t(soonest);
     if(!(who==answered && (at>answeredAt ? at-answeredAt : answeredAt-at)<250)) {
       answered   = who;
       answeredAt = at;
-      const bool canBlock = P->arpgCanBlock();
-      if(swings>=2 || hpK<0.35f || !canBlock || (pl.arpgBlockCharges()<=0 && roll01()<0.5f)) {
-        const auto  a   = pl.position()-who->position();
-        const float dir = std::atan2(a.z, a.x)*180.f/float(M_PI) + (roll01()<0.5f ? 70.f : -70.f);
-        P->arpgBotDodge(dir);
-        ++nDodge;
-        lastMove = "unik (" + std::to_string(swings) + " atakuje)";
-        return;
+      const bool danger = (swings>=2 && hpK<0.5f) || hpK<0.25f;
+      if(!P->arpgCanBlock()) {
+        P->arpgBotDraw();
+        plan     = Plan::None;
+        lastMove = "broń w rękę";
         }
-      if(roll01()<kParryChance) {
-        P->arpgBlock(true);
-        blocking = true;
-        blockT0  = now;
-        ++nParry;
-        lastMove = "parowanie";
-        return;
+      else if(danger && now-dodgeT>kDodgeGapMs)
+        plan = Plan::Dodge;
+      else
+        plan = roll01()<kParryChance ? Plan::Parry : Plan::None;
+      if(plan==Plan::None && lastMove!="broń w rękę")
+        lastMove = "atak przez zamach";
+      }
+    if(plan==Plan::Dodge) {
+      plan   = Plan::None;
+      dodgeT = now;
+      const auto  a   = pl.position()-who->position();
+      const float dir = std::atan2(a.z, a.x)*180.f/float(M_PI) + (roll01()<0.5f ? 70.f : -70.f);
+      P->arpgBotDodge(dir);
+      clickedTg = nullptr;
+      ++nDodge;
+      lastMove = "unik (" + std::to_string(swings) + " atakuje, życie " + std::to_string(int(hpK*100.f)) + "%)";
+      return 0;
+      }
+    if(plan==Plan::Parry) {
+      if(soonest>kParryLeadMs) {
+        // no new swing of the hero: the block must be able to start in time
+        P->arpgBotRelease();
+        clickedTg = nullptr;
+        lastMove  = "czeka na zamach " + nameOf(*who);
+        return 0;
         }
-      lastMove = "bez obrony";
+      plan     = Plan::None;
+      P->arpgBotLock(who);
+      P->arpgBlock(true);
+      blocking = true;
+      blockT0  = now;
+      ++nParry;
+      lastMove = "parowanie";
+      return 0;
       }
     }
 
@@ -926,10 +1036,11 @@ void ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
       if(sl.skill==PlayerControl::SkNone || !sl.known || !sl.usable || sl.active || sl.left>0.f)
         continue;
       P->arpgSkillKey(i);
-      skillT = now;
+      skillT    = now;
+      clickedTg = nullptr;
       ++nSkill;
       lastMove = "umiejętność (klawisz " + std::to_string((i+3)%10) + ")";
-      return;
+      return 0;
       }
     }
 
@@ -939,20 +1050,22 @@ void ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
     chargeTry = now;
     if(roll01()<kChargeChance) {
       P->arpgChargeStart();
-      charging = true;
-      chargeT0 = now;
-      lastMove = "ładuje atak";
-      return;
+      charging  = true;
+      chargeT0  = now;
+      clickedTg = nullptr;
+      lastMove  = "ładuje atak";
+      return 0;
       }
     }
 
-  // plain attacks (held: the combo goes on)
-  if(P->arpgBotIdle() || now-attackT>1500) {
-    attackT = now;
+  // plain attacks, held (the combo goes on); a new click only for a new target or when the order ended
+  if(clickedTg!=&tg || P->arpgBotIdle()) {
+    clickedTg = &tg;
     P->arpgBotClick(Focus(tg), true, true);
-    if(lastMove.empty() || lastMove=="bez obrony")
+    if(lastMove.empty() || lastMove=="blok" || lastMove.rfind("czeka", 0)==0)
       lastMove = "atak";
     }
+  return 0;
   }
 
 int32_t ArpgPlotBot::hpBonus(World& w, const Item& it) const {
@@ -1085,7 +1198,7 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
       }
     if(dist2d(choreBody->position(), pl.position())>220.f) {
       if(!walk.on)
-        walkStart(w, pl, choreBody->position(), 180.f);
+        walkStart(w, pl, choreBody->position(), 180.f, false);
       walkWhat = "idzie do ciała: " + nameOf(*choreBody);
       if(walkTick(w, pl, now)<0)
         giveUp(choreBody, "ciało " + nameOf(*choreBody));
@@ -1105,6 +1218,14 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
     Item* best  = nullptr;
     float bestD = kPickRange;
     const int32_t want = int32_t(ITM_CAT_NF | ITM_CAT_FF | ITM_CAT_MUN | ITM_CAT_FOOD | ITM_CAT_POTION);
+    const Vec3 eye = pl.position()+Vec3(0, 100.f, 0);
+    Vec3       ahead = {};
+    if(goalOn) {
+      ahead = goal-pl.position();
+      ahead.y = 0;
+      const float l = ahead.length();
+      ahead = l>1.f ? ahead/l : Vec3();
+      }
     w.forEachItemNear(pl.position(), kPickRange, [&](Item& it) {
       auto& h = it.handle();
       if(((h.main_flag & want)==0 && !it.isGold()) || h.owner!=0 || h.owner_guild!=0)
@@ -1112,7 +1233,15 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
       if(std::find(givenUp.begin(), givenUp.end(), &it)!=givenUp.end())
         return;
       const float dd = dist2d(it.position(), pl.position());
-      if(dd>=bestD || std::abs(it.position().y-pl.position().y)>250.f)
+      if(dd>=bestD || std::abs(it.position().y-pl.position().y)>200.f)
+        return;
+      // ahead on the way (no going back for it), unless right at the hero's feet
+      Vec3 to = it.position()-pl.position();
+      to.y = 0;
+      if(goalOn && dd>250.f && ahead.length()>0.5f && Vec3::dotProduct(to/std::max(dd,1.f), ahead)<0.3f)
+        return;
+      // in sight: nothing between
+      if(w.physic()!=nullptr && w.physic()->ray(eye, it.position()+Vec3(0, 30.f, 0)).hasCol)
         return;
       best  = &it;
       bestD = dd;
@@ -1142,7 +1271,7 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
     const float dd = dist2d(it->position(), pl.position());
     if(dd>500.f) {
       if(!walk.on)
-        walkStart(w, pl, it->position(), 350.f);
+        walkStart(w, pl, it->position(), 350.f, false);
       walkWhat = "idzie po: " + name;
       if(walkTick(w, pl, now)<0)
         giveUp(it, name);
@@ -1216,7 +1345,11 @@ bool ArpgPlotBot::strayTalk(uint64_t now, bool quiet) {
 // ---------------------------------------------------------------------------------------------------------------------
 // walking: the waynet gives the road, the hero walks it with ARPG clicks from point to point
 
-void ArpgPlotBot::walkStart(World& w, Npc& pl, const Vec3& dest, float reach) {
+void ArpgPlotBot::walkStart(World& w, Npc& pl, const Vec3& dest, float reach, bool stepGoal) {
+  if(stepGoal) {
+    goal   = dest;
+    goalOn = true;
+    }
   walk        = Walk();
   walk.on     = true;
   walk.dest   = dest;
@@ -1471,6 +1604,14 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
   if(s.verb=="etykieta") {
     nextStep(true, "");
     return;
+    }
+  if(!s.cond.empty()) {
+    std::string why;
+    if(!cond(w, pl, s.cond, 0, why)) {
+      skipStep("warunek niespełniony: " + why);
+      return;
+      }
+    steps[cur].cond.clear(); // holds: the step itself from now on
     }
   const bool talkStep = s.verb=="rozmowa" || s.verb=="wybor" || s.verb=="koniec";
   if(!talkStep) {
@@ -1763,17 +1904,24 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
     return;
     }
   const float d = dist2d(pl.position(), tg->position());
-  if(d>kFightWalk) {
-    if(!walk.on || dist2d(walk.dest, tg->position())>500.f)
-      walkStart(w, pl, tg->position(), kFightWalk*0.8f);
-    walkWhat = "idzie do " + nameOf(*tg) + " (walka)";
+  const bool  viaWaynet = now<fightWalkUntil && d>250.f;
+  if(d>kFightWalk || viaWaynet) {
+    // far, or out of reach of the fight clicks (stairs, a rock between): the waynet takes the hero there
+    if(!walk.on || dist2d(walk.dest, tg->position())>300.f)
+      walkStart(w, pl, tg->position(), viaWaynet ? 200.f : kFightWalk*0.8f);
+    walkWhat = "idzie do " + nameOf(*tg) + (viaWaynet ? " (drogą, poza zasięgiem)" : " (walka)");
     if(walkTick(w, pl, now)<0)
       nextStep(false, std::string("nie doszedł do ") + nameOf(*tg));
     return;
     }
   walk.on   = false;
   lastEnemy = nameOf(*tg);
-  fightTick(w, pl, *tg, now);
+  if(fightTick(w, pl, *tg, now)<0) {
+    event("obrona", "poza zasięgiem: " + nameOf(*tg) + " – drogą przez punkty", false);
+    fightEnd(pl);
+    fightWalkUntil = now+15000;
+    return;
+    }
   size_t alive = 0;
   for(auto& n:s.arg)
     if(auto npc = findNpc(w, n); npc!=nullptr && !npc->isDead())

@@ -59,7 +59,9 @@ class ArpgPlotBot final {
       std::string              verb;
       std::vector<std::string> arg;
       std::string              text;
-      bool                     invalid = false;
+      bool                     invalid  = false;
+      bool                     optional = false;   // "? krok": a failure is noted, not an error
+      std::vector<std::string> cond;               // "jesli <warunek> to <krok>": the condition
       };
 
     struct Walk {
@@ -113,6 +115,17 @@ class ArpgPlotBot final {
     uint64_t                 skillT     = 0;
     uint32_t                 rng        = 0x2545F491u;
     size_t                   nParry = 0, nParryOk = 0, nDodge = 0, nCharge = 0, nSkill = 0;
+    enum class Plan : uint8_t { None, Parry, Dodge };
+    Plan                     plan       = Plan::None; // the answer chosen for the swing on its way
+    uint64_t                 dodgeT     = 0;
+    const Npc*               clickedTg  = nullptr;  // the target of the last attack click
+    const Npc*               fightFor   = nullptr;  // reachability: the target ...
+    float                    fightBest  = 0;        // ... the closest it was ...
+    uint64_t                 fightBestT = 0;        // ... and when
+    uint64_t                 fightWalkUntil = 0;    // a kill target out of reach: the waynet takes the hero there
+    std::vector<std::pair<const Npc*,uint64_t>> ignored; // enemies out of reach, left alone until then
+    Tempest::Vec3            goal       = {};       // where the step leads (picking up: only what lies ahead)
+    bool                     goalOn     = false;
     std::string              lastMove;              // the last move in a fight (the panel)
     // between the fights: bodies to take from, things to pick up, food and potions
     std::vector<Npc*>        bodies;
@@ -152,6 +165,7 @@ class ArpgPlotBot final {
     void        startRun(World& w);
     void        finish(const char* why);
     void        nextStep(bool ok, const std::string& why);
+    void        skipStep(const std::string& why);
     void        event(const char* kind, const std::string& text, bool picture);
     std::string picture(const char* tag);
     void        writeState(bool end = false, const std::string& why = std::string()) const;
@@ -161,7 +175,7 @@ class ArpgPlotBot final {
 
     void        guardHealth(Npc& pl, uint64_t now);
     bool        defendTick(World& w, Npc& pl, uint64_t now);
-    void        fightTick(World& w, Npc& pl, Npc& tg, uint64_t now);
+    int         fightTick(World& w, Npc& pl, Npc& tg, uint64_t now); // -1: the target is out of reach
     void        fightEnd(Npc& pl);
     bool        choresTick(World& w, Npc& pl, uint64_t now);
     bool        healTick(World& w, Npc& pl, uint64_t now);
@@ -169,7 +183,7 @@ class ArpgPlotBot final {
     float       roll01();
     bool        strayTalk(uint64_t now, bool quiet);
 
-    void        walkStart(World& w, Npc& pl, const Tempest::Vec3& dest, float reach);
+    void        walkStart(World& w, Npc& pl, const Tempest::Vec3& dest, float reach, bool stepGoal = true);
     int         walkTick(World& w, Npc& pl, uint64_t now);  // 1 arrived, 0 on the way, -1 failed
 
     Npc*        findNpc(World& w, const std::string& n) const;
