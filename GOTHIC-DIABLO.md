@@ -247,6 +247,12 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Pasek: bez grupy G / F / B; na 3–0 umiejętność (model węzła, czerwona poświata, odnowienie, przyciemniona bez wiedzy albo bez broni) albo runa; w ekwipunku rząd 3–0 pokazuje też umiejętności | `MainWindow::paintArpgBar` / `paintArpgBarOverlay`, `PlayerControl::arpgSkillSlot`, `ArpgMenu::paintEquip` |
 | Księga umiejętności: spis — lewa strona pasywne (Cios, Atak ładowany, Fikołek, Biegłość z procentami broni), prawa umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, pod każdym jego umiejętności z klawiszem); klik w drzewko / umiejętność = przewrócenie strony (0,45 s, kartka zgina się przy grzbiecie, cień, dźwięk strony gry albo MENU_BROWSE): lewa strona drzewko, prawa „Wróć do spisu”, punkty i opis węzła (ostatniego pod kursorem; przy umiejętności jej klawisz); Backspace = powrót | `ArpgMenu::paintTrees`, `paintSkillIndex`, `skillEntry`, `paintTree`, `paintTurn`, `turnTo`, `backKey`, `mouseDown` (`H_Tree`, `H_Back`, `H_Skill`) |
 
+## Poprawki rozgrywki (gałąź poprawki-kopanie)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Skarby Grega (krzyże na ziemi, kopanie kilofem): miejsca bez nazwy fokusu — wskazywanie, LPM i etykiety Z biorą też obiekty bez nazwy, jeśli mają akcję skryptu (funkcja stanu albo wymagany przedmiot); etykieta „Miejsce do kopania” (inne takie obiekty: „Użyj”); obiekt na ziemi albo lekko w niej widoczny, gdy promień do punktu 60 cm wyżej jest wolny | `PlayerControl::arpgUsableMob`, `arpgPick`, `arpgVisibleObjects`, `arpgCanSee`; `Interactive::arpgUseItem` / `arpgStateFunc`; `MainWindow` (`arpgLabelName`) |
+
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
 Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury, światło, obraz, efekty. Komplet zasad, podział plików i stan: [`docs/plan/grafika.md`](docs/plan/grafika.md).
@@ -300,6 +306,9 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Wybory w rozmowie: Info_AddChoice wstawia na początek listy; nasze wybory mają ujemne numery funkcji (rodzaj × 100000 + talent × 1000 + maksimum), GameScript::exec obsługuje je bez skryptu
 - Drzewka i logika punktów: common/game/arpgskills.h (ArpgSkills::trees, ArpgProgress, ArpgPerks); rangi zapisane po nazwach „Drzewko/Węzeł” (Biegłość: „Biegłość/Gałąź/Węzeł”); zapis „game/arpg” w wersji 2 (progi, przeniesienie)
 - Efekty: ArpgPerks liczone z rang po każdej zmianie; Npc::arpgPerks tylko dla Bezimiennego w trybie ARPG; strzały: Bullet (przebicie, ciężki grot, celne oko), wachlarz Gradu strzał = dodatkowe pociski z obróconą prędkością; Cień = flaga GHOST Gothica (półprzezroczysty) + Npc::canSenseNpc; Przez szereg = wyłączone zderzenia z postaciami w fizyce
+
+### Kopanie skarbów (skrypty)
+- Skarby Grega (MIS_Addon_Greg_RakeCave, RAKEPLACE[1–5]) i inne zakopane skarby: obiekt użytkowy z funkcją stanu B_SCGetTreasure (B_SCGetTreasure_S1 w B_ScUsesRake.d) i wymaganym przedmiotem ItMw_2H_Axe_L_01 („Kilof”); grabie ItMi_Rake nic już nie robią. Skrypt daje skarb, gdy bohater jest bliżej niż 200 cm od waypointu (np. NW_BIGFARM_LAKE_CAVE_07, NW_LAKE_GREG_TREASURE_01, NW_FARM3_GREGTREASURE_01, NW_FARM3_MOUNTAINLAKE_MONSTER_01, NW_BIGMILL_FARM3_01). Że miejsca nie mają nazwy fokusu — wniosek z objawu (nie sprawdzone w ZEN)
 
 ### Interfejs, menu, mapa, klawisze
 - Interfejs Tempest: potoki rysowania interfejsu odrzucają tylne ściany (CullMode::Back) — czworokąty efektów (pierścienie, fala) rysować w obu kierunkach (lambda quad w MainWindow::paintArpgCombat); Painter ma tryby NoBlend, Alpha, Add (iskry addytywnie)
