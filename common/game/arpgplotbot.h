@@ -111,6 +111,10 @@ class ArpgPlotBot final {
     uint64_t                 strayT   = 0;
 
     size_t                   nOk = 0, nFail = 0, nSkip = 0, nEvents = 0, nHeal = 0, nStuck = 0, nErrSaves = 0;
+    size_t                   nDeaths = 0, nPotions = 0;
+    uint32_t                 savesSeen  = 0;      // Gothic::arpgBotSaves when last looked
+    bool                     endOnDeath = false;  // "po_smierci koniec": a death ends the run (otherwise 1 point left, noted)
+    std::string              lastEnemy;           // the last one fought (the report of a death)
     uint64_t                 runT0 = 0;
     std::FILE*               fSteps  = nullptr;
     std::FILE*               fEvents = nullptr;

@@ -63,7 +63,6 @@ namespace {
 
   // health
   constexpr float    kPotionAt      = 0.40f;
-  constexpr float    kHealAt        = 0.15f;   // no potion helped: the bot heals (event "leczenie")
 
   constexpr size_t   kMaxErrSaves   = 5;
   constexpr size_t   kPanelDone     = 7;       // the panel: steps done, steps to come, events
@@ -237,13 +236,13 @@ label{margin-right:12px}select,input{background:var(--card);color:var(--txt);bor
 <script src="zdarzenia.js"></script>
 <script>
 var WYN={ok:"OK",blad:"BŁĄD",pom:"pominięty"};
-var RODZ={zaciecie:"zacięcie (przeniesiony)",leczenie:"leczenie bota",rozmowa:"rozmowa nieoczekiwana",wybor:"wybór automatyczny",obrona:"obrona",smierc:"śmierć",walidacja:"walidacja nazw",zapis:"zapis gry",czas:"przewinięcie czasu"};
+var RODZ={zaciecie:"zacięcie (przeniesiony)",leczenie:"leczenie bota",rozmowa:"rozmowa nieoczekiwana",wybor:"wybór automatyczny",obrona:"obrona",smierc:"śmierć (gra dalej)",mikstura:"mikstura",walidacja:"walidacja nazw",zapis:"zapis gry",czas:"przewinięcie czasu"};
 function $(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function sek(ms){return ms<1000?ms+" ms":(ms<120000?(ms/1000).toFixed(1)+" s":(ms/60000).toFixed(1)+" min")}
 function start(){
   if(STAN){$("tytul").textContent="Bot fabuły - "+STAN.scenariusz;
-    $("stan").textContent="Start "+STAN.start+" · krok "+STAN.krok+" / "+STAN.kroki+" · OK "+STAN.ok+" · błędy "+STAN.bledy+" · pominięte "+STAN.pom+" · zdarzenia "+STAN.zdarzenia+" · leczenia "+STAN.leczenia+" · zacięcia "+STAN.zaciecia+" · czas "+sek(STAN.ms)+(STAN.koniec?" · zakończony ("+STAN.powod+")":" · w toku")+(POPRZEDNI?" · porównanie z "+POPRZEDNI:"")+" · scenariusz: "+STAN.zrodlo;}
+    $("stan").textContent="Start "+STAN.start+" · krok "+STAN.krok+" / "+STAN.kroki+" · OK "+STAN.ok+" · błędy "+STAN.bledy+" · pominięte "+STAN.pom+" · śmierci "+(STAN.smierci||0)+" · mikstury "+(STAN.mikstury||0)+" · zdarzenia "+STAN.zdarzenia+" · zacięcia "+STAN.zaciecia+" · czas "+sek(STAN.ms)+(STAN.koniec?" · zakończony ("+STAN.powod+")":" · w toku")+(POPRZEDNI?" · porównanie z "+POPRZEDNI:"")+" · scenariusz: "+STAN.zrodlo;}
   var f=K.filter(function(o){return o.r=="blad"})[0];
   if(f){var p=$("pierwszy");p.style.display="";p.appendChild(el("b",null,"Pierwszy błąd: krok "+f.n+" (linia "+f.l+"): "));p.appendChild(el("span","t",f.t));p.appendChild(el("div",null,f.u));if(f.img){var i=el("img");i.src=f.img;p.appendChild(i)}if(f.zapis)p.appendChild(el("div","dim","zapis gry: "+f.zapis))}
   $("fr").onchange=rysuj;
@@ -341,6 +340,10 @@ void ArpgPlotBot::parse(const std::string& text) {
       }
     if(verb=="po_bledzie") {
       stopOnError = !tok.empty() && tok[0]=="stop";
+      continue;
+      }
+    if(verb=="po_smierci") {
+      endOnDeath = !tok.empty() && tok[0]=="koniec";
       continue;
       }
     Step s;
@@ -522,7 +525,9 @@ void ArpgPlotBot::startRun(World& w) {
     if(fSteps!=nullptr)
       std::fflush(fSteps);
     }
-  started = true;
+  started   = true;
+  savesSeen = Gothic::inst().arpgBotSaves();
+  Gothic::inst().setArpgBotGuard(!endOnDeath);
   stepT0  = phaseT0 = Application::tickCount();
   phase   = 0;
   writeState();
@@ -532,6 +537,7 @@ void ArpgPlotBot::finish(const char* why) {
   if(done && fSteps==nullptr)
     return;
   done = true;
+  Gothic::inst().setArpgBotGuard(false);
   log(std::string("koniec: ") + why + ", ok " + std::to_string(nOk) + ", błędy " + std::to_string(nFail));
   if(hooks.player!=nullptr)
     hooks.player->arpgBotRelease();
@@ -550,7 +556,7 @@ void ArpgPlotBot::panel(ArpgBotPanel& out, const Npc* pl) const {
   char t[32] = {};
   std::snprintf(t, sizeof(t), "%u:%02u:%02u", unsigned(ms/3600000), unsigned(ms/60000%60), unsigned(ms/1000%60));
   out.stats = "krok " + std::to_string(std::min(cur+1, steps.size())) + "/" + std::to_string(steps.size()) +
-              " | OK " + std::to_string(nOk) + " | błędy " + std::to_string(nFail) + " | zdarzenia " + std::to_string(nEvents) +
+              " | OK " + std::to_string(nOk) + " | błędy " + std::to_string(nFail) + " | śmierci " + std::to_string(nDeaths) + " | zdarzenia " + std::to_string(nEvents) +
               " | " + t;
   if(pl!=nullptr)
     out.stats += " | zdrowie " + std::to_string(pl->attribute(ATR_HITPOINTS)) + "/" + std::to_string(pl->attribute(ATR_HITPOINTSMAX));
@@ -659,7 +665,8 @@ void ArpgPlotBot::writeState(bool end, const std::string& why) const {
                           ",krok:" + std::to_string(std::min(cur+1, steps.size())) + ",kroki:" + std::to_string(steps.size()) +
                           ",ok:" + std::to_string(nOk) + ",bledy:" + std::to_string(nFail) + ",pom:" + std::to_string(nSkip) +
                           ",zdarzenia:" + std::to_string(nEvents) + ",leczenia:" + std::to_string(nHeal) +
-                          ",zaciecia:" + std::to_string(nStuck) + ",ms:" + std::to_string(Application::tickCount()-runT0) +
+                          ",zaciecia:" + std::to_string(nStuck) + ",smierci:" + std::to_string(nDeaths) +
+                          ",mikstury:" + std::to_string(nPotions) + ",ms:" + std::to_string(Application::tickCount()-runT0) +
                           ",koniec:" + (end ? "true" : "false") + ",powod:" + js(why) + "};\n";
   std::fputs(s.c_str(), f);
   std::fclose(f);
@@ -711,16 +718,24 @@ void ArpgPlotBot::log(const std::string& line) {
 void ArpgPlotBot::guardHealth(Npc& pl, uint64_t now) {
   const int32_t hp  = pl.attribute(ATR_HITPOINTS);
   const int32_t max = std::max(1, pl.attribute(ATR_HITPOINTSMAX));
-  const float   k   = float(hp)/float(max);
+  // a blow that would have killed the hero (Gothic::arpgBotGuard left 1 point): a death in the report, life back
+  if(Gothic::inst().arpgBotSaves()!=savesSeen) {
+    savesSeen = Gothic::inst().arpgBotSaves();
+    ++nDeaths;
+    ++nHeal;
+    event("smierc", "bohater by zginął" + (lastEnemy.empty() ? std::string() : " (" + lastEnemy + ")") +
+          " – życie przywrócone, gra toczy się dalej", true);
+    pl.changeAttribute(ATR_HITPOINTS, max-pl.attribute(ATR_HITPOINTS), false);
+    return;
+    }
+  const float k = float(hp)/float(max);
   if(k<kPotionAt && now-potionT>kPotionGapMs && hooks.player!=nullptr) {
     potionT = now;
-    hooks.player->arpgBotPotion();
-    }
-  if(k<kHealAt && !pl.isDead()) {
-    ++nHeal;
-    pl.changeAttribute(ATR_HITPOINTS, max-hp, false);
-    event("leczenie", "zdrowie " + std::to_string(hp) + " / " + std::to_string(max) +
-          (defend!=nullptr ? std::string(", walka z ") + nameOf(*defend) : std::string()), true);
+    if(hooks.player->arpgBotPotion()) {
+      ++nPotions;
+      event("mikstura", "zdrowie " + std::to_string(hp) + "/" + std::to_string(max) +
+            (lastEnemy.empty() ? std::string() : ", walka z " + lastEnemy), false);
+      }
     }
   }
 
@@ -766,8 +781,9 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
     }
   if(best==nullptr)
     return false;
-  defend   = best;
-  defendT0 = attackT = now;
+  defend    = best;
+  lastEnemy = nameOf(*best);
+  defendT0  = attackT = now;
   event("obrona", nameOf(*best) + " (" + std::to_string(int(bestD)) + " cm)", false);
   hooks.player->arpgBotClick(Focus(*best), true, true);
   return true;
@@ -810,6 +826,16 @@ bool ArpgPlotBot::strayTalk(uint64_t now, bool quiet) {
     if(!quiet)
       event("rozmowa", who + ": koniec (" + all + ")", false);
     dlg->arpgBotPick(ex->name);
+    return true;
+    }
+  bool onlyTopics = true;
+  if(auto w = Gothic::inst().world())
+    for(auto& l:lines)
+      onlyTopics = onlyTopics && w->script().arpgClassOf(l.name)=="C_INFO";
+  if(onlyTopics) {
+    event("rozmowa", who + ": zamknięta bez wyboru (" + all + ")", false);
+    dlg->arpgAbort();
+    strayT = 0;
     return true;
     }
   event("wybor", who + ": " + lines[0].name + " z [" + all + "]", false);
@@ -1072,6 +1098,10 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
     nextStep(false, "złe nazwy (walidacja)");
     return;
     }
+  if(s.verb=="etykieta") {
+    nextStep(true, "");
+    return;
+    }
   const bool talkStep = s.verb=="rozmowa" || s.verb=="wybor" || s.verb=="koniec";
   if(!talkStep) {
     // checks keep the talk of the step before open; steps that need the hero free end it quietly; any other talk is noted
@@ -1216,9 +1246,9 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
         }
       return;
       }
-  if(!knewBefore && w.script().arpgKnowsInfo(pl, info)) {
-    // an important line: it ran by itself when the talk began
-    nextStep(true, "samo (ważne)");
+  if(w.script().arpgKnowsInfo(pl, info)) {
+    // an important line: it ran by itself when the talk began (also before this step)
+    nextStep(true, knewBefore ? "już znane" : "samo (ważne)");
     return;
     }
   for(auto& h:handlers)
@@ -1358,7 +1388,8 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
       nextStep(false, std::string("nie doszedł do ") + nameOf(*tg));
     return;
     }
-  walk.on = false;
+  walk.on   = false;
+  lastEnemy = nameOf(*tg);
   if(hooks.player->arpgBotIdle() || now-attackT>2000) {
     attackT = now;
     hooks.player->arpgBotClick(Focus(*tg), true, true);

@@ -78,6 +78,7 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - Zacięcie na drodze = przeniesienie na punkt + zdarzenie w raporcie (bot idzie dalej); brak mikstury przy < 15% zdrowia = leczenie bota + zdarzenie; śmierć = koniec przebiegu
   - Do testu: `bot_fabuly.bat` (cały rozdział, kilkadziesiąt minut — gra w oknie, nie minimalizować); po błędzie `bot_fabuly.bat -Od <etykieta>` od ostatniego zapisu przed miejscem błędu; raport: pierwszy błąd, zdarzenia (zacięcia, leczenia, rozmowy nieoczekiwane)
   - 2026-10-20: panel w grze „co bot robi, co robił i co będzie robił” — po lewej u góry: ostatnie kroki z wynikiem, bieżący krok z opisem czynności, następne kroki, ostatnie zdarzenia, licznik; nie trafia na zrzuty raportu
+  - 2026-10-20, pierwszy przebieg (zgłoszony jako „gra się wysypała”): bot zamknął grę po śmierci bohatera — bandyci Cavalorna zabili go w 6 s walki (poziom 0, nóż, Cavalorn obok); do tego czasu 32 kroki OK (Lester, rozmowy z Cavalornem), 1 zacięcie pod wieżą, obrona przed goblinami i wilkiem. Zmiana: śmierć nie kończy przebiegu (1 punkt życia, zdarzenie „śmierć”, bot leczy), mikstury w raporcie; start z Xardasem: etykieta nie obsługuje rozmowy, rozmowa bez wyjścia zamykana bez wyboru tematu
 
 ## Publikacja (2026-10-16)
 - Użytkownik: „dodajmy do planu dokładne kroki do zrobienia przed publikacją” → publikacja.md (etapy A–G, decyzje otwarte: język pierwszej wersji, launcher, fazy 7–8 przed betą, pad)

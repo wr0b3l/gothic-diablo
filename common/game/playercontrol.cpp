@@ -2108,8 +2108,14 @@ bool PlayerControl::arpgBotIdle() const {
   return arpgClick.kind==ArpgClick::None;
   }
 
-void PlayerControl::arpgBotPotion() {
+bool PlayerControl::arpgBotPotion() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  int32_t total = 0;
+  if(pl==nullptr || arpgPickPotion(*pl, 1, total)==nullptr)
+    return false;
   arpgPotion(1);
+  return true;
   }
 
 void PlayerControl::arpgMouseUp() {

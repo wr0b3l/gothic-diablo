@@ -15,8 +15,10 @@
 #          nie <warunek>
 # gdy <wybór> ...  = te linie bot wybiera sam w rozmowach, których scenariusz nie przewiduje
 # po_bledzie dalej|stop
+# po_smierci dalej|koniec   (dalej: cios, który by zabił, zostawia 1 punkt życia; w raporcie „śmierć”, bot leczy i gra dalej)
 
 po_bledzie dalej
+po_smierci dalej
 gdy DIA_Canthar_PAYPRICEINCITY_Nein
 gdy DIA_Moe_Hallo_Gehen DIA_Moe_Hallo_Vergisses
 

@@ -1272,6 +1272,13 @@ void Npc::changeAttribute(Attribute a, int32_t val, bool allowUnconscious) {
       return;
     if(isImmortal())
       return;
+    if(isPlayer() && Gothic::inst().arpgBotGuard() && hnpc->attribute[a]+val<=0) {
+      // gothic-diablo: the story bot plays on: the deadly blow leaves 1 point, the bot notes a death and heals
+      Gothic::inst().arpgBotSaved();
+      val = 1-hnpc->attribute[a];
+      if(val>=0)
+        return;
+      }
     }
 
   hnpc->attribute[a]+=val;

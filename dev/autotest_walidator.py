@@ -212,7 +212,7 @@ def main():
             for x in r:
                 if x.upper() not in sc.choices and x.upper() not in sc.infos:
                     errors.append(f'linia {no}: gdy {x} - nie ma takiego wyboru')
-        elif v == 'po_bledzie':
+        elif v in ('po_bledzie', 'po_smierci'):
             pass
         elif v == 'rozmowa':
             if need('npc', r[0], no):

@@ -134,7 +134,7 @@ class PlayerControl final {
     void  arpgBotClick(const Focus& f, bool held, bool attack); // a click on an npc / item / object (attack: like Ctrl + click)
     void  arpgBotRelease();                                     // the button up
     bool  arpgBotIdle() const;                                  // no order left (done, stuck, or dropped)
-    void  arpgBotPotion();                                      // the health potion key
+    bool  arpgBotPotion();                                      // the health potion key (false: none to drink)
 
   private:
     enum WeaponAction : uint8_t {
