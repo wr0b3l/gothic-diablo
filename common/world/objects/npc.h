@@ -195,6 +195,11 @@ class Npc final {
     bool       isFalling() const;
     auto       lastMoveFail() const -> const MoveAlgo::MoveFail& { return mvAlgo.lastMoveFail(); } // gothic-diablo
     auto       comboTiming() const -> Pose::ComboTiming;                                        // gothic-diablo
+    int64_t    arpgNextHitMs() const;    // gothic-diablo: ms to the next hit of its attack (-1: none); the test bot parries with it
+    // gothic-diablo: the test bot: what a player does in the inventory - the best weapons the hero may use (the name of the new
+    // melee weapon, empty: no change) and "take all" from a body (the names of what was taken)
+    std::string arpgEquipBestWeapons();
+    std::string arpgLootAll(Npc& body);
     void       arpgHoldParade();         // gothic-diablo: block held
     // Diathic: negative statuses (game/arpgstatus.h); value: damage per second for damage over time
     void       arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from);

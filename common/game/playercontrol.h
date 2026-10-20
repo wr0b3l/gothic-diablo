@@ -134,6 +134,10 @@ class PlayerControl final {
     void  arpgBotClick(const Focus& f, bool held, bool attack); // a click on an npc / item / object (attack: like Ctrl + click)
     void  arpgBotRelease();                                     // the button up
     bool  arpgBotIdle() const;                                  // no order left (done, stuck, or dropped)
+    void  arpgBotLock(Npc* n);                                  // the lock on a target (like Ctrl held): aim of charge, skills
+    void  arpgBotDraw();                                        // draw the weapon (an enemy is coming)
+    void  arpgBotHolster();                                     // the weapon away (peace: eating, taking)
+    void  arpgBotDodge(float dirDeg);                           // the dodge key, rolling / stepping towards dirDeg (world yaw)
     bool  arpgBotPotion();                                      // the health potion key (false: none to drink)
 
   private:
@@ -297,6 +301,8 @@ class PlayerControl final {
     Focus          arpgHover;
     // Diathic: lock on a target (Ctrl held ArpgLockHold ms = on / off, short Ctrl over another one = switch)
     Npc*           arpgLock       = nullptr;
+    float          arpgBotDodgeDir = 0;     // the test bot: where the next dodge goes
+    bool           arpgBotDodgeSet = false;
     const World*   arpgLockWorld  = nullptr;
     uint64_t       arpgCtrlDownAt = 0;     // world time when Ctrl went down, 0 = up
     bool           arpgCtrlUsed   = false; // a click or the lock happened during this hold

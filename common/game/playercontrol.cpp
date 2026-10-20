@@ -2104,6 +2104,31 @@ void PlayerControl::arpgBotRelease() {
   arpgClick.held = false;
   }
 
+void PlayerControl::arpgBotLock(Npc* n) {
+  if(n!=arpgLock)
+    arpgSetLock(n);
+  }
+
+void PlayerControl::arpgBotDraw() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl!=nullptr && pl->weaponState()==WeaponState::NoWeapon && !pl->isDown())
+    arpgDrawPreferred(*pl);
+  }
+
+void PlayerControl::arpgBotHolster() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl!=nullptr && pl->weaponState()!=WeaponState::NoWeapon && !pl->isDown())
+    wctrl[WeaponClose] = true;
+  }
+
+void PlayerControl::arpgBotDodge(float dirDeg) {
+  arpgBotDodgeDir = dirDeg;
+  arpgBotDodgeSet = true;
+  arpgDodge();
+  }
+
 bool PlayerControl::arpgBotIdle() const {
   return arpgClick.kind==ArpgClick::None;
   }
@@ -2605,6 +2630,8 @@ int PlayerControl::arpgStartRoll(Npc& pl, float& rot) {
   const float lr = movement.strafeRightLeft.value();
   if(auto camera = Gothic::inst().camera(); camera!=nullptr && (fb!=0.f || lr!=0.f))
     dir = camera->arpgYaw() + std::atan2(-lr, fb)*180.f/float(M_PI);
+  if(arpgBotDodgeSet)
+    dir = arpgBotDodgeDir; // the test bot rolls where it wants (away / aside), not to the mouse
 
   if(!pl.arpgHasOverlay(sk))
     pl.addOverlay(sk, 1600); // ms, the roll takes ~1 s
@@ -2626,6 +2653,7 @@ int PlayerControl::arpgStartRoll(Npc& pl, float& rot) {
   // the first ~2/3: the roll itself; Zwinność: longer
   pl.arpgSetInvulnerable(uint64_t(std::min(len,1.f)*650.f + pk.rollInvuln*1000.f));
   arpgDodgeReq  = false;
+  arpgBotDodgeSet = false;
   arpgDodgeLock = std::clamp(len*0.85f, 0.4f, 1.f);         // the end blends into running
   arpgRollCd    = std::max(0.1f, arpgDodgeLock + 0.25f - pk.rollCdCut -   // Lekki krok
                            (pl.weaponState()==WeaponState::W1H ? pk.rollCd1H : 0.f)); // Diathic: Zwinny krok
@@ -2712,8 +2740,9 @@ bool PlayerControl::arpgStartDodge(Npc& pl, float& rot) {
       face = std::atan2(d.z,d.x)*180.f/float(M_PI);
     }
 
-  // dodge direction: W/S/A/D on screen, otherwise away from the enemy
-  float dir = face+180.f;
+  // dodge direction: W/S/A/D on screen, otherwise away from the enemy (the test bot: its own direction)
+  float dir = arpgBotDodgeSet ? arpgBotDodgeDir : face+180.f;
+  arpgBotDodgeSet = false;
   const float fb = movement.forwardBackward.value();
   const float lr = movement.strafeRightLeft.value();
   if(fb!=0.f || lr!=0.f)

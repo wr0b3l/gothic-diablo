@@ -11,6 +11,7 @@
 
 class World;
 class Npc;
+class Item;
 class PlayerControl;
 class DialogMenu;
 
@@ -100,6 +101,28 @@ class ArpgPlotBot final {
     Npc*                     lastTalk   = nullptr;
 
     Walk                     walk;
+    // fighting (ArpgPlotBot::fightTick): the bot reads the enemy's swing (Npc::arpgNextHitMs) and parries, blocks, dodges,
+    // charges, uses the skills of the trees
+    bool                     blocking   = false;
+    uint64_t                 blockT0    = 0;
+    bool                     charging   = false;
+    uint64_t                 chargeT0   = 0;
+    uint64_t                 chargeTry  = 0;
+    const Npc*               answered   = nullptr;   // the swing already answered: who ...
+    uint64_t                 answeredAt = 0;         // ... and when it lands
+    uint64_t                 skillT     = 0;
+    uint32_t                 rng        = 0x2545F491u;
+    size_t                   nParry = 0, nParryOk = 0, nDodge = 0, nCharge = 0, nSkill = 0;
+    std::string              lastMove;              // the last move in a fight (the panel)
+    // between the fights: bodies to take from, things to pick up, food and potions
+    std::vector<Npc*>        bodies;
+    std::vector<const void*> givenUp;               // items and bodies the bot could not reach
+    void*                    choreItem  = nullptr;
+    Npc*                     choreBody  = nullptr;
+    uint64_t                 choreT0    = 0;
+    uint64_t                 healT      = 0;
+    int32_t                  healFrom   = -1;       // life when the healing began (-1: not healing)
+    std::string              healLog;
     std::string              walkWhat;          // "idzie do Vatras" (the panel)
     std::string              doing;             // what the bot does now (the panel)
     std::vector<ArpgBotPanel::Line> recentSteps;
@@ -138,6 +161,12 @@ class ArpgPlotBot final {
 
     void        guardHealth(Npc& pl, uint64_t now);
     bool        defendTick(World& w, Npc& pl, uint64_t now);
+    void        fightTick(World& w, Npc& pl, Npc& tg, uint64_t now);
+    void        fightEnd(Npc& pl);
+    bool        choresTick(World& w, Npc& pl, uint64_t now);
+    bool        healTick(World& w, Npc& pl, uint64_t now);
+    int32_t     hpBonus(World& w, const Item& it) const;
+    float       roll01();
     bool        strayTalk(uint64_t now, bool quiet);
 
     void        walkStart(World& w, Npc& pl, const Tempest::Vec3& dest, float reach);

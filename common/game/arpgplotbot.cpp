@@ -10,6 +10,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #include "diathicassets.h"
@@ -20,6 +21,8 @@
 #include "game/gamesession.h"
 #include "game/playercontrol.h"
 #include "game/questlog.h"
+#include "game/inventory.h"
+#include "game/arpgstatus.h"
 #include "ui/dialogmenu.h"
 #include "world/focus.h"
 #include "world/objects/item.h"
@@ -57,7 +60,21 @@ namespace {
   // talking, fighting (cm)
   constexpr float    kTalkWalk      = 450.f;   // walk this close, then click on the npc
   constexpr float    kFightWalk     = 1200.f;
-  constexpr float    kDefendRange   = 700.f;   // an enemy this close that wants the hero: fight back
+  constexpr float    kThreatRange   = 1200.f;  // an enemy this close that goes for the hero: the bot fights it
+  constexpr float    kThreatNear    = 900.f;   // a beast (or an armed man) this close: fought before it bites
+  constexpr float    kDrawRange     = 1500.f;  // an enemy this close: the weapon out
+  constexpr float    kQuietRange    = 1500.f;  // no enemy this close: time to heal, loot, pick up
+  constexpr int64_t  kParryLeadMs   = 180;     // the block starts this long before the enemy's hit (ArpgStatus::ParryWindowMs 250)
+  constexpr float    kParryChance   = 0.75f;   // a decent player: not every swing is answered
+  constexpr float    kChargeChance  = 0.35f;
+  constexpr uint64_t kSkillGapMs    = 1500;
+  constexpr float    kHealBelow     = 0.70f;   // between fights: eat below this part of life ...
+  constexpr float    kHealUpTo      = 0.90f;   // ... up to this part
+  constexpr float    kPotionBelow   = 0.50f;   // ... and a potion only below this part (when there is no food)
+  constexpr uint64_t kHealGapMs     = 1600;    // one bite / gulp at a time (the animation)
+  constexpr float    kLootRange     = 2000.f;
+  constexpr float    kPickRange     = 900.f;
+  constexpr uint64_t kChoreMs       = 25000;   // a body / an item the bot cannot reach in this time is left
   constexpr float    kDefendLeave   = 1800.f;
   constexpr float    kTakeRange     = 3000.f;
 
@@ -236,13 +253,13 @@ label{margin-right:12px}select,input{background:var(--card);color:var(--txt);bor
 <script src="zdarzenia.js"></script>
 <script>
 var WYN={ok:"OK",blad:"BŁĄD",pom:"pominięty"};
-var RODZ={zaciecie:"zacięcie (przeniesiony)",leczenie:"leczenie bota",rozmowa:"rozmowa nieoczekiwana",wybor:"wybór automatyczny",obrona:"obrona",smierc:"śmierć (gra dalej)",mikstura:"mikstura",walidacja:"walidacja nazw",zapis:"zapis gry",czas:"przewinięcie czasu"};
+var RODZ={zaciecie:"zacięcie (przeniesiony)",leczenie:"leczenie bota",rozmowa:"rozmowa nieoczekiwana",wybor:"wybór automatyczny",obrona:"obrona",smierc:"śmierć (gra dalej)",mikstura:"mikstura",lup:"łup z ciała",bron:"lepsza broń",zbieranie:"zbieranie",walidacja:"walidacja nazw",zapis:"zapis gry",czas:"przewinięcie czasu"};
 function $(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function sek(ms){return ms<1000?ms+" ms":(ms<120000?(ms/1000).toFixed(1)+" s":(ms/60000).toFixed(1)+" min")}
 function start(){
   if(STAN){$("tytul").textContent="Bot fabuły - "+STAN.scenariusz;
-    $("stan").textContent="Start "+STAN.start+" · krok "+STAN.krok+" / "+STAN.kroki+" · OK "+STAN.ok+" · błędy "+STAN.bledy+" · pominięte "+STAN.pom+" · śmierci "+(STAN.smierci||0)+" · mikstury "+(STAN.mikstury||0)+" · zdarzenia "+STAN.zdarzenia+" · zacięcia "+STAN.zaciecia+" · czas "+sek(STAN.ms)+(STAN.koniec?" · zakończony ("+STAN.powod+")":" · w toku")+(POPRZEDNI?" · porównanie z "+POPRZEDNI:"")+" · scenariusz: "+STAN.zrodlo;}
+    $("stan").textContent="Start "+STAN.start+" · krok "+STAN.krok+" / "+STAN.kroki+" · OK "+STAN.ok+" · błędy "+STAN.bledy+" · pominięte "+STAN.pom+" · śmierci "+(STAN.smierci||0)+" · mikstury "+(STAN.mikstury||0)+" · parowania "+(STAN.parowaniaOk||0)+"/"+(STAN.parowania||0)+" · uniki "+(STAN.uniki||0)+" · ładowane "+(STAN.ladowane||0)+" · umiejętności "+(STAN.umiejetnosci||0)+" · zdarzenia "+STAN.zdarzenia+" · zacięcia "+STAN.zaciecia+" · czas "+sek(STAN.ms)+(STAN.koniec?" · zakończony ("+STAN.powod+")":" · w toku")+(POPRZEDNI?" · porównanie z "+POPRZEDNI:"")+" · scenariusz: "+STAN.zrodlo;}
   var f=K.filter(function(o){return o.r=="blad"})[0];
   if(f){var p=$("pierwszy");p.style.display="";p.appendChild(el("b",null,"Pierwszy błąd: krok "+f.n+" (linia "+f.l+"): "));p.appendChild(el("span","t",f.t));p.appendChild(el("div",null,f.u));if(f.img){var i=el("img");i.src=f.img;p.appendChild(i)}if(f.zapis)p.appendChild(el("div","dim","zapis gry: "+f.zapis))}
   $("fr").onchange=rysuj;
@@ -556,7 +573,8 @@ void ArpgPlotBot::panel(ArpgBotPanel& out, const Npc* pl) const {
   char t[32] = {};
   std::snprintf(t, sizeof(t), "%u:%02u:%02u", unsigned(ms/3600000), unsigned(ms/60000%60), unsigned(ms/1000%60));
   out.stats = "krok " + std::to_string(std::min(cur+1, steps.size())) + "/" + std::to_string(steps.size()) +
-              " | OK " + std::to_string(nOk) + " | błędy " + std::to_string(nFail) + " | śmierci " + std::to_string(nDeaths) + " | zdarzenia " + std::to_string(nEvents) +
+              " | OK " + std::to_string(nOk) + " | błędy " + std::to_string(nFail) + " | śmierci " + std::to_string(nDeaths) + " | parowania " + std::to_string(nParryOk) + "/" + std::to_string(nParry) +
+              " | uniki " + std::to_string(nDodge) + " | zdarzenia " + std::to_string(nEvents) +
               " | " + t;
   if(pl!=nullptr)
     out.stats += " | zdrowie " + std::to_string(pl->attribute(ATR_HITPOINTS)) + "/" + std::to_string(pl->attribute(ATR_HITPOINTSMAX));
@@ -666,7 +684,9 @@ void ArpgPlotBot::writeState(bool end, const std::string& why) const {
                           ",ok:" + std::to_string(nOk) + ",bledy:" + std::to_string(nFail) + ",pom:" + std::to_string(nSkip) +
                           ",zdarzenia:" + std::to_string(nEvents) + ",leczenia:" + std::to_string(nHeal) +
                           ",zaciecia:" + std::to_string(nStuck) + ",smierci:" + std::to_string(nDeaths) +
-                          ",mikstury:" + std::to_string(nPotions) + ",ms:" + std::to_string(Application::tickCount()-runT0) +
+                          ",mikstury:" + std::to_string(nPotions) + ",parowania:" + std::to_string(nParry) +
+                          ",parowaniaOk:" + std::to_string(nParryOk) + ",uniki:" + std::to_string(nDodge) +
+                          ",ladowane:" + std::to_string(nCharge) + ",umiejetnosci:" + std::to_string(nSkill) + ",ms:" + std::to_string(Application::tickCount()-runT0) +
                           ",koniec:" + (end ? "true" : "false") + ",powod:" + js(why) + "};\n";
   std::fputs(s.c_str(), f);
   std::fclose(f);
@@ -739,6 +759,13 @@ void ArpgPlotBot::guardHealth(Npc& pl, uint64_t now) {
     }
   }
 
+float ArpgPlotBot::roll01() {
+  rng ^= rng << 13;
+  rng ^= rng >> 17;
+  rng ^= rng << 5;
+  return float(rng & 0xFFFF)/65535.f;
+  }
+
 bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
   if(hooks.player==nullptr)
     return false;
@@ -746,47 +773,390 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
     const bool gone = defend->isDead() || defend->isDown() ||
                       dist2d(defend->position(), pl.position())>kDefendLeave || now-defendT0>kDefendMs;
     if(gone) {
+      if(defend->isDead() || defend->isDown())
+        bodies.push_back(defend);
       defend = nullptr;
-      hooks.player->arpgBotRelease();
+      fightEnd(pl);
       walk.clickT   = 0; // the walk goes on with a new click
       walk.clickIdx = size_t(-1);
       walk.bestT    = now;
       return false;
       }
-    if(hooks.player->arpgBotIdle() || now-attackT>2000) {
-      attackT = now;
-      hooks.player->arpgBotClick(Focus(*defend), true, true);
-      }
+    fightTick(w, pl, *defend, now);
     doing = "obrona: " + nameOf(*defend) + " (" + std::to_string(defend->attribute(ATR_HITPOINTS)) + "/" +
-            std::to_string(defend->attribute(ATR_HITPOINTSMAX)) + "), " + meters(dist2d(defend->position(), pl.position()));
+            std::to_string(defend->attribute(ATR_HITPOINTSMAX)) + "), " + meters(dist2d(defend->position(), pl.position())) +
+            (lastMove.empty() ? std::string() : " | " + lastMove);
     return true;
     }
+  // who goes for the hero: the hero as its target, a swing, a beast close by, an armed man close by
   Npc*  best  = nullptr;
-  float bestD = kDefendRange;
-  for(uint32_t i=0; i<w.npcCount(); ++i) {
-    auto npc = w.npcById(i);
-    if(npc==nullptr || npc==&pl || npc->isDead() || npc->isDown())
-      continue;
-    const float d = dist2d(npc->position(), pl.position());
-    if(d>=bestD || std::abs(npc->position().y-pl.position().y)>300.f)
-      continue;
-    if(!hooks.player->arpgIsEnemy(*npc))
-      continue;
-    // only one that goes for the hero (weapon out, the hero as its target); a bandit who just stands there is left alone
-    const bool armed = npc->weaponState()!=WeaponState::NoWeapon || npc->isAttackAnim();
-    if(npc->target()!=&pl || !armed)
-      continue;
-    best  = npc;
+  float bestD = kThreatRange;
+  bool  near  = false;
+  w.detectNpc(pl.position(), kDrawRange, [&](Npc& npc) {
+    if(&npc==&pl || npc.isDead() || npc.isDown() || std::abs(npc.position().y-pl.position().y)>350.f)
+      return;
+    if(!hooks.player->arpgIsEnemy(npc))
+      return;
+    near = true;
+    const float d     = dist2d(npc.position(), pl.position());
+    const bool  armed = npc.weaponState()!=WeaponState::NoWeapon;
+    const bool  wants = npc.target()==&pl && (armed || npc.isMonster());
+    const bool  close = d<kThreatNear && (npc.isMonster() || armed);
+    if(!(wants || npc.isAttackAnim() || close) || d>=bestD)
+      return;
+    best  = &npc;
     bestD = d;
-    }
+    });
+  if(near)
+    hooks.player->arpgBotDraw(); // an enemy around: the weapon out before it comes
   if(best==nullptr)
     return false;
   defend    = best;
   lastEnemy = nameOf(*best);
   defendT0  = attackT = now;
   event("obrona", nameOf(*best) + " (" + std::to_string(int(bestD)) + " cm)", false);
-  hooks.player->arpgBotClick(Focus(*best), true, true);
+  fightTick(w, pl, *best, now);
   return true;
+  }
+
+void ArpgPlotBot::fightEnd(Npc& pl) {
+  (void)pl;
+  if(hooks.player==nullptr)
+    return;
+  if(blocking)
+    hooks.player->arpgBlock(false);
+  if(charging)
+    hooks.player->arpgChargeRelease();
+  blocking = charging = false;
+  hooks.player->arpgBotLock(nullptr);
+  hooks.player->arpgBotRelease();
+  lastMove.clear();
+  }
+
+void ArpgPlotBot::fightTick(World& w, Npc& pl, Npc& tg, uint64_t now) {
+  auto P = hooks.player;
+  if(P==nullptr)
+    return;
+  P->arpgBotLock(&tg); // like Ctrl held: the charge, the skills and the clicks go at the target
+  const float d   = dist2d(pl.position(), tg.position());
+  const float hpK = float(pl.attribute(ATR_HITPOINTS))/float(std::max(1, pl.attribute(ATR_HITPOINTSMAX)));
+
+  // who swings at the hero now, and when the soonest hit lands
+  int     swings  = 0;
+  int64_t soonest = -1;
+  Npc*    who     = nullptr;
+  w.detectNpc(pl.position(), 450.f, [&](Npc& n) {
+    if(&n==&pl || n.isDead() || n.isDown() || !n.isAttackAnim() || !P->arpgIsEnemy(n))
+      return;
+    ++swings;
+    const int64_t h = n.arpgNextHitMs();
+    if(h>=0 && (soonest<0 || h<soonest)) {
+      soonest = h;
+      who     = &n;
+      }
+    });
+
+  // the block held: let go after the hit; a parried enemy is staggered (x4 for the next hit)
+  if(blocking) {
+    const bool hitGone = (who==nullptr || who!=answered) && now-blockT0>150;
+    if(hitGone || now-blockT0>700) {
+      P->arpgBlock(false);
+      blocking = false;
+      if(answered!=nullptr && answered->arpgHasStatus(ArpgStatus::Stagger)) {
+        ++nParryOk;
+        lastMove = "parowanie udane – kontra x4";
+        }
+      attackT = 0; // the counter at once
+      }
+    else
+      return;
+    }
+
+  // the charge: released when full; a swing coming = out of it with a dodge
+  if(charging) {
+    if(who!=nullptr && soonest<250) {
+      charging = false;
+      const auto  a   = pl.position()-who->position();
+      const float dir = std::atan2(a.z, a.x)*180.f/float(M_PI) + (roll01()<0.5f ? 60.f : -60.f);
+      P->arpgBotDodge(dir);
+      ++nDodge;
+      lastMove = "unik z ładowania";
+      return;
+      }
+    if(P->arpgChargeTime()>=P->arpgChargeTimeFull() || now-chargeT0>4000) {
+      P->arpgChargeRelease();
+      charging = false;
+      ++nCharge;
+      lastMove = "atak ładowany";
+      }
+    return;
+    }
+
+  // a swing on its way: one answer for it - dodge (more of them, low life, no block), parry, or take it
+  if(who!=nullptr && soonest<=kParryLeadMs) {
+    const uint64_t at = now+uint64_t(soonest);
+    if(!(who==answered && (at>answeredAt ? at-answeredAt : answeredAt-at)<250)) {
+      answered   = who;
+      answeredAt = at;
+      const bool canBlock = P->arpgCanBlock();
+      if(swings>=2 || hpK<0.35f || !canBlock || (pl.arpgBlockCharges()<=0 && roll01()<0.5f)) {
+        const auto  a   = pl.position()-who->position();
+        const float dir = std::atan2(a.z, a.x)*180.f/float(M_PI) + (roll01()<0.5f ? 70.f : -70.f);
+        P->arpgBotDodge(dir);
+        ++nDodge;
+        lastMove = "unik (" + std::to_string(swings) + " atakuje)";
+        return;
+        }
+      if(roll01()<kParryChance) {
+        P->arpgBlock(true);
+        blocking = true;
+        blockT0  = now;
+        ++nParry;
+        lastMove = "parowanie";
+        return;
+        }
+      lastMove = "bez obrony";
+      }
+    }
+
+  // the skills of the trees (keys 3-0): ready, the target in reach
+  if(now-skillT>kSkillGapMs && d<=300.f && !tg.arpgHasStatus(ArpgStatus::Stagger)) {
+    for(int i=0; i<8; ++i) {
+      const auto sl = P->arpgSkillSlot(i);
+      if(sl.skill==PlayerControl::SkNone || !sl.known || !sl.usable || sl.active || sl.left>0.f)
+        continue;
+      P->arpgSkillKey(i);
+      skillT = now;
+      ++nSkill;
+      lastMove = "umiejętność (klawisz " + std::to_string((i+3)%10) + ")";
+      return;
+      }
+    }
+
+  // the charged attack now and then: the enemy close and not swinging, no one else swinging
+  if(swings==0 && !tg.isAttackAnim() && d<=260.f && P->arpgSpecialLeft()<=0.f && now-chargeTry>2500 &&
+     !tg.arpgHasStatus(ArpgStatus::Stagger)) {
+    chargeTry = now;
+    if(roll01()<kChargeChance) {
+      P->arpgChargeStart();
+      charging = true;
+      chargeT0 = now;
+      lastMove = "ładuje atak";
+      return;
+      }
+    }
+
+  // plain attacks (held: the combo goes on)
+  if(P->arpgBotIdle() || now-attackT>1500) {
+    attackT = now;
+    P->arpgBotClick(Focus(tg), true, true);
+    if(lastMove.empty() || lastMove=="bez obrony")
+      lastMove = "atak";
+    }
+  }
+
+int32_t ArpgPlotBot::hpBonus(World& w, const Item& it) const {
+  // the life an item gives back, as its description in the inventory says it (food, plants, potions)
+  auto sym = w.script().findSymbol("NAME_Bonus_HP");
+  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::STRING)
+    return 0;
+  const std::string& bonus = sym->get_string();
+  auto& h = it.handle();
+  for(size_t i=0; i<std::size(h.text); ++i)
+    if(h.text[i]==bonus)
+      return h.count[i];
+  return 0;
+  }
+
+bool ArpgPlotBot::healTick(World& w, Npc& pl, uint64_t now) {
+  const int32_t hp  = pl.attribute(ATR_HITPOINTS);
+  const int32_t max = std::max(1, pl.attribute(ATR_HITPOINTSMAX));
+  const float   k   = float(hp)/float(max);
+  auto endHeal = [&]() {
+    if(healFrom>=0 && !healLog.empty())
+      event("leczenie", "między walkami: " + healLog + " (życie " + std::to_string(healFrom) + " → " +
+            std::to_string(hp) + "/" + std::to_string(max) + ")", false);
+    healFrom = -1;
+    healLog.clear();
+    };
+  if(healFrom<0 && k>=kHealBelow)
+    return false;
+  if(healFrom>=0 && k>=kHealUpTo) {
+    endHeal();
+    return false;
+    }
+  if(now-healT<kHealGapMs)
+    return healFrom>=0; // eating: wait for the bite
+  if(pl.weaponState()!=WeaponState::NoWeapon || pl.isDown())
+    return false;
+  // the smallest food that heals, otherwise (low life) the smallest potion
+  const Item* best  = nullptr;
+  int32_t     bestV = 0;
+  for(int pass=0; pass<2 && best==nullptr; ++pass) {
+    if(pass==1 && k>=kPotionBelow)
+      break;
+    const int32_t cat = pass==0 ? int32_t(ITM_CAT_FOOD) : int32_t(ITM_CAT_POTION);
+    for(auto it = pl.inventory().iterator(Inventory::T_Inventory); it.isValid(); ++it) {
+      if((it->handle().main_flag & cat)==0)
+        continue;
+      const int32_t v = hpBonus(w, *it);
+      if(v>0 && (best==nullptr || v<bestV)) {
+        best  = &*it;
+        bestV = v;
+        }
+      }
+    }
+  if(best==nullptr) {
+    endHeal();
+    return false;
+    }
+  if(healFrom<0)
+    healFrom = hp;
+  healT = now;
+  hooks.player->arpgBotRelease();
+  hooks.player->arpgBotGround(pl.position()); // stand still for the bite
+  const std::string what = toUtf8(best->displayName());
+  healLog += (healLog.empty() ? "" : ", ") + what;
+  doing = "leczy się: " + what + " (+" + std::to_string(bestV) + ", życie " + std::to_string(hp) + "/" + std::to_string(max) + ")";
+  pl.useItem(best->clsId());
+  return true;
+  }
+
+bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
+  if(hooks.player==nullptr || defend!=nullptr || pl.isDown())
+    return false;
+  // only in peace: no enemy close
+  bool enemy = false;
+  w.detectNpc(pl.position(), kQuietRange, [&](Npc& n) {
+    if(&n!=&pl && !n.isDead() && !n.isDown() && hooks.player->arpgIsEnemy(n))
+      enemy = true;
+    });
+  if(enemy)
+    return false;
+  if(pl.weaponState()!=WeaponState::NoWeapon) {
+    // peace: the weapon away (eating and a new weapon need free hands)
+    hooks.player->arpgBotLock(nullptr);
+    hooks.player->arpgBotHolster();
+    }
+  if(healTick(w, pl, now))
+    return true;
+
+  auto giveUp = [&](const void* p, const std::string& what) {
+    givenUp.push_back(p);
+    event("zbieranie", "nie dosięga: " + what, false);
+    choreBody = nullptr;
+    choreItem = nullptr;
+    walk.on   = false;
+    };
+  auto bestWeapon = [&]() {
+    if(pl.weaponState()!=WeaponState::NoWeapon)
+      return;
+    const std::string nw = pl.arpgEquipBestWeapons();
+    if(!nw.empty())
+      event("bron", "założona lepsza broń: " + toUtf8(nw), false);
+    };
+
+  // 1. bodies of the enemies killed: "take all"
+  if(choreBody==nullptr) {
+    for(size_t i=0; i<bodies.size();) {
+      Focus f;
+      f.npc = bodies[i];
+      if(w.validateFocus(f).npc==nullptr || dist2d(bodies[i]->position(), pl.position())>kLootRange) {
+        bodies.erase(bodies.begin()+int(i));
+        continue;
+        }
+      choreBody = bodies[i];
+      choreT0   = now;
+      walk.on   = false;
+      bodies.erase(bodies.begin()+int(i));
+      break;
+      }
+    }
+  if(choreBody!=nullptr) {
+    Focus f;
+    f.npc = choreBody;
+    if(w.validateFocus(f).npc==nullptr) {
+      choreBody = nullptr;
+      return true;
+      }
+    if(now-choreT0>kChoreMs) {
+      giveUp(choreBody, "ciało " + nameOf(*choreBody));
+      return true;
+      }
+    if(dist2d(choreBody->position(), pl.position())>220.f) {
+      if(!walk.on)
+        walkStart(w, pl, choreBody->position(), 180.f);
+      walkWhat = "idzie do ciała: " + nameOf(*choreBody);
+      if(walkTick(w, pl, now)<0)
+        giveUp(choreBody, "ciało " + nameOf(*choreBody));
+      return true;
+      }
+    const std::string got = pl.arpgLootAll(*choreBody);
+    if(!got.empty())
+      event("lup", nameOf(*choreBody) + ": " + toUtf8(got), false);
+    choreBody = nullptr;
+    walk.on   = false;
+    bestWeapon();
+    return true;
+    }
+
+  // 2. things lying around: weapons, arrows, food, potions, gold - nobody's (taking someone's is theft)
+  if(choreItem==nullptr) {
+    Item* best  = nullptr;
+    float bestD = kPickRange;
+    const int32_t want = int32_t(ITM_CAT_NF | ITM_CAT_FF | ITM_CAT_MUN | ITM_CAT_FOOD | ITM_CAT_POTION);
+    w.forEachItemNear(pl.position(), kPickRange, [&](Item& it) {
+      auto& h = it.handle();
+      if(((h.main_flag & want)==0 && !it.isGold()) || h.owner!=0 || h.owner_guild!=0)
+        return;
+      if(std::find(givenUp.begin(), givenUp.end(), &it)!=givenUp.end())
+        return;
+      const float dd = dist2d(it.position(), pl.position());
+      if(dd>=bestD || std::abs(it.position().y-pl.position().y)>250.f)
+        return;
+      best  = &it;
+      bestD = dd;
+      });
+    if(best!=nullptr) {
+      choreItem = best;
+      choreT0   = now;
+      walk.on   = false;
+      }
+    }
+  if(choreItem!=nullptr) {
+    auto*  it = static_cast<Item*>(choreItem);
+    Focus  f;
+    f.item = it;
+    if(w.validateFocus(f).item==nullptr) {
+      // gone from the world: taken
+      choreItem = nullptr;
+      walk.on   = false;
+      bestWeapon();
+      return true;
+      }
+    const std::string name = toUtf8(it->displayName());
+    if(now-choreT0>kChoreMs) {
+      giveUp(it, name);
+      return true;
+      }
+    const float dd = dist2d(it->position(), pl.position());
+    if(dd>500.f) {
+      if(!walk.on)
+        walkStart(w, pl, it->position(), 350.f);
+      walkWhat = "idzie po: " + name;
+      if(walkTick(w, pl, now)<0)
+        giveUp(it, name);
+      return true;
+      }
+    walk.on = false;
+    if(hooks.player->arpgBotIdle() || now-walk.clickT>kTalkClickMs) {
+      walk.clickT = now;
+      hooks.player->arpgBotClick(f, false, false);
+      }
+    doing = "podnosi: " + name + " (" + meters(dd) + ")";
+    return true;
+    }
+  return false;
   }
 
 bool ArpgPlotBot::strayTalk(uint64_t now, bool quiet) {
@@ -1110,7 +1480,12 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
     const bool ours    = talking!=nullptr && talking==lastTalk;
     if(talking!=nullptr && !(ours && check) && strayTalk(now, ours))
       return;
-    if(talking==nullptr && s.verb!="spij" && s.verb!="zapisz" && !check && defendTick(w, pl, now))
+    const bool fights = s.verb!="spij" && s.verb!="zapisz" && s.verb!="sprawdz" && s.verb!="etykieta";
+    if(talking==nullptr && fights && defendTick(w, pl, now))
+      return;
+    // between the fights, on the way: heal, take from the bodies, pick up, the best weapon
+    const bool free = s.verb=="idz" || s.verb=="zabierz" || s.verb=="czekaj" || s.verb=="zabij";
+    if(talking==nullptr && free && choresTick(w, pl, now))
       return;
     }
   if(now-stepT0>kStepMs) {
@@ -1166,8 +1541,10 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     }
 
   if(phase==1) {
-    // walk up to the npc (it may move: the walk starts again)
+    // walk up to the npc (it may move: the walk starts again); on the way the fights and the chores
     if(defendTick(w, pl, now))
+      return;
+    if(choresTick(w, pl, now))
       return;
     const float d = dist2d(pl.position(), npc->position());
     if(d<=kTalkWalk) {
@@ -1371,11 +1748,17 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
       break;
       }
     }
+  for(auto& n:s.arg)
+    if(auto npc = findNpc(w, n); npc!=nullptr && npc->isDead() &&
+       std::find(bodies.begin(), bodies.end(), npc)==bodies.end() && std::find(givenUp.begin(), givenUp.end(), npc)==givenUp.end())
+      bodies.push_back(npc);
   if(tg==nullptr) {
+    fightEnd(pl);
     nextStep(true, "");
     return;
     }
   if(now-stepT0>kKillMs) {
+    fightEnd(pl);
     nextStep(false, std::string("limit czasu walki, żyje: ") + nameOf(*tg));
     return;
     }
@@ -1390,17 +1773,14 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
     }
   walk.on   = false;
   lastEnemy = nameOf(*tg);
-  if(hooks.player->arpgBotIdle() || now-attackT>2000) {
-    attackT = now;
-    hooks.player->arpgBotClick(Focus(*tg), true, true);
-    }
+  fightTick(w, pl, *tg, now);
   size_t alive = 0;
   for(auto& n:s.arg)
     if(auto npc = findNpc(w, n); npc!=nullptr && !npc->isDead())
       ++alive;
   doing = "walczy z " + nameOf(*tg) + " (" + std::to_string(tg->attribute(ATR_HITPOINTS)) + "/" +
           std::to_string(tg->attribute(ATR_HITPOINTSMAX)) + "), " + meters(d) + ", żywych celów " + std::to_string(alive) +
-          ", " + std::to_string((now-stepT0)/1000) + " s";
+          ", " + std::to_string((now-stepT0)/1000) + " s" + (lastMove.empty() ? std::string() : " | " + lastMove);
   }
 
 void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
