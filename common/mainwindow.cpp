@@ -79,7 +79,8 @@ MainWindow::MainWindow(Device& device)
 
   Gothic::inst().onBenchmarkFinished.bind(this,&MainWindow::onBenchmarkFinished);
 
-  // gothic-diablo: the test bot: pictures of the world without the interface; talks and letters end at once
+  // gothic-diablo: the test bot: pictures of the world without the interface; letters end at once; the story bot
+  // walks, talks and fights through the player control and the dialog menu, saves like a player
   arpgAutotest.setHooks({
     [this]() {
       auto tex = renderer.screenshoot(cmdId, Size(int(swapchain.w()),int(swapchain.h())));
@@ -87,16 +88,18 @@ MainWindow::MainWindow(Device& device)
         return Pixmap();
       return Resources::device().readPixels(textureCast<const Texture2d&>(tex));
       },
-    [this]() { return dialogs.isActive() || document.isActive() || chapter.isActive() || inventory.isActive(); },
+    [this]() { return document.isActive() || chapter.isActive() || inventory.isActive(); },
     [this]() {
-      dialogs.arpgAbort();
       if(document.isActive())
         document.close();
       if(chapter.isActive())
         chapter.arpgClose();
       if(inventory.isActive())
         inventory.close();
-      }
+      },
+    [this](const std::string& slot, const std::string& name) { saveGame(slot, name); },
+    &player,
+    &dialogs,
     });
 
   if(!Gothic::inst().defaultSave().empty()){

@@ -17,6 +17,8 @@
 #include "physics/dynamicworld.h"
 #include "world/objects/npc.h"
 #include "world/world.h"
+#include "game/arpgplotbot.h"
+#include "ui/dialogmenu.h"
 
 using namespace Tempest;
 
@@ -237,11 +239,8 @@ if(POPRZEDNI){P=function(o){PREV[o.w+"|"+o.p]=o};var sc=document.createElement("
 ArpgAutotest::ArpgAutotest() {
   if(!isEnabled())
     return;
-  if(CommandLine::inst().arpgAutotest()!="kamera") {
-    Log::e("autotest: nieznany scenariusz \"", std::string(CommandLine::inst().arpgAutotest()), "\" (jest: kamera)");
-    return;
-    }
-  state = State::WaitGame;
+  // "kamera": the camera tour; any other name: a scenario of the story bot (autotest\<name>.txt or built in)
+  state = CommandLine::inst().arpgAutotest()=="kamera" ? State::WaitGame : State::Plot;
   }
 
 ArpgAutotest::~ArpgAutotest() {
@@ -382,9 +381,52 @@ void ArpgAutotest::placeHero(World& w, Npc& pl, const Point& p) {
   frameNum  = 0;
   }
 
+bool ArpgAutotest::uiOrTalk() const {
+  return (hooks.uiBusy && hooks.uiBusy()) || (hooks.dialogs!=nullptr && hooks.dialogs->isActive());
+  }
+
+void ArpgAutotest::closeUiAndTalk() {
+  if(hooks.dialogs!=nullptr)
+    hooks.dialogs->arpgAbort();
+  if(hooks.closeUi)
+    hooks.closeUi();
+  }
+
+void ArpgAutotest::tickPlot() {
+  if(plot==nullptr) {
+    const std::string sc  = std::string(CommandLine::inst().arpgAutotest());
+    const std::string dir = "autotest/" + stamp("%Y-%m-%d_%H%M%S") + "_" + sc + "/";
+    ArpgPlotBot::Hooks h;
+    h.shot    = hooks.shot;
+    h.save    = hooks.save;
+    h.player  = hooks.player;
+    h.dialogs = hooks.dialogs;
+    plot = std::make_unique<ArpgPlotBot>(sc, dir, std::move(h));
+    Log::i("autotest: bot fabuly, wyniki w ", dir);
+    }
+  if(plot->isDone()) {
+    Log::i("autotest: ", plot->summary());
+    state = State::Done;
+    Tempest::SystemApi::exit();
+    return;
+    }
+  auto world = Gothic::inst().world();
+  auto pl    = Gothic::inst().player();
+  if(world==nullptr || pl==nullptr || Gothic::inst().checkLoading()!=Gothic::LoadState::Idle)
+    return;
+  // letters, the inventory: the bot does not read; talks are the bot's own business
+  if(hooks.uiBusy && hooks.uiBusy())
+    hooks.closeUi();
+  plot->tick(*world, *pl);
+  }
+
 void ArpgAutotest::tick() {
   if(state==State::Off || state==State::Done)
     return;
+  if(state==State::Plot) {
+    tickPlot();
+    return;
+    }
   if(runDir.empty())
     start();
 
@@ -396,6 +438,7 @@ void ArpgAutotest::tick() {
 
   switch(state) {
     case State::Off:
+    case State::Plot:
     case State::Done:
       break;
 
@@ -404,8 +447,8 @@ void ArpgAutotest::tick() {
         t0 = now;
         return;
         }
-      if(hooks.uiBusy && hooks.uiBusy())
-        hooks.closeUi();
+      if(uiOrTalk())
+        closeUiAndTalk();
       if(world->currentCs()!=nullptr || now-t0<kStartMs)
         return;
       state = State::NextWorld;
@@ -444,8 +487,8 @@ void ArpgAutotest::tick() {
         }
       if(world==nullptr || pl==nullptr || !isWorld(*world, worlds[worldId]))
         return;
-      if(hooks.uiBusy && hooks.uiBusy())
-        hooks.closeUi();
+      if(uiOrTalk())
+        closeUiAndTalk();
       if(world->currentCs()!=nullptr)
         return;
       // the loading itself is not ticked: wait kWorldMs of game time after it
@@ -477,10 +520,9 @@ void ArpgAutotest::tick() {
     case State::Settle: {
       if(world==nullptr || pl==nullptr)
         return;
-      if((hooks.uiBusy && hooks.uiBusy()) || world->currentCs()!=nullptr) {
+      if(uiOrTalk() || world->currentCs()!=nullptr) {
         // a talk (an NPC with important news) or a cutscene came up: closed, the point once more
-        if(hooks.closeUi)
-          hooks.closeUi();
+        closeUiAndTalk();
         if(uiStops<kUiRetries) {
           ++uiStops;
           placeHero(*world, *pl, points[pointId]);

@@ -24,6 +24,9 @@
     -Autotest kamera  bot testowy (autotest.bat): objazd kamery po punktach drogi, raport w gra\dane\autotest\<data>\raport.html
     -Swiaty a,b       bot: tylko te światy (newworld, oldworld, addonworld, dragonisland)
     -Co N             bot: co N-ty punkt drogi;  -Limit N  bot: najwyżej N punktów na świat
+    -Autotest rozdzial1  bot fabuły (bot_fabuly.bat): scenariusz gra\dane\autotest\rozdzial1.txt albo wbudowany
+    -Od <etykieta>    bot fabuły: start od etykiety scenariusza, z zapisu save_slot_bot_<etykieta>.sav (gdy jest)
+    -Zapis <nazwa>    wczytaj zapis save_slot_<nazwa>.sav (np. bot_blad1 z raportu)
     pozostałe parametry trafiają do Gothic2Notr.exe
 #>
 [CmdletBinding()]
@@ -42,6 +45,8 @@ param(
   [string]$Swiaty = '',
   [ValidateRange(1, 1000)][int]$Co = 1,
   [ValidateRange(0, 100000)][int]$Limit = 0,
+  [string]$Od = '',
+  [string]$Zapis = '',
   [Parameter(ValueFromRemainingArguments = $true)][string[]]$GameArgs
 )
 
@@ -293,7 +298,12 @@ function Start-Game([string]$Dir) {
     if ($Swiaty) { $argList += @('-autotest-swiaty', $Swiaty) }
     if ($Co -gt 1) { $argList += @('-autotest-co', "$Co") }
     if ($Limit -gt 0) { $argList += @('-autotest-limit', "$Limit") }
+    if ($Od) {
+      $argList += @('-autotest-od', $Od)
+      if (-not $Zapis -and (Test-Path (Join-Path $Data "save_slot_bot_$Od.sav"))) { $Zapis = "bot_$Od" }
+    }
   }
+  if ($Zapis) { $argList += @('-save', $Zapis) }
   if ($GameArgs) { $argList += $GameArgs }
   Log "Uruchamiam $(Split-Path -Leaf $Dir)..."
   Start-Process -FilePath (Join-Path $Dir $Exe) -ArgumentList $argList -WorkingDirectory $Data

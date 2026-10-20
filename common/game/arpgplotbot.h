@@ -1,0 +1,137 @@
+#pragma once
+
+#include <Tempest/Pixmap>
+#include <Tempest/Vec>
+
+#include <cstdint>
+#include <cstdio>
+#include <functional>
+#include <string>
+#include <vector>
+
+class World;
+class Npc;
+class PlayerControl;
+class DialogMenu;
+
+// gothic-diablo: the story bot (faza 10, część 4). Plays a scenario (autotest/<name>.txt: one step per line, names from the
+// scripts) the honest way: walks with the ARPG click along the waynet, talks by clicking the npc and picking the lines,
+// fights with ARPG clicks, drinks potions. Results: gra\dane\autotest\<date>_<name>\ (raport.html, kroki.js, zdarzenia.js).
+class ArpgPlotBot final {
+  public:
+    struct Hooks {
+      std::function<Tempest::Pixmap()>                            shot;    // the world without the interface
+      std::function<void(const std::string&, const std::string&)> save;    // slot file, name in the menu
+      PlayerControl*                                              player  = nullptr;
+      DialogMenu*                                                 dialogs = nullptr;
+      };
+
+    ArpgPlotBot(std::string name, std::string runDir, Hooks hooks);
+    ~ArpgPlotBot();
+
+    bool        isDone() const { return done; }
+    // once per game tick, while the game is not loading and the hero exists
+    void        tick(World& w, Npc& pl);
+    std::string summary() const;
+
+  private:
+    struct Step {
+      int                      line = 0;
+      std::string              verb;
+      std::vector<std::string> arg;
+      std::string              text;
+      bool                     invalid = false;
+      };
+
+    struct Walk {
+      bool                       on     = false;
+      Tempest::Vec3              dest   = {};
+      float                      reach  = 0;
+      std::vector<Tempest::Vec3> route;
+      size_t                     idx    = 0;
+      float                      best   = 0;
+      uint64_t                   bestT  = 0;
+      uint64_t                   clickT = 0;
+      size_t                     clickIdx = size_t(-1);
+      int                        stuck  = 0;
+      int                        jumps  = 0;   // teleports in this walk (stuck for good)
+      };
+
+    Hooks                    hooks;
+    std::string              name;
+    std::string              runDir;
+    std::string              source;           // where the scenario came from
+    std::vector<Step>        steps;
+    std::vector<std::string> handlers;         // "gdy": lines picked whenever they show up in a talk nobody expected
+    bool                     stopOnError = false;
+    std::string              startLabel;
+
+    bool                     started = false;
+    bool                     done    = false;
+    uint64_t                 readyT  = 0;
+    size_t                   cur     = 0;
+    int                      phase   = 0;
+    uint64_t                 stepT0  = 0;
+    uint64_t                 phaseT0 = 0;
+    uint64_t                 pickT   = 0;
+    std::string              note;
+    bool                     knewBefore = false;
+    bool                     picked     = false;
+    int                      talkRetry  = 0;
+    size_t                   countBefore = 0;
+    Npc*                     lastTalk   = nullptr;
+
+    Walk                     walk;
+    Npc*                     defend   = nullptr;
+    uint64_t                 defendT0 = 0;
+    uint64_t                 attackT  = 0;
+    uint64_t                 potionT  = 0;
+    uint64_t                 strayT   = 0;
+
+    size_t                   nOk = 0, nFail = 0, nSkip = 0, nEvents = 0, nHeal = 0, nStuck = 0, nErrSaves = 0;
+    uint64_t                 runT0 = 0;
+    std::FILE*               fSteps  = nullptr;
+    std::FILE*               fEvents = nullptr;
+    std::FILE*               fLog    = nullptr;
+
+    bool        load();
+    void        parse(const std::string& text);
+    void        validate(World& w);
+    bool        checkName(World& w, const std::string& n, const char* kind, std::string& why);
+    bool        checkCond(World& w, const std::vector<std::string>& a, size_t from, std::string& why);
+
+    void        startRun(World& w);
+    void        finish(const char* why);
+    void        nextStep(bool ok, const std::string& why);
+    void        event(const char* kind, const std::string& text, bool picture);
+    std::string picture(const char* tag);
+    void        writeState(bool end = false, const std::string& why = std::string()) const;
+    void        writeReport() const;
+    void        writePrevious() const;
+    void        log(const std::string& line);
+
+    void        guardHealth(Npc& pl, uint64_t now);
+    bool        defendTick(World& w, Npc& pl, uint64_t now);
+    bool        strayTalk(uint64_t now, bool quiet);
+
+    void        walkStart(World& w, Npc& pl, const Tempest::Vec3& dest, float reach);
+    int         walkTick(World& w, Npc& pl, uint64_t now);  // 1 arrived, 0 on the way, -1 failed
+
+    Npc*        findNpc(World& w, const std::string& n) const;
+    bool        targetPos(World& w, const std::string& n, Tempest::Vec3& out, float& reach) const;
+    size_t      itemId(World& w, const std::string& n) const;
+    bool        intValue(World& w, const std::string& n, int32_t& out) const;
+    bool        cond(World& w, Npc& pl, const std::vector<std::string>& a, size_t from, std::string& why) const;
+
+    void        doTalk (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doPick (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doExit (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doGo   (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doKill (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doTake (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doUse  (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doWait (World& w, Npc& pl, const Step& s, uint64_t now, bool once);
+    void        doSleep(World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doSave (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doJump (World& w, Npc& pl, const Step& s, uint64_t now);
+  };

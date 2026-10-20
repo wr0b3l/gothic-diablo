@@ -2068,6 +2068,50 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
   arpgClick.stuckPos = pl->position();
   }
 
+void PlayerControl::arpgBotGround(const Tempest::Vec3& p) {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  arpgClick = ArpgClick();
+  if(pl==nullptr)
+    return;
+  arpgClick.kind     = ArpgClick::Ground;
+  arpgClick.point    = p;
+  arpgClick.stuckPos = pl->position();
+  }
+
+void PlayerControl::arpgBotClick(const Focus& f, bool held, bool attack) {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl==nullptr)
+    return;
+  if(attack && f.npc!=nullptr) {
+    arpgClick          = ArpgClick();
+    arpgClick.held     = held;
+    arpgClick.kind     = ArpgClick::Attack;
+    arpgClick.target   = Focus(*f.npc);
+    arpgClick.stuckPos = pl->position();
+    arpgHover          = arpgClick.target;
+    setTarget(f.npc);
+    if(pl->weaponState()==WeaponState::NoWeapon)
+      arpgDrawPreferred(*pl);
+    return;
+    }
+  arpgMouseDown(f);
+  arpgClick.held = held;
+  }
+
+void PlayerControl::arpgBotRelease() {
+  arpgClick.held = false;
+  }
+
+bool PlayerControl::arpgBotIdle() const {
+  return arpgClick.kind==ArpgClick::None;
+  }
+
+void PlayerControl::arpgBotPotion() {
+  arpgPotion(1);
+  }
+
 void PlayerControl::arpgMouseUp() {
   arpgClick.held = false;
   }

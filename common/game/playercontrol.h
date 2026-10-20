@@ -129,6 +129,12 @@ class PlayerControl final {
     Npc*  arpgLockTarget() const;                // Diathic: the locked target (Ctrl held 0.4 s, like Dark Souls) or null
     bool  arpgCursorOnEnemy() const;             // Diathic: a living enemy under the mouse cursor (red sword cursor)
     bool  arpgAttackQueued() const;              // an attack waits for its moment (combo window)
+    // gothic-diablo: the test bot (ArpgPlotBot) gives the same orders as a mouse click
+    void  arpgBotGround(const Tempest::Vec3& p);               // a click on the ground: walk there
+    void  arpgBotClick(const Focus& f, bool held, bool attack); // a click on an npc / item / object (attack: like Ctrl + click)
+    void  arpgBotRelease();                                     // the button up
+    bool  arpgBotIdle() const;                                  // no order left (done, stuck, or dropped)
+    void  arpgBotPotion();                                      // the health potion key
 
   private:
     enum WeaponAction : uint8_t {

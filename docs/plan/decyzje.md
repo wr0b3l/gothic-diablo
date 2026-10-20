@@ -72,6 +72,11 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - Bez zapisów gry przy błędzie: w objeździe kamery do odtworzenia wystarczy punkt drogi (MARVIN, F2: `goto waypoint <nazwa>`)
 - Wartości do balansu (stałe na początku `arpgautotest.cpp`): czas na kamerę 1,5 s, czerń = max RGB ≤ 10, „czarny” od 25% środka ekranu, niski FPS < 30, upadek > 5 m, „pion” > 4 m do sąsiada; wagi oceny: czerń ×100, zasłonięty 60, skała bez wycięcia 50, skała wycięta 5, FPS 2 / klatkę poniżej 30, upadek 40, pion 10, rozmowa 5; duży zrzut od oceny 25
 - Do testu: najpierw krótko `autotest.bat -Swiaty newworld -Limit 30` (czy gra startuje, przenosi bohatera, zamyka się, raport z miniaturami), potem całość na noc (wszystkie 4 światy, kilka godzin); w raporcie ocenić, czy „czarny” i „zasłonięty” trafiają w prawdziwe błędy (progi do korekty)
+- 2026-10-20: „zróbmy bota na 1 akt na podstawie gameplay” — decyzje: kolejność z solucji tekstowej (gry-online), od razu tryb uczciwy (chodzenie na klik, rozmowy klikiem, walka ARPG)
+  - Pilotaż: rozdział 1, wątek główny, ścieżka straży przez skrót Noc Kruka (Cavalorn → Vatras → Lares → Martin → Andre → Hagen); wejście do miasta przepustką Canthara (w mieście „Nie” na jego prośbę o list — bez pułapki u Andre); zaczepka Moe w porcie = bijatyka
+  - Nazwy ze skryptów 2.6 PL (VaanaCZ/gothic-2-addon-scripts), walidator w piaskownicy: 0 błędów
+  - Zacięcie na drodze = przeniesienie na punkt + zdarzenie w raporcie (bot idzie dalej); brak mikstury przy < 15% zdrowia = leczenie bota + zdarzenie; śmierć = koniec przebiegu
+  - Do testu: `bot_fabuly.bat` (cały rozdział, kilkadziesiąt minut — gra w oknie, nie minimalizować); po błędzie `bot_fabuly.bat -Od <etykieta>` od ostatniego zapisu przed miejscem błędu; raport: pierwszy błąd, zdarzenia (zacięcia, leczenia, rozmowy nieoczekiwane)
 
 ## Publikacja (2026-10-16)
 - Użytkownik: „dodajmy do planu dokładne kroki do zrobienia przed publikacją” → publikacja.md (etapy A–G, decyzje otwarte: język pierwszej wersji, launcher, fazy 7–8 przed betą, pad)

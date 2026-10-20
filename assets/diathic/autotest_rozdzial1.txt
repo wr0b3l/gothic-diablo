@@ -1,0 +1,157 @@
+# Diathic - bot fabuły: rozdział 1, wątek główny, ścieżka straży (tryb uczciwy)
+# Kolejność z solucji (gry-online.pl, Gothic II Noc Kruka, rozdział I: zadania 1-4, 11, 15, 14), nazwy ze skryptów 2.6 PL.
+# Xardas -> Lester -> Cavalorn i bandyci (list do Vatrasa) -> Canthar (przepustka) -> brama miasta -> Vatras (Wodny Krąg)
+# -> Lares (pomoc w gildii: straż) -> Martin (złodziej Rangar w nocy) -> list polecający -> Andre (straż)
+# -> górne miasto -> Lord Hagen -> przełęcz = rozdział 2.
+#
+# Kroki (jeden w linii, # = komentarz):
+#   idz <postać|punkt drogi> [cm]      rozmowa <postać> [<informacja>]      wybor <informacja|funkcja wyboru>
+#   koniec                             zabij <postać> [...]                  zabierz <przedmiot> [cm]
+#   zaloz <przedmiot>                  uzyj <przedmiot>                      spij <GG:MM>
+#   czekaj <warunek> [na <s>]          sprawdz <warunek>                     zapisz <nazwa>   (-save bot_<nazwa>)
+#   etykieta <nazwa>                   (start od etykiety: -autotest-od <nazwa>, z zapisu bot_<nazwa>: przed każdą etykietą jest zapisz)
+# Warunki: info <DIA_...> | zmienna <NAZWA> <op> <liczba|stała> | przedmiot <IT...> [<op> N] | dziennik <TOPIC_...> [aktywny|sukces]
+#          martwy <postać> | gildia <GIL_...> | rozdzial <N> | blisko <postać> <punkt> <cm> | obok <postać> <cm> | godzina GG:MM GG:MM
+#          nie <warunek>
+# gdy <wybór> ...  = te linie bot wybiera sam w rozmowach, których scenariusz nie przewiduje
+# po_bledzie dalej|stop
+
+po_bledzie dalej
+gdy DIA_Canthar_PAYPRICEINCITY_Nein
+gdy DIA_Moe_Hallo_Gehen DIA_Moe_Hallo_Vergisses
+
+# ---------------------------------------------------------------- wieża Xardasa
+etykieta xardas
+rozmowa NONE_100_Xardas DIA_Xardas_Hello
+wybor DIA_Addon_Xardas_Hello_Dragons
+wybor DIA_Addon_Xardas_Hello_Man
+rozmowa NONE_100_Xardas DIA_Xardas_TODO
+rozmowa NONE_100_Xardas DIA_Xardas_ARTEFAKT
+rozmowa NONE_100_Xardas DIA_Xardas_PALADIN
+rozmowa NONE_100_Xardas DIA_Xardas_WEAPON
+rozmowa NONE_100_Xardas DIA_Xardas_FirstEXIT
+czekaj rozdzial 1 na 20
+sprawdz dziennik TOPIC_INNOSEYE aktywny
+
+# ---------------------------------------------------------------- Lester w dolinie
+zapisz lester
+etykieta lester
+rozmowa PC_Psionic DIA_Lester_Hello
+wybor DIA_Lester_Hello_Lester
+rozmowa PC_Psionic DIA_Lester_WhatHappened
+rozmowa PC_Psionic DIA_Lester_MineColony
+rozmowa PC_Psionic DIA_Lester_SEND_XARDAS
+
+# ---------------------------------------------------------------- Cavalorn i bandyci (zadanie 3)
+zapisz cavalorn
+etykieta cavalorn
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_HALLO
+wybor DIA_Addon_Cavalorn_HALLO_Ja
+wybor DIA_Addon_Cavalorn_HALLO_Stadt
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_JUNGS
+sprawdz zmienna SC_KnowsRanger == 1
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_Ring
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_WASMACHSTDU
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_Banditen
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_ARTEFAKT
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_HELFEN
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_AUSRUESTUNG
+sprawdz przedmiot ItMW_Addon_Knife01
+zaloz ItMW_Addon_Knife01
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_LETSKILLBANDITS
+zabij BDT_1013_Bandit_L BDT_1014_Bandit_L BDT_1015_Bandit_L
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_BragoKilled
+sprawdz przedmiot ItWr_SaturasFirstMessage_Addon_Sealed
+
+# ---------------------------------------------------------------- Canthar: przepustka do miasta (zadanie 4)
+zapisz canthar
+etykieta canthar
+rozmowa VLK_468_Canthar DIA_Canthar_Hallo
+rozmowa VLK_468_Canthar DIA_Canthar_WhatOffer
+wybor DIA_Canthar_WhatOffer_Price
+wybor DIA_Canthar_WhatOffer_Ok
+sprawdz przedmiot ItWr_Passierschein
+
+# ---------------------------------------------------------------- brama miasta
+zapisz brama
+etykieta brama
+rozmowa Mil_310_Stadtwache DIA_Mil_310_Stadtwache_Passierschein
+sprawdz zmienna Mil_310_schonmalreingelassen == 1
+
+# ---------------------------------------------------------------- Vatras: list Cavalorna, Wodny Krąg (zadanie 11)
+zapisz vatras
+etykieta vatras
+rozmowa VLK_439_Vatras DIA_Vatras_GREET
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_Cavalorn
+wybor DIA_Addon_Vatras_Cavalorn_Cavalorn
+sprawdz zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_SUCCESS
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_WannaBeRanger
+wybor DIA_Vatras_INFLUENCE_FIRST_TRUTH
+wybor DIA_Vatras_INFLUENCE_SECOND_TRUTH
+wybor DIA_Vatras_INFLUENCE_THIRD_TRUTH
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_HowToJoin
+wybor DIA_Addon_Vatras_HowToJoin_WhatsGreat
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_GuildBypass
+wybor DIA_Addon_Vatras_GuildBypass_BACK
+koniec
+sprawdz zmienna Vatras_GehZuLares == 1
+sprawdz przedmiot ItMi_Ornament_Addon_Vatras
+
+# ---------------------------------------------------------------- Lares w porcie: pomoc w dostaniu się do straży (zadanie 15)
+zapisz lares
+etykieta lares
+rozmowa VLK_449_Lares DIA_Lares_HALLO
+wybor DIA_Lares_HALLO_YES
+wybor DIA_Lares_HALLO_LEE
+rozmowa VLK_449_Lares DIA_Addon_Lares_Vatras
+sprawdz zmienna Lares_RangerHelp == 1
+rozmowa VLK_449_Lares DIA_Addon_Lares_Ornament
+rozmowa VLK_449_Lares DIA_Addon_Lares_Gilde
+wybor DIA_Addon_Lares_Gilde_MIL
+sprawdz zmienna RangerHelp_gildeMIL == 1
+sprawdz dziennik TOPIC_Addon_RangerHelpMIL aktywny
+
+# ---------------------------------------------------------------- Martin: złodziej zapasów
+zapisz martin
+etykieta martin
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_Hallo
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_WasMachstDu
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_Rangerhelp
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_Auftrag
+wybor DIA_Addon_Martin_Auftrag_weiter
+sprawdz zmienna MIS_Addon_Martin_GetRangar == LOG_RUNNING
+idz NW_CITY_PALCAMP_15
+spij 23:30
+czekaj blisko MIL_321_Rangar NW_CITY_PALCAMP_15 600 na 180
+rozmowa MIL_321_Rangar DIA_Addon_Rangar_Erwischt
+czekaj zmienna SC_GotRangar == 1 na 10
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_GotRangar
+rozmowa Mil_350_Addon_Martin DIA_Addon_Martin_GetMiliz
+sprawdz przedmiot ItWr_Martin_MilizEmpfehlung_Addon
+
+# ---------------------------------------------------------------- Lord Andre: wstąpienie do straży
+zapisz andre
+etykieta andre
+rozmowa Mil_311_Andre DIA_Andre_Hallo
+rozmowa Mil_311_Andre DIA_Andre_AskToJoin
+rozmowa Mil_311_Andre DIA_Addon_Andre_MartinEmpfehlung
+rozmowa Mil_311_Andre DIA_Andre_JOIN
+wybor DIA_Andre_JOIN_Yes
+sprawdz gildia GIL_MIL
+sprawdz przedmiot ITAR_MIL_L
+zaloz ITAR_MIL_L
+
+# ---------------------------------------------------------------- górne miasto, Lord Hagen (zadanie 14) -> rozdział 2
+zapisz hagen
+etykieta hagen
+rozmowa Mil_305_Torwache DIA_Mil_305_Torwache_PassAsMil
+sprawdz zmienna Mil_305_schonmalreingelassen == 1
+rozmowa PAL_205_Torwache DIA_PAL_205_Torwache_PassAsMil
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Hallo
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Armee
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Proof
+sprawdz zmienna Hagen_BringProof == 1
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Pass
+czekaj rozdzial 2 na 30
+sprawdz przedmiot ItKe_Pass_MIS
+zapisz rozdzial2

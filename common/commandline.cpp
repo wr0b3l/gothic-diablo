@@ -109,8 +109,9 @@ CommandLine::CommandLine(int argc, const char** argv) {
     else if(arg=="-classic") {
       arpgMode = false;
       }
-    else if(arg=="-autotest" || arg=="-autotest-swiaty" || arg=="-autotest-co" || arg=="-autotest-limit") {
+    else if(arg=="-autotest" || arg=="-autotest-swiaty" || arg=="-autotest-co" || arg=="-autotest-limit" || arg=="-autotest-od") {
       // gothic-diablo: the test bot (ArpgAutotest): -autotest kamera [-autotest-swiaty a,b] [-autotest-co N] [-autotest-limit N]
+      // or -autotest <scenario> [-autotest-od <label>] (the story bot, ArpgPlotBot)
       if(i+1>=argc)
         continue;
       ++i;
@@ -121,6 +122,8 @@ CommandLine::CommandLine(int argc, const char** argv) {
         }
       else if(arg=="-autotest-swiaty")
         arpgTestWorlds = v;
+      else if(arg=="-autotest-od")
+        arpgTestFrom = v;
       else if(arg=="-autotest-co")
         arpgTestEvery = std::max(1, int(std::strtol(v.c_str(), nullptr, 10)));
       else

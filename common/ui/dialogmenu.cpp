@@ -293,6 +293,44 @@ void DialogMenu::arpgAbort() {
     close();
   }
 
+bool DialogMenu::arpgBotLines(std::vector<ArpgBotLine>& out) const {
+  out.clear();
+  if(state!=State::Active || current.time>0 || haveToWaitOutput() || trade.isOpen()!=InventoryMenu::State::Closed)
+    return false;
+  if(Camera::isArpgEnabled() && !arpgChoiceReady())
+    return false;
+  auto w = Gothic::inst().world();
+  if(w==nullptr)
+    return false;
+  for(auto& c:choice)
+    out.push_back({w->script().arpgChoiceName(c), c.title});
+  return !out.empty();
+  }
+
+bool DialogMenu::arpgBotPick(std::string_view name) {
+  std::vector<ArpgBotLine> lines;
+  if(!arpgBotLines(lines))
+    return false;
+  for(size_t i=0; i<lines.size() && i<choice.size(); ++i) {
+    if(lines[i].name.size()!=name.size())
+      continue;
+    bool same = true;
+    for(size_t c=0; c<name.size() && same; ++c)
+      same = std::toupper(static_cast<unsigned char>(lines[i].name[c]))==std::toupper(static_cast<unsigned char>(name[c]));
+    if(!same)
+      continue;
+    dlgSel = i;
+    onSelect();
+    return true;
+    }
+  return false;
+  }
+
+void DialogMenu::arpgBotSkip() {
+  if(state!=State::Idle && current.time>0)
+    skipPhrase();
+  }
+
 bool DialogMenu::hasContent() const {
   return (current.time>0 || choice.size()>0);
   }

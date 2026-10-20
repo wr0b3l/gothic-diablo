@@ -6,22 +6,30 @@
 #include <cstdint>
 #include <cstdio>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 class World;
 class Npc;
+class PlayerControl;
+class DialogMenu;
+class ArpgPlotBot;
 
 // gothic-diablo: the test bot (faza 10). Started with -autotest <scenario>; runs without windows or questions and
 // closes the game at the end. Results: gra\dane\autotest\<date and time>\ (raport.html, pictures, log).
+// Any other scenario name: the story bot (ArpgPlotBot, część 4).
 // Scenario "kamera" (część 1, objazd kamery): every point of the waynet in every world -> the hero there, a moment for
 // the ARPG camera, then measurements (black screen, hidden hero, camera in the rock, FPS, heights) and a picture.
 class ArpgAutotest final {
   public:
     struct Hooks {
       std::function<Tempest::Pixmap()> shot;    // the world without the interface, current camera
-      std::function<bool()>            uiBusy;  // a talk, a letter, the chapter screen, the inventory
+      std::function<bool()>            uiBusy;  // a letter, the chapter screen, the inventory (not a talk)
       std::function<void()>            closeUi; // ends all of them at once
+      std::function<void(const std::string&, const std::string&)> save; // slot file, name in the menu
+      PlayerControl*                   player  = nullptr;
+      DialogMenu*                      dialogs = nullptr;
       };
 
     ArpgAutotest();
@@ -36,6 +44,7 @@ class ArpgAutotest final {
   private:
     enum class State : uint8_t {
       Off,
+      Plot,       // the story bot (ArpgPlotBot) plays a scenario
       WaitGame,   // the new game is loading, its first talk
       NextWorld,
       WaitWorld,  // a world change is loading
@@ -67,6 +76,7 @@ class ArpgAutotest final {
       };
 
     Hooks                    hooks;
+    std::unique_ptr<ArpgPlotBot> plot;
     State                    state = State::Off;
     std::string              runDir;
     std::FILE*               fPoints = nullptr;
@@ -90,6 +100,9 @@ class ArpgAutotest final {
     void        start();
     void        finish();
     bool        isWorld(const World& w, const std::string& file) const;
+    void        tickPlot();
+    bool        uiOrTalk() const;
+    void        closeUiAndTalk();
     void        collectPoints(World& w);
     void        placeHero(World& w, Npc& pl, const Point& p);
     void        measure(World& w, Npc& pl);
