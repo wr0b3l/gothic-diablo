@@ -345,7 +345,7 @@ void PlayerControl::onKeyReleased(KeyCodec::Action a, KeyCodec::Mapping mapping)
     // Diathic: a short Ctrl while locked, the cursor on another living one = lock on it
     auto w0  = Gothic::inst().world();
     auto pl0 = w0!=nullptr ? w0->player() : nullptr;
-    auto n   = arpgPickRaw.npc;
+    auto n   = arpgValid(arpgPickRaw);
     if(pl0!=nullptr && !arpgCtrlUsed && arpgLockTarget()!=nullptr && w0->tickCount()-arpgCtrlDownAt<ArpgStatus::LockHoldMs &&
        n!=nullptr && n!=arpgLock && n!=pl0 && !n->isDead() && !n->isDown())
       arpgSetLock(n);
@@ -494,6 +494,8 @@ void PlayerControl::tickFocus() {
 
 void PlayerControl::clearFocus() {
   currentFocus = Focus();
+  arpgHover    = Focus(); // Diathic: a new world / a loaded save: nothing of the old one under the cursor
+  arpgPickRaw  = Focus();
   }
 
 void PlayerControl::actionFocus(Npc& other) {
@@ -1310,8 +1312,8 @@ void PlayerControl::implMove(uint64_t dt) {
      (ws==WeaponState::Bow || ws==WeaponState::CBow) && pl.hasAmmunition()) {
     Tempest::Vec3 aim;
     bool          hasAim = false;
-    if(arpgHover.npc!=nullptr && arpgHover.npc!=&pl && !arpgHover.npc->isDown()) {
-      aim    = arpgHover.npc->position();
+    if(auto hv = arpgValid(arpgHover); hv!=nullptr && hv!=&pl && !hv->isDown()) {
+      aim    = hv->position();
       hasAim = true;
       }
     else if(arpgGroundValid) {
@@ -2759,8 +2761,17 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
     });
   }
 
+Npc* PlayerControl::arpgValid(const Focus& f) const {
+  // the cursor is picked once per frame (tickFocus); the creature may be gone since:
+  // removed by a script, a save loaded, another world; drawing goes on while the game is paused
+  if(f.npc==nullptr)
+    return nullptr;
+  auto w = Gothic::inst().world();
+  return w!=nullptr ? w->validateFocus(f).npc : nullptr;
+  }
+
 bool PlayerControl::arpgCursorOnEnemy() const {
-  auto n = arpgHover.npc;
+  auto n = arpgValid(arpgHover);
   return n!=nullptr && !n->isDead() && !n->isDown() && arpgCanAttack(*n);
   }
 
@@ -2799,7 +2810,7 @@ void PlayerControl::arpgToggleLock(Npc& pl) {
     return;
     }
   // the one under the cursor (anyone living: people in town too), otherwise the nearest enemy in sight
-  Npc* n = arpgPickRaw.npc;
+  Npc* n = arpgValid(arpgPickRaw);
   if(n!=nullptr && (n==&pl || n->isDead() || n->isDown()))
     n = nullptr;
   if(n==nullptr)
@@ -2955,8 +2966,8 @@ bool PlayerControl::arpgCanBlock() const {
 float PlayerControl::arpgFightFace(Npc& pl, float def) {
   // whom to face in a fight: the enemy under the cursor, the closest enemy close by, or the cursor
   auto w = Gothic::inst().world();
-  if(arpgHover.npc!=nullptr && arpgIsEnemy(*arpgHover.npc)) {
-    const auto d = arpgHover.npc->position()-pl.position();
+  if(auto hv = arpgValid(arpgHover); hv!=nullptr && arpgIsEnemy(*hv)) {
+    const auto d = hv->position()-pl.position();
     return std::atan2(d.z,d.x)*180.f/float(M_PI);
     }
   float face = def;
@@ -3088,8 +3099,8 @@ Npc* PlayerControl::arpgNextEnemy(Npc& pl, const Npc* except, float range) const
 
 bool PlayerControl::arpgCursorAim(const Npc& pl, Tempest::Vec3& out) const {
   // the enemy (or anyone) under the cursor, otherwise the point on the ground
-  if(arpgHover.npc!=nullptr && arpgHover.npc!=&pl && !arpgHover.npc->isDead()) {
-    out = arpgHover.npc->position();
+  if(auto hv = arpgValid(arpgHover); hv!=nullptr && hv!=&pl && !hv->isDead()) {
+    out = hv->position();
     return true;
     }
   if(arpgGroundValid) {
@@ -3580,8 +3591,8 @@ bool PlayerControl::arpgSkillStart(Npc& pl, float& rot) {
     case SkDisengage: {
       // the target: under the cursor or the nearest enemy; the jump: away from it (or from the cursor)
       Npc* tg = nullptr;
-      if(arpgHover.npc!=nullptr && arpgIsEnemy(*arpgHover.npc))
-        tg = arpgHover.npc; else
+      if(auto hv = arpgValid(arpgHover); hv!=nullptr && arpgIsEnemy(*hv))
+        tg = hv; else
         tg = arpgNextEnemy(pl, nullptr, arpgShotRange());
       Tempest::Vec3 away = Tempest::Vec3(-d.x, 0, -d.z);
       if(tg!=nullptr) {
