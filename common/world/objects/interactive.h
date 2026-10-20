@@ -48,6 +48,9 @@ class Interactive : public Vob {
 
     Tempest::Vec3       displayPosition() const;
     std::string_view    displayName() const;
+    // Diathic: script action of the mob (unnamed ones, e.g. Greg's treasure spots, are still usable in ARPG)
+    std::string_view    arpgUseItem()   const { return useWithItem; }
+    std::string_view    arpgStateFunc() const { return onStateFunc; }
 
     auto                bBox() const -> const Tempest::Vec3*;
 
