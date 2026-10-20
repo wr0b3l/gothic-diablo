@@ -77,6 +77,7 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - Nazwy ze skryptów 2.6 PL (VaanaCZ/gothic-2-addon-scripts), walidator w piaskownicy: 0 błędów
   - Zacięcie na drodze = przeniesienie na punkt + zdarzenie w raporcie (bot idzie dalej); brak mikstury przy < 15% zdrowia = leczenie bota + zdarzenie; śmierć = koniec przebiegu
   - Do testu: `bot_fabuly.bat` (cały rozdział, kilkadziesiąt minut — gra w oknie, nie minimalizować); po błędzie `bot_fabuly.bat -Od <etykieta>` od ostatniego zapisu przed miejscem błędu; raport: pierwszy błąd, zdarzenia (zacięcia, leczenia, rozmowy nieoczekiwane)
+  - 2026-10-20: panel w grze „co bot robi, co robił i co będzie robił” — po lewej u góry: ostatnie kroki z wynikiem, bieżący krok z opisem czynności, następne kroki, ostatnie zdarzenia, licznik; nie trafia na zrzuty raportu
 
 ## Publikacja (2026-10-16)
 - Użytkownik: „dodajmy do planu dokładne kroki do zrobienia przed publikacją” → publikacja.md (etapy A–G, decyzje otwarte: język pierwszej wersji, launcher, fazy 7–8 przed betą, pad)

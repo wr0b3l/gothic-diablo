@@ -2266,6 +2266,11 @@ void MainWindow::render(){
           paintArpgBarOverlay(pn);
           }
         }
+      if(arpgAutotest.isActive()) {
+        // gothic-diablo: the test bot's panel over everything (talks, menus); the report's pictures are taken without it
+        Painter pn(p);
+        arpgAutotest.paint(pn, w(), h());
+        }
       }
     uiMesh [cmdId].update(device,uiLayer);
     numMesh[cmdId].update(device,numOverlay);

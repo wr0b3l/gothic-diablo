@@ -14,6 +14,23 @@ class Npc;
 class PlayerControl;
 class DialogMenu;
 
+// gothic-diablo: what the test bot shows on the screen while it plays (MainWindow draws it over everything,
+// the pictures of the report are taken without it). Texts in UTF-8.
+struct ArpgBotPanel {
+  struct Line {
+    std::string text;
+    std::string note;
+    int         kind = 0;   // 0 plain, 1 done well, 2 error, 3 skipped, 4 event
+    };
+  std::string       title;
+  std::string       stats;
+  std::string       current;  // the step now
+  std::string       doing;    // what the bot does in it this moment
+  std::vector<Line> done;     // the last steps, the newest at the end
+  std::vector<Line> next;
+  std::vector<Line> events;   // the last events, the newest at the end
+  };
+
 // gothic-diablo: the story bot (faza 10, część 4). Plays a scenario (autotest/<name>.txt: one step per line, names from the
 // scripts) the honest way: walks with the ARPG click along the waynet, talks by clicking the npc and picking the lines,
 // fights with ARPG clicks, drinks potions. Results: gra\dane\autotest\<date>_<name>\ (raport.html, kroki.js, zdarzenia.js).
@@ -33,6 +50,7 @@ class ArpgPlotBot final {
     // once per game tick, while the game is not loading and the hero exists
     void        tick(World& w, Npc& pl);
     std::string summary() const;
+    void        panel(ArpgBotPanel& out, const Npc* pl) const;
 
   private:
     struct Step {
@@ -82,6 +100,10 @@ class ArpgPlotBot final {
     Npc*                     lastTalk   = nullptr;
 
     Walk                     walk;
+    std::string              walkWhat;          // "idzie do Vatras" (the panel)
+    std::string              doing;             // what the bot does now (the panel)
+    std::vector<ArpgBotPanel::Line> recentSteps;
+    std::vector<ArpgBotPanel::Line> recentEvents;
     Npc*                     defend   = nullptr;
     uint64_t                 defendT0 = 0;
     uint64_t                 attackT  = 0;

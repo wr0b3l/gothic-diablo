@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Tempest/Pixmap>
+#include <Tempest/Painter>
 #include <Tempest/Vec>
 
 #include <cstdint>
@@ -40,6 +41,8 @@ class ArpgAutotest final {
     bool        isActive() const { return state!=State::Off && state!=State::Done; }
     // once per game tick (MainWindow::tick, after the game update)
     void        tick();
+    // the panel on the screen: what the bot did, does and will do (over everything; not on the report's pictures)
+    void        paint(Tempest::Painter& p, int w, int h) const;
 
   private:
     enum class State : uint8_t {
@@ -96,6 +99,7 @@ class ArpgAutotest final {
     uint64_t                 frameMax  = 0;
     uint32_t                 frameNum  = 0;
     int                      uiStops   = 0;
+    std::vector<std::string> recentPoints; // the camera tour: the last suspicious points (the panel)
 
     void        start();
     void        finish();

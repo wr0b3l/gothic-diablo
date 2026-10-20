@@ -66,6 +66,9 @@ namespace {
   constexpr float    kHealAt        = 0.15f;   // no potion helped: the bot heals (event "leczenie")
 
   constexpr size_t   kMaxErrSaves   = 5;
+  constexpr size_t   kPanelDone     = 7;       // the panel: steps done, steps to come, events
+  constexpr size_t   kPanelNext     = 7;
+  constexpr size_t   kPanelEvents   = 5;
 
   std::string upper(std::string_view s) {
     std::string r(s);
@@ -101,6 +104,45 @@ namespace {
       }
     r += '"';
     return r;
+    }
+
+  // cp1250 (the Polish game's texts) -> UTF-8; other bytes above 0x7F -> '?'
+  std::string toUtf8(std::string_view s) {
+    static const std::pair<uint8_t, uint16_t> map[] = {
+      {0xB9,0x105},{0xA5,0x104},{0xE6,0x107},{0xC6,0x106},{0xEA,0x119},{0xCA,0x118},{0xB3,0x142},{0xA3,0x141},
+      {0xF1,0x144},{0xD1,0x143},{0xF3,0x0F3},{0xD3,0x0D3},{0x9C,0x15B},{0x8C,0x15A},{0x9F,0x17A},{0x8F,0x179},
+      {0xBF,0x17C},{0xAF,0x17B},{0xE4,0x0E4},{0xC4,0x0C4},{0xF6,0x0F6},{0xD6,0x0D6},{0xFC,0x0FC},{0xDC,0x0DC},{0xDF,0x0DF},
+      };
+    std::string out;
+    out.reserve(s.size());
+    for(char ch:s) {
+      const auto c = uint8_t(ch);
+      if(c<0x80) {
+        out += ch;
+        continue;
+        }
+      uint16_t cp = 0;
+      for(auto& m:map)
+        if(m.first==c)
+          cp = m.second;
+      if(cp==0) {
+        out += '?';
+        continue;
+        }
+      out += char(0xC0 | (cp>>6));
+      out += char(0x80 | (cp&0x3F));
+      }
+    return out;
+    }
+
+  std::string nameOf(const Npc& n) {
+    return toUtf8(n.displayName());
+    }
+
+  std::string meters(float cm) {
+    char buf[32] = {};
+    std::snprintf(buf, sizeof(buf), cm<1000.f ? "%.1f m" : "%.0f m", double(cm)/100.0);
+    return buf;
     }
 
   float dist2d(const Vec3& a, const Vec3& b) {
@@ -242,7 +284,7 @@ ArpgPlotBot::ArpgPlotBot(std::string n, std::string dir, Hooks h)
     finish("brak scenariusza");
     return;
     }
-  log("scenariusz " + name + " (" + source + "), krokow " + std::to_string(steps.size()) +
+  log("scenariusz " + name + " (" + source + "), kroków " + std::to_string(steps.size()) +
       (startLabel.empty() ? std::string() : ", od etykiety " + startLabel));
   writeState();
   }
@@ -451,7 +493,7 @@ void ArpgPlotBot::validate(World& w) {
     if(!checkName(w, h, "line", why))
       event("walidacja", "gdy " + h + " - " + why, false);
     }
-  log("walidacja: " + std::to_string(bad) + " krokow z bledami");
+  log("walidacja: " + std::to_string(bad) + " kroków z błędami");
   }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -476,7 +518,7 @@ void ArpgPlotBot::startRun(World& w) {
         break;
         }
     if(!found)
-      log("brak etykiety " + startLabel + " - od poczatku");
+      log("brak etykiety " + startLabel + " – od początku");
     if(fSteps!=nullptr)
       std::fflush(fSteps);
     }
@@ -490,7 +532,7 @@ void ArpgPlotBot::finish(const char* why) {
   if(done && fSteps==nullptr)
     return;
   done = true;
-  log(std::string("koniec: ") + why + ", ok " + std::to_string(nOk) + ", bledy " + std::to_string(nFail));
+  log(std::string("koniec: ") + why + ", ok " + std::to_string(nOk) + ", błędy " + std::to_string(nFail));
   if(hooks.player!=nullptr)
     hooks.player->arpgBotRelease();
   writeState(true, why);
@@ -501,8 +543,31 @@ void ArpgPlotBot::finish(const char* why) {
       }
   }
 
+void ArpgPlotBot::panel(ArpgBotPanel& out, const Npc* pl) const {
+  out = ArpgBotPanel();
+  out.title = "Bot fabuły: " + name + (done ? " (koniec)" : "");
+  const uint64_t ms = Application::tickCount()-runT0;
+  char t[32] = {};
+  std::snprintf(t, sizeof(t), "%u:%02u:%02u", unsigned(ms/3600000), unsigned(ms/60000%60), unsigned(ms/1000%60));
+  out.stats = "krok " + std::to_string(std::min(cur+1, steps.size())) + "/" + std::to_string(steps.size()) +
+              " | OK " + std::to_string(nOk) + " | błędy " + std::to_string(nFail) + " | zdarzenia " + std::to_string(nEvents) +
+              " | " + t;
+  if(pl!=nullptr)
+    out.stats += " | zdrowie " + std::to_string(pl->attribute(ATR_HITPOINTS)) + "/" + std::to_string(pl->attribute(ATR_HITPOINTSMAX));
+  if(!started)
+    out.doing = "czeka na świat gry";
+  else if(cur<steps.size()) {
+    out.current = steps[cur].text;
+    out.doing   = doing.empty() ? std::string("...") : doing;
+    }
+  out.done   = recentSteps;
+  out.events = recentEvents;
+  for(size_t i=cur+1; i<steps.size() && out.next.size()<kPanelNext; ++i)
+    out.next.push_back({steps[i].text, "", steps[i].invalid ? 2 : 0});
+  }
+
 std::string ArpgPlotBot::summary() const {
-  return name + ": ok " + std::to_string(nOk) + ", bledy " + std::to_string(nFail) + ", zdarzenia " + std::to_string(nEvents);
+  return name + ": ok " + std::to_string(nOk) + ", błędy " + std::to_string(nFail) + ", zdarzenia " + std::to_string(nEvents);
   }
 
 std::string ArpgPlotBot::picture(const char* tag) {
@@ -523,6 +588,9 @@ std::string ArpgPlotBot::picture(const char* tag) {
 
 void ArpgPlotBot::event(const char* kind, const std::string& text, bool pic) {
   ++nEvents;
+  recentEvents.push_back({text, kind, 4});
+  if(recentEvents.size()>kPanelEvents)
+    recentEvents.erase(recentEvents.begin());
   const std::string img = pic ? picture(kind) : std::string();
   log(std::string("[") + kind + "] " + text);
   if(fEvents==nullptr)
@@ -562,7 +630,12 @@ void ArpgPlotBot::nextStep(bool ok, const std::string& why) {
     std::fputs(ln.c_str(), fSteps);
     std::fflush(fSteps);
     }
+  recentSteps.push_back({s.text, u, ok ? 1 : 2});
+  if(recentSteps.size()>kPanelDone)
+    recentSteps.erase(recentSteps.begin());
   note.clear();
+  doing.clear();
+  walkWhat.clear();
   walk     = Walk();
   phase    = 0;
   picked   = false;
@@ -572,7 +645,7 @@ void ArpgPlotBot::nextStep(bool ok, const std::string& why) {
   ++cur;
   writeState();
   if(!ok && stopOnError)
-    finish("blad (po_bledzie stop)");
+    finish("błąd (po_bledzie stop)");
   else if(cur>=steps.size())
     finish("koniec scenariusza");
   }
@@ -647,7 +720,7 @@ void ArpgPlotBot::guardHealth(Npc& pl, uint64_t now) {
     ++nHeal;
     pl.changeAttribute(ATR_HITPOINTS, max-hp, false);
     event("leczenie", "zdrowie " + std::to_string(hp) + " / " + std::to_string(max) +
-          (defend!=nullptr ? std::string(", walka z ") + std::string(defend->displayName()) : std::string()), true);
+          (defend!=nullptr ? std::string(", walka z ") + nameOf(*defend) : std::string()), true);
     }
   }
 
@@ -669,6 +742,8 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
       attackT = now;
       hooks.player->arpgBotClick(Focus(*defend), true, true);
       }
+    doing = "obrona: " + nameOf(*defend) + " (" + std::to_string(defend->attribute(ATR_HITPOINTS)) + "/" +
+            std::to_string(defend->attribute(ATR_HITPOINTSMAX)) + "), " + meters(dist2d(defend->position(), pl.position()));
     return true;
     }
   Npc*  best  = nullptr;
@@ -693,7 +768,7 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
     return false;
   defend   = best;
   defendT0 = attackT = now;
-  event("obrona", std::string(best->displayName()) + " (" + std::to_string(int(bestD)) + " cm)", false);
+  event("obrona", nameOf(*best) + " (" + std::to_string(int(bestD)) + " cm)", false);
   hooks.player->arpgBotClick(Focus(*best), true, true);
   return true;
   }
@@ -706,11 +781,12 @@ bool ArpgPlotBot::strayTalk(uint64_t now, bool quiet) {
     }
   if(strayT==0)
     strayT = now;
+  doing = std::string(quiet ? "kończy rozmowę: " : "rozmowa poza scenariuszem: ") + nameOf(*dlg->arpgBotNpc());
   dlg->arpgBotSkip();
   std::vector<DialogMenu::ArpgBotLine> lines;
   if(!dlg->arpgBotLines(lines)) {
     if(now-strayT>kStrayStuckMs) {
-      event("rozmowa", std::string("nie konczy sie - zamknieta: ") + std::string(dlg->arpgBotNpc()->displayName()), true);
+      event("rozmowa", std::string("nie kończy się – zamknięta: ") + nameOf(*dlg->arpgBotNpc()), true);
       dlg->arpgAbort();
       strayT = 0;
       }
@@ -719,7 +795,7 @@ bool ArpgPlotBot::strayTalk(uint64_t now, bool quiet) {
   if(now-pickT<kPickGapMs)
     return true;
   pickT = now;
-  const std::string who = std::string(dlg->arpgBotNpc()->displayName());
+  const std::string who = nameOf(*dlg->arpgBotNpc());
   std::string       all;
   for(auto& l:lines)
     all += (all.empty() ? "" : ", ") + l.name;
@@ -819,6 +895,10 @@ int ArpgPlotBot::walkTick(World& w, Npc& pl, uint64_t now) {
     walk.clickT   = now;
     hooks.player->arpgBotGround(walk.route[walk.idx]);
     }
+  doing = (walkWhat.empty() ? std::string("idzie") : walkWhat) + ": " + meters(dist2d(pos, walk.dest)) +
+          ", punkt drogi " + std::to_string(walk.idx+1) + "/" + std::to_string(walk.route.size()) +
+          (walk.stuck>0 ? ", zacięcie " + std::to_string(walk.stuck) + "/" + std::to_string(kStuckJump) : std::string()) +
+          (walk.jumps>0 ? ", przeniesienia " + std::to_string(walk.jumps) : std::string());
   return 0;
   }
 
@@ -901,7 +981,7 @@ bool ArpgPlotBot::cond(World& w, Npc& pl, const std::vector<std::string>& a, siz
     }
   if(k=="martwy") {
     auto npc = findNpc(w, arg(1));
-    why = arg(1) + (npc==nullptr ? " nie ma w swiecie" : (npc->isDead() ? " martwy" : " zyje"));
+    why = arg(1) + (npc==nullptr ? " nie ma w świecie" : (npc->isDead() ? " martwy" : " żyje"));
     return npc!=nullptr && npc->isDead();
     }
   if(k=="gildia") {
@@ -914,7 +994,7 @@ bool ArpgPlotBot::cond(World& w, Npc& pl, const std::vector<std::string>& a, siz
     int32_t ch = 0, want = 0;
     intValue(w, "KAPITEL", ch);
     intValue(w, arg(1), want);
-    why = "rozdzial " + std::to_string(ch);
+    why = "rozdział " + std::to_string(ch);
     return ch==want;
     }
   if(k=="blisko") {
@@ -975,10 +1055,10 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
     return; // a cutscene plays
 
   if(pl.isDead()) {
-    event("smierc", std::string("bohater zginal") + (defend!=nullptr ? std::string(" (") + std::string(defend->displayName()) + ")" : std::string()), true);
+    event("smierc", std::string("bohater zginął") + (defend!=nullptr ? std::string(" (") + nameOf(*defend) + ")" : std::string()), true);
     if(cur<steps.size())
-      nextStep(false, "smierc bohatera");
-    finish("smierc bohatera");
+      nextStep(false, "śmierć bohatera");
+    finish("śmierć bohatera");
     return;
     }
   guardHealth(pl, now);
@@ -989,7 +1069,7 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
 
   const Step& s = steps[cur];
   if(s.invalid) {
-    nextStep(false, "zle nazwy (walidacja)");
+    nextStep(false, "złe nazwy (walidacja)");
     return;
     }
   const bool talkStep = s.verb=="rozmowa" || s.verb=="wybor" || s.verb=="koniec";
@@ -1030,11 +1110,11 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
   Npc*        npc  = findNpc(w, s.arg[0]);
   const auto  info = s.arg.size()>1 ? s.arg[1] : std::string();
   if(npc==nullptr) {
-    nextStep(false, "nie ma " + s.arg[0] + " w swiecie " + std::string(w.name()));
+    nextStep(false, "nie ma " + s.arg[0] + " w świecie " + std::string(w.name()));
     return;
     }
   if(npc->isDead()) {
-    nextStep(false, s.arg[0] + " nie zyje");
+    nextStep(false, s.arg[0] + " nie żyje");
     return;
     }
   if(phase==0) {
@@ -1067,18 +1147,21 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
       }
     if(!walk.on || dist2d(walk.dest, npc->position())>500.f)
       walkStart(w, pl, npc->position(), kTalkWalk);
+    walkWhat = "idzie do " + nameOf(*npc);
     if(walkTick(w, pl, now)<0)
-      nextStep(false, "nie doszedl do " + s.arg[0]);
+      nextStep(false, "nie doszedł do " + s.arg[0]);
     return;
     }
   if(phase==2) {
+    doing = "klik w " + nameOf(*npc) + ", czeka na rozmowę " + std::to_string((now-phaseT0)/1000) + " s" +
+            (talkRetry>0 ? " (ponownie " + std::to_string(talkRetry) + ")" : std::string());
     // a click on the npc, like a player
     if(dist2d(pl.position(), npc->position())>kTalkWalk*2.f) {
       phase = 1;
       return;
       }
     if(now-phaseT0>kTalkStartMs) {
-      nextStep(false, "rozmowa z " + s.arg[0] + " sie nie zaczyna");
+      nextStep(false, "rozmowa z " + s.arg[0] + " się nie zaczyna");
       return;
       }
     if(hooks.player!=nullptr && (hooks.player->arpgBotIdle() || now-walk.clickT>kTalkClickMs)) {
@@ -1092,7 +1175,7 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
   if(talking==nullptr) {
     // closed (the npc ended it)
     if(info.empty() || (w.script().arpgKnowsInfo(pl, info) && (picked || !knewBefore))) {
-      nextStep(true, picked ? "" : "rozmowa zamknieta");
+      nextStep(true, picked ? "" : "rozmowa zamknięta");
       return;
       }
     if(!picked && ++talkRetry<=3) {
@@ -1102,13 +1185,17 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
       walk.clickT = 0;
       return;
       }
-    nextStep(false, "rozmowa zamknieta, " + info + " nieznane");
+    nextStep(false, "rozmowa zamknięta, " + info + " nieznane");
     return;
     }
   dlg->arpgBotSkip();
   std::vector<DialogMenu::ArpgBotLine> lines;
-  if(!dlg->arpgBotLines(lines))
+  if(!dlg->arpgBotLines(lines)) {
+    doing = "rozmowa z " + nameOf(*npc) + ": " + (phase==4 ? "wybrał " + info + ", kwestie" : std::string("kwestie (przewijane)"));
     return;
+    }
+  doing = "rozmowa z " + nameOf(*npc) + (info.empty() ? std::string() : ": szuka " + info) +
+          " (linii: " + std::to_string(lines.size()) + ", " + std::to_string((now-phaseT0)/1000) + " s)";
   if(phase==4) {
     if(now-pickT>=kPickGapMs)
       nextStep(true, ""); // the words of the picked line went by
@@ -1131,14 +1218,14 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
       }
   if(!knewBefore && w.script().arpgKnowsInfo(pl, info)) {
     // an important line: it ran by itself when the talk began
-    nextStep(true, "samo (wazne)");
+    nextStep(true, "samo (ważne)");
     return;
     }
   for(auto& h:handlers)
     for(auto& l:lines)
       if(same(l.name, h)) {
         pickT = now;
-        event("rozmowa", std::string(npc->displayName()) + ": " + l.name + " (gdy)", false);
+        event("rozmowa", nameOf(*npc) + ": " + l.name + " (gdy)", false);
         dlg->arpgBotPick(l.name);
         phaseT0 = now;
         return;
@@ -1148,9 +1235,9 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     for(auto& l:lines)
       all += (all.empty() ? "" : ", ") + l.name;
     if(knewBefore)
-      nextStep(true, info + " juz znane (" + all + ")");
+      nextStep(true, info + " już znane (" + all + ")");
     else
-      nextStep(false, "brak " + info + " - dostepne: " + all);
+      nextStep(false, "brak " + info + " – dostępne: " + all);
     }
   }
 
@@ -1159,7 +1246,7 @@ void ArpgPlotBot::doPick(World& w, Npc& pl, const Step& s, uint64_t now) {
   auto dlg = hooks.dialogs;
   if(dlg==nullptr || dlg->arpgBotNpc()==nullptr) {
     if(phase==1) {
-      nextStep(true, "rozmowa zamknieta po wyborze");
+      nextStep(true, "rozmowa zamknięta po wyborze");
       return;
       }
     if(now-stepT0>kCheckMs)
@@ -1167,6 +1254,7 @@ void ArpgPlotBot::doPick(World& w, Npc& pl, const Step& s, uint64_t now) {
     return;
     }
   dlg->arpgBotSkip();
+  doing = "wybór w rozmowie z " + nameOf(*dlg->arpgBotNpc()) + ": " + s.arg[0] + (phase==1 ? " (wybrany, kwestie)" : "");
   std::vector<DialogMenu::ArpgBotLine> lines;
   if(!dlg->arpgBotLines(lines))
     return;
@@ -1188,7 +1276,7 @@ void ArpgPlotBot::doPick(World& w, Npc& pl, const Step& s, uint64_t now) {
     std::string all;
     for(auto& l:lines)
       all += (all.empty() ? "" : ", ") + l.name;
-    nextStep(false, "brak " + s.arg[0] + " - dostepne: " + all);
+    nextStep(false, "brak " + s.arg[0] + " – dostępne: " + all);
     }
   }
 
@@ -1196,7 +1284,7 @@ void ArpgPlotBot::doExit(World& w, Npc& pl, const Step& s, uint64_t now) {
   (void)w; (void)pl; (void)s;
   auto dlg = hooks.dialogs;
   if(dlg==nullptr || dlg->arpgBotNpc()==nullptr) {
-    nextStep(true, phase==1 ? "" : "juz zamknieta");
+    nextStep(true, phase==1 ? "" : "już zamknięta");
     return;
     }
   dlg->arpgBotSkip();
@@ -1204,7 +1292,7 @@ void ArpgPlotBot::doExit(World& w, Npc& pl, const Step& s, uint64_t now) {
   if(!dlg->arpgBotLines(lines)) {
     if(now-stepT0>kStrayStuckMs) {
       dlg->arpgAbort();
-      nextStep(false, "rozmowa sie nie konczy - zamknieta");
+      nextStep(false, "rozmowa się nie kończy – zamknięta");
       }
     return;
     }
@@ -1220,25 +1308,26 @@ void ArpgPlotBot::doExit(World& w, Npc& pl, const Step& s, uint64_t now) {
   for(auto& l:lines)
     all += (all.empty() ? "" : ", ") + l.name;
   dlg->arpgAbort();
-  nextStep(false, "brak wyjscia - dostepne: " + all);
+  nextStep(false, "brak wyjscia – dostępne: " + all);
   }
 
 void ArpgPlotBot::doGo(World& w, Npc& pl, const Step& s, uint64_t now) {
   Vec3  dest  = {};
   float reach = 0;
   if(!targetPos(w, s.arg[0], dest, reach)) {
-    nextStep(false, "nieznany cel " + s.arg[0] + " w swiecie " + std::string(w.name()));
+    nextStep(false, "nieznany cel " + s.arg[0] + " w świecie " + std::string(w.name()));
     return;
     }
   if(s.arg.size()>1)
     reach = float(std::max(50, std::atoi(s.arg[1].c_str())));
   if(!walk.on || dist2d(walk.dest, dest)>500.f)
     walkStart(w, pl, dest, reach);
+  walkWhat = "idzie do " + s.arg[0];
   const int r = walkTick(w, pl, now);
   if(r>0)
     nextStep(true, walk.jumps>0 ? "z przeniesieniem" : "");
   else if(r<0)
-    nextStep(false, "nie doszedl");
+    nextStep(false, "nie doszedł");
   }
 
 void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
@@ -1257,15 +1346,16 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
     return;
     }
   if(now-stepT0>kKillMs) {
-    nextStep(false, std::string("limit czasu walki, zyje: ") + std::string(tg->displayName()));
+    nextStep(false, std::string("limit czasu walki, żyje: ") + nameOf(*tg));
     return;
     }
   const float d = dist2d(pl.position(), tg->position());
   if(d>kFightWalk) {
     if(!walk.on || dist2d(walk.dest, tg->position())>500.f)
       walkStart(w, pl, tg->position(), kFightWalk*0.8f);
+    walkWhat = "idzie do " + nameOf(*tg) + " (walka)";
     if(walkTick(w, pl, now)<0)
-      nextStep(false, std::string("nie doszedl do ") + std::string(tg->displayName()));
+      nextStep(false, std::string("nie doszedł do ") + nameOf(*tg));
     return;
     }
   walk.on = false;
@@ -1273,6 +1363,13 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
     attackT = now;
     hooks.player->arpgBotClick(Focus(*tg), true, true);
     }
+  size_t alive = 0;
+  for(auto& n:s.arg)
+    if(auto npc = findNpc(w, n); npc!=nullptr && !npc->isDead())
+      ++alive;
+  doing = "walczy z " + nameOf(*tg) + " (" + std::to_string(tg->attribute(ATR_HITPOINTS)) + "/" +
+          std::to_string(tg->attribute(ATR_HITPOINTSMAX)) + "), " + meters(d) + ", żywych celów " + std::to_string(alive) +
+          ", " + std::to_string((now-stepT0)/1000) + " s";
   }
 
 void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
@@ -1290,7 +1387,7 @@ void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
     return;
     }
   if(now-stepT0>kTakeMs) {
-    nextStep(false, "nie podniosl " + s.arg[0]);
+    nextStep(false, "nie podniósł " + s.arg[0]);
     return;
     }
   const float range = s.arg.size()>1 ? float(std::max(100, std::atoi(s.arg[1].c_str()))) : kTakeRange;
@@ -1312,8 +1409,9 @@ void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
   if(bestD>600.f) {
     if(!walk.on || dist2d(walk.dest, best->position())>300.f)
       walkStart(w, pl, best->position(), 400.f);
+    walkWhat = "idzie po " + s.arg[0];
     if(walkTick(w, pl, now)<0)
-      nextStep(false, "nie doszedl do " + s.arg[0]);
+      nextStep(false, "nie doszedł do " + s.arg[0]);
     return;
     }
   walk.on = false;
@@ -1321,6 +1419,7 @@ void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
     walk.clickT = now;
     hooks.player->arpgBotClick(Focus(*best), false, false);
     }
+  doing = "podnosi " + s.arg[0] + " (" + meters(bestD) + ")";
   }
 
 void ArpgPlotBot::doUse(World& w, Npc& pl, const Step& s, uint64_t now) {
@@ -1347,6 +1446,7 @@ void ArpgPlotBot::doWait(World& w, Npc& pl, const Step& s, uint64_t now, bool on
     nextStep(true, once ? "" : why);
     return;
     }
+  doing = std::string(once ? "sprawdza" : "czeka") + " (" + std::to_string((now-stepT0)/1000) + "/" + std::to_string(limit/1000) + " s): " + why;
   if(now-stepT0>limit)
     nextStep(false, why);
   }

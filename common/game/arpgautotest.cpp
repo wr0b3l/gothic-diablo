@@ -19,6 +19,9 @@
 #include "world/world.h"
 #include "game/arpgplotbot.h"
 #include "ui/dialogmenu.h"
+#include "ui/arpgmenu.h"
+#include "utils/gthfont.h"
+#include "resources.h"
 
 using namespace Tempest;
 
@@ -631,8 +634,9 @@ void ArpgAutotest::measure(World& w, Npc& pl) {
     r.score += kScoreUi;
     kind("rozmowa");
     }
-  if(r.score>0.f)
+  if(r.score>0.f) {
     ++suspects;
+    }
 
   // the files: a small picture always, a big one for suspicious points
   const std::string tag  = worldTag();
@@ -678,6 +682,12 @@ void ArpgAutotest::measure(World& w, Npc& pl) {
     }
 
   ++pointsDone;
+  if(r.score>0.f) {
+    auto& rp = recentPoints;
+    rp.push_back(tag + " " + pt.name + ": " + std::to_string(iround(r.score)) + " (" + r.kinds + ")");
+    if(rp.size()>5)
+      rp.erase(rp.begin());
+    }
   if(r.score>0.f || pointId%100==0)
     log(tag + " " + std::to_string(pointId+1) + "/" + std::to_string(points.size()) + " " + pt.name +
         " ocena " + std::to_string(iround(r.score)) + (r.kinds.empty() ? "" : " (" + r.kinds + ")"));
@@ -728,4 +738,123 @@ void ArpgAutotest::log(const std::string& line) {
   const std::string s = stamp("%H:%M:%S ") + line + "\n";
   std::fputs(s.c_str(), fLog);
   std::fflush(fLog);
+  }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// the panel
+
+namespace {
+  // one line in the width: cut at the end ("..")
+  std::string fitLine(const GthFont& f, std::string s, int width) {
+    if(f.textSize(s).w<=width)
+      return s;
+    while(s.size()>3 && f.textSize(s + "..").w>width)
+      s.pop_back();
+    return s + "..";
+    }
+  }
+
+void ArpgAutotest::paint(Tempest::Painter& p, int w, int h) const {
+  using namespace Tempest;
+  ArpgBotPanel pn;
+  if(plot!=nullptr)
+    plot->panel(pn, Gothic::inst().player());
+  else if(state!=State::Off && state!=State::Plot) {
+    pn.title = "Bot: objazd kamery" + std::string(state==State::Done ? " (koniec)" : "");
+    pn.stats = "świat " + worldTag() + " | punkt " + std::to_string(std::min(pointId+1, points.size())) + "/" +
+               std::to_string(points.size()) + " | wszystkie " + std::to_string(pointsDone) + " | podejrzane " + std::to_string(suspects);
+    if(pointId<points.size())
+      pn.current = points[pointId].name;
+    switch(state) {
+      case State::WaitGame:  pn.doing = "czeka na nową grę"; break;
+      case State::NextWorld:
+      case State::WaitWorld: pn.doing = "zmiana świata"; break;
+      case State::NextPoint: pn.doing = "następny punkt"; break;
+      case State::Settle:    pn.doing = "kamera się ustawia, pomiar"; break;
+      default: break;
+      }
+    for(auto& r:recentPoints)
+      pn.events.push_back({r, "", 4});
+    }
+  else
+    return;
+
+  const float k    = std::max(0.6f, float(h)/1080.f);
+  const auto& fnt  = Resources::font(Resources::FontType::Normal, 0.9f*k);
+  const auto& fntH = Resources::font("font_old_10_white.tga", Resources::FontType::Normal, 1.15f*k);
+  const int   pad  = int(10*k);
+  const int   lh   = fnt.pixelSize()+int(4*k);
+  const int   lhH  = fntH.pixelSize()+int(6*k);
+  const int   pw   = std::min(int(600*k), w/2);
+  const int   x0   = int(14*k);
+  const int   y0   = int(80*k);
+  const int   tw   = pw-2*pad;
+
+  // the height: title, stats, then the sections with their headers
+  int lines = 1; // stats
+  int heads = 1; // title
+  if(!pn.done.empty())   { heads++; lines += int(pn.done.size()); }
+  heads++; lines += 2;                                   // "Teraz": the step and what it does
+  if(!pn.next.empty())   { heads++; lines += int(pn.next.size()); }
+  if(!pn.events.empty()) { heads++; lines += int(pn.events.size()); }
+  const int ph = 2*pad + heads*lhH + lines*lh;
+
+  p.setBrush(Brush(Color(0.f, 0.f, 0.f, 0.62f), Painter::Alpha));
+  p.drawRect(x0, y0, pw, ph);
+  p.setBrush(Brush(Color(0.85f, 0.65f, 0.29f, 0.8f), Painter::Alpha));
+  p.drawRect(x0, y0, pw, std::max(1, int(2*k)));
+
+  const Color gold  (0.95f, 0.78f, 0.42f, 1.f);
+  const Color white (0.92f, 0.88f, 0.80f, 1.f);
+  const Color dim   (0.62f, 0.58f, 0.50f, 1.f);
+  const Color green (0.55f, 0.88f, 0.45f, 1.f);
+  const Color red   (1.00f, 0.45f, 0.35f, 1.f);
+  const Color event (0.90f, 0.72f, 0.45f, 1.f);
+
+  int y = y0+pad;
+  auto head = [&](const std::string& t) {
+    GthFont f = fntH;
+    f.setColor(gold);
+    y += lhH;
+    f.drawText(p, x0+pad, y-int(4*k), ArpgMenu::gtxt(t));
+    };
+  auto line = [&](const std::string& t, const Color& c, int indent) {
+    GthFont f = fnt;
+    f.setColor(c);
+    y += lh;
+    f.drawText(p, x0+pad+indent, y-int(3*k), fitLine(f, ArpgMenu::gtxt(t), tw-indent));
+    };
+  auto kindColor = [&](int kind) {
+    switch(kind) {
+      case 1: return green;
+      case 2: return red;
+      case 3: return dim;
+      case 4: return event;
+      }
+    return white;
+    };
+  const int ind = int(14*k);
+
+  head(pn.title);
+  line(pn.stats, dim, 0);
+  if(!pn.done.empty()) {
+    head("Zrobione");
+    for(auto& d:pn.done) {
+      const char* mark = d.kind==1 ? "OK   " : (d.kind==2 ? "BŁĄD " : "-    ");
+      line(mark + d.text + (d.note.empty() ? std::string() : "  — " + d.note), kindColor(d.kind), ind);
+      }
+    }
+  head("Teraz");
+  line("> " + (pn.current.empty() ? std::string("-") : pn.current), gold, ind);
+  line(pn.doing.empty() ? std::string("-") : pn.doing, white, ind*2);
+  if(!pn.next.empty()) {
+    head("Dalej");
+    for(auto& n:pn.next)
+      line(n.text, n.kind==2 ? red : dim, ind);
+    }
+  if(!pn.events.empty()) {
+    head(plot!=nullptr ? "Zdarzenia" : "Podejrzane punkty");
+    for(auto& e:pn.events)
+      line((e.note.empty() ? std::string() : "[" + e.note + "] ") + e.text, kindColor(e.kind), ind);
+    }
   }
