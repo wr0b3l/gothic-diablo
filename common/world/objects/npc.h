@@ -199,6 +199,7 @@ class Npc final {
     // gothic-diablo: the test bot: what a player does in the inventory - the best weapons the hero may use (the name of the new
     // melee weapon, empty: no change) and "take all" from a body (the names of what was taken)
     std::string arpgEquipBestWeapons();
+    std::string_view arpgStateName() const;  // Diathic: the script state now (ZS_RANSACKBODY...), "" = none
     std::string arpgLootAll(Npc& body);
     void       arpgHoldParade();         // gothic-diablo: block held
     // Diathic: negative statuses (game/arpgstatus.h); value: damage per second for damage over time

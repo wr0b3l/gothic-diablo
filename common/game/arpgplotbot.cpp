@@ -54,10 +54,17 @@ namespace {
   constexpr uint64_t kDigMs         = 12000;   // "kop": in the digging this long at most (then out of it)
   constexpr int      kDigClicks     = 6;       // "kop": clicks on the spot before it counts as failed
   constexpr float    kDigRange      = 500.f;   // "kop": the spot (and what it gives) this close to the point
+  constexpr float    kSearchRange   = 1500.f;  // "przeszukaj": around the place this far ...
+  constexpr float    kSearchHeight  = 1500.f;  // ... and this far up and down (the floors of a tower)
+  constexpr uint64_t kSearchItemMs  = 25000;   // "przeszukaj": a thing / a chest not reached in this time is left
+  constexpr uint64_t kBusyMaxMs     = 30000;   // a talk: waiting for a busy npc (a fight, a body searched) at most this long
+  constexpr uint64_t kBusySettleMs  = 2500;    // ... and this long after it (the words, back on its place)
 
   // walking (cm)
   constexpr float    kRouteMinGap   = 300.f;   // route points closer than this to the last one are dropped
   constexpr float    kRoutePass     = 350.f;   // a route point counts as passed
+  constexpr float    kFloorGap      = 150.f;   // higher / lower than this: another floor (the stairs of a tower)
+  constexpr float    kReachHeight   = 250.f;   // the walk's end: this close in height too
   constexpr float    kProgress      = 80.f;    // closer by this much = progress
   constexpr uint64_t kStuckMs       = 6000;    // no progress this long = stuck once
   constexpr int      kStuckJump     = 5;       // stuck this many times on one point: moved there (event)
@@ -564,6 +571,14 @@ void ArpgPlotBot::validate(World& w) {
       for(size_t i=4; i<s.arg.size(); ++i)
         ok = checkName(w, s.arg[i], "npc", why) && ok;
       }
+    else if(v=="przeszukaj") {
+      // przeszukaj [<miejsce>] [<cm>]
+      const bool place = !s.arg.empty() && !isNumber(at(0));
+      if(place)
+        ok = checkName(w, at(0), "place", why) && ok;
+      const size_t nums = s.arg.size()-(place ? 1 : 0);
+      ok = nums<=1 && (nums==0 || isNumber(s.arg.back())) && ok;
+      }
     else if(v=="spij")
       ok = at(0).size()==5 && at(0)[2]==':';
     else if(v=="koniec" || v=="etykieta" || v=="zapisz")
@@ -927,7 +942,7 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
   w.detectNpc(pl.position(), kDrawRange, [&](Npc& npc) {
     if(&npc==&pl || npc.isDead() || npc.isDown() || std::abs(npc.position().y-pl.position().y)>350.f)
       return;
-    if(!hooks.player->arpgIsEnemy(npc) || isIgnored(&npc))
+    if(!isThreat(npc, pl) || isIgnored(&npc))
       return;
     near = true;
     const float d     = dist2d(npc.position(), pl.position());
@@ -949,6 +964,17 @@ bool ArpgPlotBot::defendTick(World& w, Npc& pl, uint64_t now) {
   event("obrona", nameOf(*best) + " (" + std::to_string(int(bestD)) + " cm)", false);
   fightTick(w, pl, *best, now);
   return true;
+  }
+
+bool ArpgPlotBot::isThreat(const Npc& n, const Npc& pl) const {
+  // a sheep, a meatbug: neutral / friendly to people (B_InitMonsterAttitudes) - a player leaves them alone;
+  // arpgIsEnemy is wider: any beast can be clicked at (the player's own choice)
+  if(hooks.player==nullptr || !hooks.player->arpgIsEnemy(n))
+    return false;
+  if(&n==hooks.player->arpgLockTarget() || n.isEnemy(pl) || n.tempAttitude()==ATT_HOSTILE)
+    return true;
+  // angry for a reason of its own (the hero hit it, stole): goes for the hero
+  return n.target()==&pl && (n.isAttackAnim() || (!n.isMonster() && n.weaponState()!=WeaponState::NoWeapon));
   }
 
 void ArpgPlotBot::fightEnd(Npc& pl) {
@@ -1199,7 +1225,7 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
   // only in peace: no enemy close
   bool enemy = false;
   w.detectNpc(pl.position(), kQuietRange, [&](Npc& n) {
-    if(&n!=&pl && !n.isDead() && !n.isDown() && hooks.player->arpgIsEnemy(n))
+    if(&n!=&pl && !n.isDead() && !n.isDown() && isThreat(n, pl))
       enemy = true;
     });
   if(enemy)
@@ -1421,8 +1447,8 @@ void ArpgPlotBot::walkStart(World& w, Npc& pl, const Vec3& dest, float reach, bo
     Vec3    last = pl.position();
     while(auto p = path.pop()) {
       const Vec3 v = p->position();
-      if(dist2d(v, last)<kRouteMinGap)
-        continue;
+      if(dist2d(v, last)<kRouteMinGap && std::abs(v.y-last.y)<kFloorGap)
+        continue; // a spiral stair: points above one another stay
       walk.route.push_back(v);
       last = v;
       }
@@ -1435,21 +1461,23 @@ int ArpgPlotBot::walkTick(World& w, Npc& pl, uint64_t now) {
   if(!walk.on || hooks.player==nullptr)
     return -1;
   const Vec3 pos = pl.position();
-  if(dist2d(pos, walk.dest)<=walk.reach) {
+  if(dist2d(pos, walk.dest)<=walk.reach && std::abs(pos.y-walk.dest.y)<=kReachHeight) {
     hooks.player->arpgBotRelease();
     hooks.player->arpgBotGround(pos); // stop here
     walk.on = false;
     return 1;
     }
   // passed points
-  while(walk.idx+1<walk.route.size() && dist2d(pos, walk.route[walk.idx])<kRoutePass) {
+  // (on the same floor: in a tower the point under the hero's feet is not passed yet)
+  while(walk.idx+1<walk.route.size() && dist2d(pos, walk.route[walk.idx])<kRoutePass &&
+        std::abs(pos.y-walk.route[walk.idx].y)<kFloorGap) {
     ++walk.idx;
     walk.best  = 1e9f;
     walk.bestT = now;
     walk.stuck = 0;
     }
   const Vec3  goal = walk.route[walk.idx];
-  const float d    = dist2d(pos, goal);
+  const float d    = dist2d(pos, goal) + std::abs(pos.y-goal.y); // down the stairs is progress too
   if(d<walk.best-kProgress) {
     walk.best  = d;
     walk.bestT = now;
@@ -1715,7 +1743,7 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
       return;
     // between the fights, on the way: heal, take from the bodies, pick up, the best weapon
     const bool free = s.verb=="idz" || s.verb=="zabierz" || s.verb=="czekaj" || s.verb=="zabij" ||
-                      s.verb=="zbierz" || s.verb=="poluj" || s.verb=="kop";
+                      s.verb=="zbierz" || s.verb=="poluj" || s.verb=="kop" || s.verb=="przeszukaj";
     if(talking==nullptr && free && choresTick(w, pl, now))
       return;
     }
@@ -1742,6 +1770,7 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
   else if(v=="sprzedaj") doSell (w, pl, s, now);
   else if(v=="kop")      doDig  (w, pl, s, now);
   else if(v=="poluj")    doHunt (w, pl, s, now);
+  else if(v=="przeszukaj") doSearch(w, pl, s, now);
   else if(v=="etykieta") nextStep(true, "");
   else                   nextStep(false, "nieznany krok");
   }
@@ -1762,6 +1791,8 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     knewBefore = !info.empty() && w.script().arpgKnowsInfo(pl, info);
     picked     = false;
     talkRetry  = 0;
+    busyT0     = 0;
+    busyLastT  = 0;
     phase      = 1;
     phaseT0    = now;
     }
@@ -1783,7 +1814,7 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     if(choresTick(w, pl, now))
       return;
     const float d = dist2d(pl.position(), npc->position());
-    if(d<=kTalkWalk) {
+    if(d<=kTalkWalk && std::abs(pl.position().y-npc->position().y)<=kReachHeight) {
       phase   = 2;
       phaseT0 = now;
       return;
@@ -1799,8 +1830,22 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     doing = "klik w " + nameOf(*npc) + ", czeka na rozmowę " + std::to_string((now-phaseT0)/1000) + " s" +
             (talkRetry>0 ? " (ponownie " + std::to_string(talkRetry) + ")" : std::string());
     // a click on the npc, like a player
-    if(dist2d(pl.position(), npc->position())>kTalkWalk*2.f) {
+    if(dist2d(pl.position(), npc->position())>kTalkWalk*2.f || std::abs(pl.position().y-npc->position().y)>kReachHeight) {
       phase = 1;
+      return;
+      }
+    // a player waits while the npc fights or searches a body (Cavalorn after the bandits), then until it is back
+    const std::string busy = busyWith(*npc);
+    if(!busy.empty()) {
+      busyLastT = now;
+      if(busyT0==0)
+        busyT0 = now;
+      }
+    const bool settling = busyLastT!=0 && (now-busyLastT<kBusySettleMs || npc->isAiBusy());
+    if(busyT0!=0 && now-busyT0<kBusyMaxMs && (!busy.empty() || settling)) {
+      phaseT0 = now; // the waiting does not count for the talk
+      doing   = "czeka, aż " + nameOf(*npc) + " skończy: " + (busy.empty() ? std::string("wraca do swoich zajęć") : busy) +
+                " (" + std::to_string((now-busyT0)/1000) + " s)";
       return;
       }
     if(now-phaseT0>kTalkStartMs) {
@@ -2186,8 +2231,8 @@ void ArpgPlotBot::doJump(World& w, Npc& pl, const Step& s, uint64_t now) {
 
 bool ArpgPlotBot::pickUp(World& w, Npc& pl, Item& it, uint64_t now, const std::string& what) {
   const float dd = dist2d(it.position(), pl.position());
-  if(dd>600.f) {
-    if(!walk.on || dist2d(walk.dest, it.position())>300.f)
+  if(dd>600.f || std::abs(it.position().y-pl.position().y)>kReachHeight) {
+    if(!walk.on || dist2d(walk.dest, it.position())>300.f || std::abs(walk.dest.y-it.position().y)>kFloorGap)
       walkStart(w, pl, it.position(), 400.f);
     walkWhat = "idzie po " + what;
     return walkTick(w, pl, now)>=0;
@@ -2295,6 +2340,10 @@ bool ArpgPlotBot::keepsTrade() const {
     return true;
   const auto& v = steps[cur].verb;
   return (v=="rozmowa" || v=="wybor") && trades(cur+1);
+  }
+
+bool ArpgPlotBot::keepsChest() const {
+  return !done && cur<steps.size() && steps[cur].verb=="przeszukaj";
   }
 
 void ArpgPlotBot::tradeDone() {
@@ -2581,4 +2630,193 @@ void ArpgPlotBot::doHunt(World& w, Npc& pl, const Step& s, uint64_t now) {
   if(r>0)
     doing = "poluje: " + nameOf(*hunted) + " (" + std::to_string(hunted->attribute(ATR_HITPOINTS)) + "/" +
             std::to_string(hunted->attribute(ATR_HITPOINTSMAX)) + "), " + tally + (lastMove.empty() ? std::string() : " | " + lastMove);
+  }
+
+std::string ArpgPlotBot::busyWith(const Npc& n) const {
+  if(n.isAttackAnim())
+    return "walczy";
+  const auto st = n.arpgStateName();
+  if(same(st, "ZS_RansackBody"))
+    return "przeszukuje ciało";
+  if(same(st, "ZS_Attack") || same(st, "ZS_MM_Attack") || same(st, "ZS_ReactToDamage") || same(st, "ZS_ReactToWeapon"))
+    return "walczy";
+  if(same(st, "ZS_Unconscious") || same(st, "ZS_Flee"))
+    return "nie może rozmawiać";
+  return std::string();
+  }
+
+void ArpgPlotBot::doSearch(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // przeszukaj [<miejsce>] [<cm>]: like a player in a new place - everything nobody owns lying around (the floors above
+  // and below too: the waynet takes the hero up and down the stairs) and the chests that are not locked
+  if(hooks.player==nullptr) {
+    nextStep(false, "brak sterowania bohaterem");
+    return;
+    }
+  const bool  place = !s.arg.empty() && !isNumber(s.arg[0]);
+  const float range = (!s.arg.empty() && isNumber(s.arg.back())) ? float(std::max(200, std::atoi(s.arg.back().c_str()))) : kSearchRange;
+  if(phase==0) {
+    searchAt = pl.position();
+    float reach = 0;
+    if(place && !targetPos(w, s.arg[0], searchAt, reach)) {
+      nextStep(false, "nieznane miejsce " + s.arg[0] + " w świecie " + std::string(w.name()));
+      return;
+      }
+    searchIt  = nullptr;
+    searchMob = false;
+    nFound    = 0;
+    nChests   = 0;
+    nOwned    = 0;
+    nLocked   = 0;
+    phase     = 1;
+    }
+  auto summary = [&]() {
+    std::string r = "zebrał " + std::to_string(nFound) + ", skrzynie " + std::to_string(nChests);
+    if(nOwned>0)
+      r += ", cudze (nie rusza) " + std::to_string(nOwned);
+    if(nLocked>0)
+      r += ", zamknięte skrzynie " + std::to_string(nLocked);
+    return r;
+    };
+  auto leave = [&](const std::string& why) {
+    givenUp.push_back(searchIt);
+    event("zbieranie", "nie dosięga: " + why, false);
+    searchIt = nullptr;
+    walk.on  = false;
+    };
+
+  // the chest window is open: everything out of it ("Zabierz wszystko"), closed
+  auto inv = hooks.inventory;
+  if(inv!=nullptr && inv->isOpen()==InventoryMenu::State::Chest) {
+    std::vector<std::pair<size_t,size_t>> all;
+    std::string names;
+    if(auto oi = inv->arpgOtherInventory())
+      for(auto it = oi->iterator(inv->arpgOtherIter()); it.isValid(); ++it) {
+        all.emplace_back(it->clsId(), it.count());
+        names += (names.empty() ? "" : ", ") + toUtf8(it->displayName()) + (it.count()>1 ? " x" + std::to_string(it.count()) : std::string());
+        }
+    for(auto& i:all)
+      inv->arpgMove(true, i.first, i.second);
+    const void* chest = inv->arpgChest();
+    inv->close();
+    searched.push_back(chest);
+    ++nChests;
+    event("lup", "skrzynia: " + (names.empty() ? std::string("pusta") : names), false);
+    if(chest==searchIt || searchMob)
+      searchIt = nullptr;
+    walk.on = false;
+    return;
+    }
+
+  // the thing now: still there, not too long
+  if(searchIt!=nullptr) {
+    Focus f;
+    if(searchMob)
+      f.interactive = static_cast<Interactive*>(const_cast<void*>(searchIt)); else
+      f.item        = static_cast<Item*>(const_cast<void*>(searchIt));
+    const Focus v = w.validateFocus(f);
+    if(!searchMob && v.item==nullptr) {
+      ++nFound; // gone from the world: taken
+      searchIt = nullptr;
+      walk.on  = false;
+      }
+    else if(searchMob && v.interactive==nullptr) {
+      searchIt = nullptr;
+      walk.on  = false;
+      }
+    else if(now-searchT0>kSearchItemMs) {
+      leave(searchWhat);
+      }
+    }
+
+  // the next one: this floor first, then the nearest
+  if(searchIt==nullptr) {
+    const Vec3  me    = pl.position();
+    const float r3    = std::sqrt(range*range+kSearchHeight*kSearchHeight);
+    float       bestS = 1e9f;
+    size_t      owned = 0, locked = 0;
+    auto inArea = [&](const Vec3& p) {
+      return dist2d(p, searchAt)<=range && std::abs(p.y-searchAt.y)<=kSearchHeight;
+      };
+    auto left = [&](const void* p) {
+      return std::find(givenUp.begin(), givenUp.end(), p)!=givenUp.end() ||
+             std::find(searched.begin(), searched.end(), p)!=searched.end();
+      };
+    auto score = [&](const Vec3& p) {
+      return dist2d(p, me) + std::abs(p.y-me.y)*3.f;
+      };
+    w.forEachItemNear(searchAt, r3, [&](Item& i) {
+      if(!inArea(i.position()) || left(&i))
+        return;
+      auto& h = i.handle();
+      if(h.owner!=0 || h.owner_guild!=0) {
+        ++owned; // taking it is theft
+        return;
+        }
+      const float sc = score(i.position());
+      if(sc<bestS) {
+        bestS      = sc;
+        searchIt   = &i;
+        searchMob  = false;
+        searchWhat = toUtf8(i.displayName());
+        }
+      });
+    w.forEachInteractiveNear(searchAt, r3, [&](Interactive& m) {
+      if(!m.isContainer() || !inArea(m.position()) || left(&m))
+        return;
+      if(!m.ownerName().empty()) {
+        ++owned;
+        return;
+        }
+      if(m.needToLockpick(pl)) {
+        ++locked; // a lock: not now
+        return;
+        }
+      if(m.inventory().isEmpty())
+        return;
+      const float sc = score(m.position());
+      if(sc<bestS) {
+        bestS      = sc;
+        searchIt   = &m;
+        searchMob  = true;
+        searchWhat = "skrzynia " + toUtf8(m.displayName());
+        }
+      });
+    nOwned  = owned;
+    nLocked = locked;
+    if(searchIt==nullptr) {
+      nextStep(true, summary());
+      return;
+      }
+    searchT0 = now;
+    walk.on  = false;
+    }
+
+  // up to it (the stairs: the waynet), then a click like a player
+  Focus target;
+  Vec3  at;
+  if(searchMob) {
+    auto m = static_cast<Interactive*>(const_cast<void*>(searchIt));
+    target = Focus(*m);
+    at     = m->position();
+    } else {
+    auto it = static_cast<Item*>(const_cast<void*>(searchIt));
+    target = Focus(*it);
+    at     = it->position();
+    }
+  const float dd = dist2d(at, pl.position());
+  if(dd>450.f || std::abs(at.y-pl.position().y)>kReachHeight) {
+    if(!walk.on || dist2d(walk.dest, at)>300.f || std::abs(walk.dest.y-at.y)>kFloorGap)
+      walkStart(w, pl, at, 300.f);
+    walkWhat = "idzie po: " + searchWhat;
+    if(walkTick(w, pl, now)<0)
+      leave(searchWhat);
+    doing = "przeszukuje (" + summary() + ") | " + doing;
+    return;
+    }
+  walk.on = false;
+  if(hooks.player->arpgBotIdle() || now-walk.clickT>kTalkClickMs) {
+    walk.clickT = now;
+    hooks.player->arpgBotClick(target, false, false);
+    }
+  doing = (searchMob ? "otwiera: " : "podnosi: ") + searchWhat + " (" + meters(dd) + ") | " + summary();
   }

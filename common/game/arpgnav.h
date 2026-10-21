@@ -16,6 +16,7 @@ class ArpgNav final {
     static constexpr float Cell   = 25.f;  // cm
     static constexpr float Radius = 32.f;  // cm: room the hero needs around his middle
     static constexpr float Step   = 40.f;  // cm: the most the ground may go up / down between two cells
+    static constexpr float GoalHeight = 250.f; // cm: the target this far above / below the ground there: another floor
 
     // what the grid asks the world (the physics; a test scene in tests)
     struct Scene {

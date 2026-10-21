@@ -8,6 +8,7 @@
 # o siłę), Onar -> najemnik -> górne miasto (list Lee) -> Lord Hagen -> przełęcz = rozdział 2.
 # Zapis kroków: autotest_rozdzial1.txt (tam też zwykłe kroki); tu dodatkowo:
 #   zbierz <przedmiot> <ile> [<miejsce>] [<cm>]    rzeczy jednego rodzaju leżące wokół miejsca (rzepa z pola)
+#   przeszukaj [<miejsce>] [<cm>]                    wszystko bez właściciela wokół miejsca (piętra też) i otwarte skrzynie
 #   kup <przedmiot> [<ile>]                         w oknie handlu (otwiera je rozmowa z DIA_*_TRADE)
 #   sprzedaj <przedmiot>|bronie [<ile>|wszystko]    bronie = broń nie w ręku (łup)
 #   kop <miejsce> <przedmiot>                        zakopany skarb przy punkcie (narzędzie z obiektu, np. kilof)
@@ -34,6 +35,8 @@ rozmowa NONE_100_Xardas DIA_Xardas_WEAPON
 rozmowa NONE_100_Xardas DIA_Xardas_FirstEXIT
 czekaj rozdzial 1 na 20
 sprawdz dziennik TOPIC_INNOSEYE aktywny
+# łup w wieży jak gracz: wszystko bez właściciela na górze i na niższych piętrach (schody: sieć dróg) i otwarte skrzynie
+przeszukaj NW_XARDAS_START 1500
 
 # ---------------------------------------------------------------- Lester w dolinie
 zapisz lester
@@ -62,6 +65,8 @@ sprawdz przedmiot ItMW_Addon_Knife01
 zaloz ItMW_Addon_Knife01
 rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_LETSKILLBANDITS
 zabij BDT_1013_Bandit_L BDT_1014_Bandit_L BDT_1015_Bandit_L
+# po walce Cavalorn przeszukuje ciała (ZS_RansackBody) i wraca na NW_XARDAS_BANDITS_LEFT - bot czeka, aż skończy
+? czekaj blisko BAU_4300_Addon_Cavalorn NW_XARDAS_BANDITS_LEFT 500 na 40
 # Cavalorn daje list, gdy stoi przy bandytach (NW_XARDAS_BANDITS_LEFT); inaczej list jest u Brago (łup) - wtedy otwarty,
 # bo Vatras przyjmie zapieczętowany tylko od Cavalorna (MIS_Addon_Cavalorn_Letter2Vatras), a otwarty zawsze
 ? rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_BragoKilled

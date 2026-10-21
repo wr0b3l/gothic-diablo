@@ -422,7 +422,8 @@ void ArpgAutotest::tickPlot() {
   // letters, the inventory: the bot does not read; talks are the bot's own business; the trade window only while the
   // scenario buys or sells
   const bool trading = plot->keepsTrade() && hooks.inventory!=nullptr && hooks.inventory->isOpen()==InventoryMenu::State::Trade;
-  if(hooks.uiBusy && hooks.uiBusy() && !trading)
+  const bool chest   = plot->keepsChest() && hooks.inventory!=nullptr && hooks.inventory->isOpen()==InventoryMenu::State::Chest;
+  if(hooks.uiBusy && hooks.uiBusy() && !trading && !chest)
     hooks.closeUi();
   plot->tick(*world, *pl);
   }

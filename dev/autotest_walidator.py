@@ -300,6 +300,13 @@ def main():
                 need('place', r[2], no)
                 for x in r[4:]:
                     need('npc', x, no)
+        elif v == 'przeszukaj':
+            place = bool(r) and not r[0].isdigit()
+            if place:
+                need('place', r[0], no)
+            rest = r[1:] if place else r
+            if len(rest) > 1 or (rest and not rest[0].isdigit()):
+                errors.append(f'linia {no}: przeszukaj [<miejsce>] [<cm>]')
         elif v == 'spij':
             if not re.fullmatch(r'\d\d:\d\d', r[0] if r else ''):
                 errors.append(f'linia {no}: spij HH:MM')

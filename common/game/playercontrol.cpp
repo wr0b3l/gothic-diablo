@@ -1825,6 +1825,12 @@ void PlayerControl::processAutoRotate(Npc& pl, float& rot, uint64_t dt) {
 
 // gothic-diablo: Diablo-like mouse controls ////////////////////////////////////////////
 
+// Diathic: a sheep, a meatbug - beasts neutral / friendly to people (B_InitMonsterAttitudes) that do not go for the hero;
+// a click attacks them (the player's choice), the next target of a held attack or of the lock is never one of them
+static bool arpgPeacefulBeast(const Npc& pl, const Npc& npc) {
+  return npc.isMonster() && !npc.isEnemy(pl) && npc.tempAttitude()!=ATT_HOSTILE && npc.target()!=&pl;
+  }
+
 static bool arpgIsHostile(const Npc& pl, const Npc& npc) {
   if(npc.isMonster())
     return true;
@@ -2252,7 +2258,7 @@ Tempest::Vec3 PlayerControl::arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, f
   const float near = c.gridPath ? 35.f : 90.f; // the corners of a way around furniture: closely
   while(c.pathIdx<c.path.size()) {
     const auto d = c.path[c.pathIdx]-pos;
-    if(d.x*d.x+d.z*d.z > near*near)
+    if(d.x*d.x+d.z*d.z > near*near || std::fabs(d.y)>150.f) // Diathic: a point of the stairs below is not passed
       break;
     ++c.pathIdx;
     }
@@ -2444,7 +2450,9 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
   const float dist2 = d.x*d.x+d.z*d.z;
   const float step  = 900.f*(float(dt)/1000.f);
 
-  bool inRange = dist2<=reach*reach;
+  // Diathic: and on the same floor - a point right under the hero (a tower, the stairs) is not reached yet
+  const float height  = (c.kind==ArpgClick::Ground) ? 150.f : 250.f;
+  bool inRange = dist2<=reach*reach && (c.kind==ArpgClick::Attack || c.kind==ArpgClick::Strike || std::fabs(d.y)<=height);
   if(c.kind==ArpgClick::Attack) {
     const auto ws = pl.weaponState();
     if(ws==WeaponState::Fist || ws==WeaponState::W1H || ws==WeaponState::W2H) {
@@ -2999,7 +3007,7 @@ void PlayerControl::arpgPlanPath(Npc& pl, const Tempest::Vec3& dest) {
   // the first waypoint is often behind the hero: skip it when the next one is closer
   while(c.pathIdx+1<c.path.size()) {
     const auto a = c.path[c.pathIdx]-pos, b = c.path[c.pathIdx+1]-pos, ab = c.path[c.pathIdx+1]-c.path[c.pathIdx];
-    const float da = a.x*a.x+a.z*a.z, db = b.x*b.x+b.z*b.z, dab = ab.x*ab.x+ab.z*ab.z;
+    const float da = a.x*a.x+a.y*a.y+a.z*a.z, db = b.x*b.x+b.y*b.y+b.z*b.z, dab = ab.x*ab.x+ab.y*ab.y+ab.z*ab.z; // the stairs: with the height
     if(db<dab || db<da)
       ++c.pathIdx; else
       break;
@@ -3147,7 +3155,7 @@ Npc* PlayerControl::arpgNextEnemy(Npc& pl, const Npc* except, float range) const
   Npc*  best  = nullptr;
   float bestS = 1e9f;
   w->detectNpc(pos, range, [&](Npc& n) {
-    if(&n==&pl || &n==except || n.isDown() || !arpgIsEnemy(n))
+    if(&n==&pl || &n==except || n.isDown() || !arpgIsEnemy(n) || arpgPeacefulBeast(pl, n))
       return;
     const auto  d = n.position()-pos;
     const float l = std::sqrt(d.x*d.x+d.z*d.z);

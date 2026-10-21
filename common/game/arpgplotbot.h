@@ -56,6 +56,8 @@ class ArpgPlotBot final {
     void        panel(ArpgBotPanel& out, const Npc* pl) const;
     // the trade window stays open: the step now (or the one after the talk now) buys or sells
     bool        keepsTrade() const;
+    // a chest window stays open: "przeszukaj" empties it
+    bool        keepsChest() const;
 
   private:
     struct Step {
@@ -157,6 +159,17 @@ class ArpgPlotBot final {
     size_t                   huntKills = 0;
     uint64_t                 digT0     = 0;
     int                      digClicks = 0;
+    // "przeszukaj": everything nobody owns around one place (things lying, chests that are not locked), all floors
+    Tempest::Vec3            searchAt   = {};
+    const void*              searchIt   = nullptr;  // an Item or (searchMob) an Interactive
+    bool                     searchMob  = false;
+    uint64_t                 searchT0   = 0;
+    std::string              searchWhat;
+    size_t                   nFound = 0, nChests = 0, nOwned = 0, nLocked = 0;
+    std::vector<const void*> searched;              // chests emptied
+    // a talk waits while the npc is busy (a fight, searching a body) and until it settles (back on its place)
+    uint64_t                 busyT0    = 0;
+    uint64_t                 busyLastT = 0;
 
     size_t                   nOk = 0, nFail = 0, nSkip = 0, nEvents = 0, nHeal = 0, nStuck = 0, nErrSaves = 0;
     size_t                   nDeaths = 0, nPotions = 0;
@@ -190,6 +203,7 @@ class ArpgPlotBot final {
     int         fightTick(World& w, Npc& pl, Npc& tg, uint64_t now); // -1: the target is out of reach
     int         engage(World& w, Npc& pl, Npc& tg, uint64_t now, std::string& fail); // walk up, fight: -1 failed, 0 walking, 1 fighting
     void        fightEnd(Npc& pl);
+    bool        isThreat(const Npc& n, const Npc& pl) const; // an enemy the bot fights (not a sheep: neutral beasts are left alone)
     bool        choresTick(World& w, Npc& pl, uint64_t now);
     bool        healTick(World& w, Npc& pl, uint64_t now);
     int32_t     hpBonus(World& w, const Item& it) const;
@@ -221,6 +235,8 @@ class ArpgPlotBot final {
     void        doSell (World& w, Npc& pl, const Step& s, uint64_t now);
     void        doDig  (World& w, Npc& pl, const Step& s, uint64_t now);
     void        doHunt (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doSearch(World& w, Npc& pl, const Step& s, uint64_t now);
+    std::string busyWith(const Npc& n) const;   // what keeps the npc from a talk now ("" = nothing)
     bool        tradeOpen() const;
     void        tradeDone();
     bool        pickUp(World& w, Npc& pl, Item& it, uint64_t now, const std::string& what); // walk to it, click; false: failed

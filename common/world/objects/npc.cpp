@@ -4956,6 +4956,14 @@ std::string Npc::arpgEquipBestWeapons() {
   return std::string();
   }
 
+std::string_view Npc::arpgStateName() const {
+  if(aiState.funcIni.ptr==size_t(-1))
+    return {};
+  if(auto s = owner.script().findSymbol(aiState.funcIni.ptr))
+    return s->name();
+  return {};
+  }
+
 std::string Npc::arpgLootAll(Npc& body) {
   std::vector<std::pair<size_t,size_t>> all;
   std::string names;
