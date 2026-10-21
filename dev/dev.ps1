@@ -21,6 +21,12 @@
     -Classic          tryb klasyczny (bez ARPG)
     -GothicPath ...   folder Gothic II
     -Msys ...         folder MSYS2 (domyślnie C:\msys64, jeśli już jest, inaczej <dysk launchera>:\msys64)
+    -Autotest kamera  bot testowy (autotest.bat): objazd kamery po punktach drogi, raport w gra\dane\autotest\<data>\raport.html
+    -Swiaty a,b       bot: tylko te światy (newworld, oldworld, addonworld, dragonisland)
+    -Co N             bot: co N-ty punkt drogi;  -Limit N  bot: najwyżej N punktów na świat
+    -Autotest rozdzial1  bot fabuły (bot_fabuly.bat): scenariusz gra\dane\autotest\rozdzial1.txt albo wbudowany
+    -Od <etykieta>    bot fabuły: start od etykiety scenariusza, z zapisu save_slot_bot_<scenariusz>_<etykieta>.sav (gdy jest)
+    -Zapis <nazwa>    wczytaj zapis save_slot_<nazwa>.sav (np. bot_blad1 z raportu)
     pozostałe parametry trafiają do Gothic2Notr.exe
 #>
 [CmdletBinding()]
@@ -35,6 +41,12 @@ param(
   [string]$Msys = '',
   [string]$Repo = 'https://github.com/wr0b3l/gothic-diablo.git',
   [ValidateRange(5, 600)][int]$Interval = 15,
+  [string]$Autotest = '',
+  [string]$Swiaty = '',
+  [ValidateRange(1, 1000)][int]$Co = 1,
+  [ValidateRange(0, 100000)][int]$Limit = 0,
+  [string]$Od = '',
+  [string]$Zapis = '',
   [Parameter(ValueFromRemainingArguments = $true)][string[]]$GameArgs
 )
 
@@ -281,6 +293,19 @@ function Start-Game([string]$Dir) {
   New-Item -ItemType Directory -Force -Path $Data | Out-Null
   $argList = @('-g', "`"$GothicPath`"")
   if ($Classic) { $argList += '-classic' }
+  if ($Autotest) {
+    $argList += @('-autotest', $Autotest)
+    if ($Swiaty) { $argList += @('-autotest-swiaty', $Swiaty) }
+    if ($Co -gt 1) { $argList += @('-autotest-co', "$Co") }
+    if ($Limit -gt 0) { $argList += @('-autotest-limit', "$Limit") }
+    if ($Od) {
+      $argList += @('-autotest-od', $Od)
+      # zapis bota przed etykietą: save_slot_bot_<scenariusz>_<etykieta>.sav (starszy: save_slot_bot_<etykieta>.sav)
+      if (-not $Zapis -and (Test-Path (Join-Path $Data "save_slot_bot_${Autotest}_$Od.sav"))) { $Zapis = "bot_${Autotest}_$Od" }
+      if ($Autotest -eq 'rozdzial1' -and -not $Zapis -and (Test-Path (Join-Path $Data "save_slot_bot_$Od.sav"))) { $Zapis = "bot_$Od" }
+    }
+  }
+  if ($Zapis) { $argList += @('-save', $Zapis) }
   if ($GameArgs) { $argList += $GameArgs }
   Log "Uruchamiam $(Split-Path -Leaf $Dir)..."
   Start-Process -FilePath (Join-Path $Dir $Exe) -ArgumentList $argList -WorkingDirectory $Data

@@ -17,6 +17,9 @@ Każda zmiana dalej idzie na GitHuba, CI i launcher (`build-<N>`) działają jak
 |---|---|
 | `graj_lokalnie.bat` | pobiera najnowszy commit (gałąź z najnowszym commitem, jak launcher), buduje przyrostowo, uruchamia grę |
 | `buduj_w_tle.bat` | zostaw otwarte: co 15 s sprawdza GitHuba i od razu buduje nowy commit (dźwięk = gotowe) |
+| `autotest.bat` | bot testowy (faza 10): jak `graj_lokalnie.bat`, potem gra z `-autotest kamera` — objazd kamery po punktach drogi wszystkich światów, sama się zamyka; raport `gra\dane\autotest\<data_godzina>\raport.html`; opcje `-Swiaty newworld,oldworld`, `-Co N`, `-Limit N` |
+| `bot_fabuly.bat` | bot fabuły (faza 10): jak `graj_lokalnie.bat`, potem gra z `-autotest rozdzial1` — sama przechodzi rozdział 1 (wątek główny, straż) jak gracz: klik, rozmowy, walka; raport `gra\dane\autotest\<data_godzina>_rozdzial1\raport.html`; `-Od <etykieta>` start od miejsca scenariusza (z zapisu bota), `-Zapis bot_blad1` zapis z chwili błędu; scenariusz do poprawek: `gra\dane\autotest\rozdzial1.txt` (krok `przeszukaj [<miejsce>] [<cm>]` = łup wokół miejsca, też piętra i otwarte skrzynie); sprawdzenie nazw bez gry: `python3 dev/autotest_walidator.py <scenariusz> <Content>` |
+| `bot_najemnik.bat` | bot fabuły, rozdział 1 ścieżką najemnika (`-autotest rozdzial1_najemnik`): farma Lobarta (ubranie robocze), Greg i jego skarby, czeladnik u Harada, najemnik bez pomocy Laresa i Martina, Lord Hagen; raport `gra\dane\autotest\<data_godzina>_rozdzial1_najemnik\raport.html`; te same opcje (`-Od farma`, `-Od czeladnik`, `-Od onar`…); scenariusz do poprawek: `gra\dane\autotest\rozdzial1_najemnik.txt` |
 | `Diathic.bat` (wcześniej `Gothic Diablo.bat`) | launcher bez zmian – buildy z CI |
 
 Gra startuje z `gra\dane` – te same zapisy i `Gothic.ini` co w launcherze.

@@ -1272,6 +1272,13 @@ void Npc::changeAttribute(Attribute a, int32_t val, bool allowUnconscious) {
       return;
     if(isImmortal())
       return;
+    if(isPlayer() && Gothic::inst().arpgBotGuard() && hnpc->attribute[a]+val<=0) {
+      // gothic-diablo: the story bot plays on: the deadly blow leaves 1 point, the bot notes a death and heals
+      Gothic::inst().arpgBotSaved();
+      val = 1-hnpc->attribute[a];
+      if(val>=0)
+        return;
+      }
     }
 
   hnpc->attribute[a]+=val;
@@ -4937,6 +4944,40 @@ bool Npc::isTalk() const {
 
 bool Npc::isAttackAnim() const {
   return visual.pose().isAttackAnim();
+  }
+
+std::string Npc::arpgEquipBestWeapons() {
+  const Item* before = invent.currentMeleeWeapon();
+  invent.equipBestMeleeWeapon(*this);
+  invent.equipBestRangedWeapon(*this);
+  const Item* after = invent.currentMeleeWeapon();
+  if(after!=nullptr && after!=before)
+    return std::string(after->displayName());
+  return std::string();
+  }
+
+std::string_view Npc::arpgStateName() const {
+  if(aiState.funcIni.ptr==size_t(-1))
+    return {};
+  if(auto s = owner.script().findSymbol(aiState.funcIni.ptr))
+    return s->name();
+  return {};
+  }
+
+std::string Npc::arpgLootAll(Npc& body) {
+  std::vector<std::pair<size_t,size_t>> all;
+  std::string names;
+  for(auto it = body.invent.iterator(Inventory::T_Ransack); it.isValid(); ++it) {
+    all.push_back({it->clsId(), it.count()});
+    names += (names.empty() ? "" : ", ") + std::string(it->displayName()) + (it.count()>1 ? " x" + std::to_string(it.count()) : std::string());
+    }
+  for(auto& i:all)
+    addItem(i.first, body, i.second);
+  return names;
+  }
+
+int64_t Npc::arpgNextHitMs() const {
+  return visual.pose().arpgNextHitMs(owner.tickCount());
   }
 
 Pose::ComboTiming Npc::comboTiming() const {

@@ -120,6 +120,11 @@ class Gothic final {
 
     bool         isGodMode() const { return godMode; }
     void         setGodMode(bool g) { godMode = g; }
+    // gothic-diablo: the story bot: a blow that would kill the hero leaves 1 point of life, the bot counts it (a death in the report)
+    bool         arpgBotGuard() const     { return arpgGuard; }
+    void         setArpgBotGuard(bool g)  { arpgGuard = g; }
+    uint32_t     arpgBotSaves() const     { return arpgSaves; }
+    void         arpgBotSaved()           { ++arpgSaves; }
 
     void         toggleDesktop() { desktop = !desktop; }
     bool         isDesktop() { return desktop; }
@@ -218,6 +223,8 @@ class Gothic final {
     uint16_t                                pauseSum=0;
     bool                                    isMarvin       = false;
     bool                                    godMode        = false;
+    bool                                    arpgGuard      = false;
+    uint32_t                                arpgSaves      = 0;
     bool                                    desktop        = false;
     bool                                    showFpsCounter = false;
     bool                                    showTime       = false;

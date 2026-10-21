@@ -82,7 +82,7 @@ bool ArpgNav::lineClear(const Scene& w, const Vec3& from, const Vec3& to) {
   const float dx = to.x-from.x, dz = to.z-from.z;
   const float len = std::sqrt(dx*dx+dz*dz);
   if(len<1.f)
-    return true;
+    return std::fabs(to.y-from.y)<=GoalHeight; // right above / below: another floor
   if(len>8000.f)
     return false; // very far: the waynet
 
@@ -113,6 +113,10 @@ bool ArpgNav::lineClear(const Scene& w, const Vec3& from, const Vec3& to) {
     if(off==0.f)
       y = yl;
     }
+
+  // the ground at the end is where the target is (not the floor above / below it: a tower, a spiral stair)
+  if(std::fabs(y-to.y)>GoalHeight)
+    return false;
 
   // and nothing across the way at knee and chest height
   Vec3 hit;
@@ -163,9 +167,9 @@ bool ArpgNav::findPath(const Scene& w, const Vec3& from, const Vec3& dest, float
     // x1.002: of ways nearly as long the one further on goes first (float sums of equal ways are not quite equal)
     return std::max(0.f, (mx-mn) + mn*1.4142f - reach)*1.002f;
     };
-  auto isGoal = [&](int i, int j) {
+  auto isGoal = [&](int i, int j, float y) {
     const float x = center(i)-dest.x, z = center(j)-dest.z;
-    return x*x+z*z <= reach*reach;
+    return x*x+z*z <= reach*reach && std::fabs(y-dest.y)<=GoalHeight; // the same floor as the target
     };
 
   {
@@ -187,12 +191,12 @@ bool ArpgNav::findPath(const Scene& w, const Vec3& from, const Vec3& dest, float
       continue;
     n.closed = true;
     ++expanded;
-    if(isGoal(o.i, o.j) && !n.root) {
+    if(isGoal(o.i, o.j, n.y) && !n.root) {
       goal  = k;
       found = true;
       break;
       }
-    if(n.root && isGoal(o.i, o.j)) {
+    if(n.root && isGoal(o.i, o.j, n.y)) {
       out.push_back(dest);
       return true; // already there
       }
@@ -221,7 +225,7 @@ bool ArpgNav::findPath(const Scene& w, const Vec3& from, const Vec3& dest, float
         m.g      = ng;
         m.y      = probe(w, ni, nj, y0).y;
         m.parent = k;
-        if(isGoal(ni, nj)) {
+        if(isGoal(ni, nj, m.y)) {
           // close enough: done when it is found (not when it comes out of the queue - the last step is a whole
           // cell, more than the estimate, and the whole band around the way would be searched first)
           goal  = nk;

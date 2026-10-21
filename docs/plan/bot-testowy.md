@@ -1,6 +1,7 @@
 # Bot testowy — automatyczne sprawdzanie gry (plan na później, 2026-10-15)
 
 Cel: zamiast ręcznego przechodzenia całej gry (faza 10) — automat, który chodzi po świecie, przechodzi fabułę i oddaje raport z miejscami do poprawy.
+Stan (2026-10-21): część 1 (objazd kamery) i część 4 — rozdział 1 w trybie uczciwym (decyzja 2026-10-20) zrobione — gałąź faza10-bot, `autotest.bat`, `bot_fabuly.bat` (ścieżka straży), `bot_najemnik.bat` (ścieżka najemnika: ubranie od Lobarta, Greg i skarby, czeladnik u Harada, bez pomocy Laresa i Martina; nowe kroki zbierz / kup / sprzedaj / kop / poluj), opis w GOTHIC-DIABLO.md (Faza 10). Części 2–3 dalej do zrobienia.
 Decyzje użytkownika (2026-10-15): ręczny test jest zbyt czasochłonny; fabułę skryptować na podstawie gotowych solucji „krok po kroku”; „dodaj do planu bota z opisem, jak podejść do tematu, zrobimy to później”.
 
 ## Zasady

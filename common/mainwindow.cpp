@@ -80,6 +80,30 @@ MainWindow::MainWindow(Device& device)
 
   Gothic::inst().onBenchmarkFinished.bind(this,&MainWindow::onBenchmarkFinished);
 
+  // gothic-diablo: the test bot: pictures of the world without the interface; letters end at once; the story bot
+  // walks, talks and fights through the player control and the dialog menu, saves like a player
+  arpgAutotest.setHooks({
+    [this]() {
+      auto tex = renderer.screenshoot(cmdId, Size(int(swapchain.w()),int(swapchain.h())));
+      if(tex.isEmpty())
+        return Pixmap();
+      return Resources::device().readPixels(textureCast<const Texture2d&>(tex));
+      },
+    [this]() { return document.isActive() || chapter.isActive() || inventory.isActive(); },
+    [this]() {
+      if(document.isActive())
+        document.close();
+      if(chapter.isActive())
+        chapter.arpgClose();
+      if(inventory.isActive())
+        inventory.close();
+      },
+    [this](const std::string& slot, const std::string& name) { saveGame(slot, name); },
+    &player,
+    &dialogs,
+    &inventory,
+    });
+
   if(!Gothic::inst().defaultSave().empty()){
     Gothic::inst().load(Gothic::inst().defaultSave());
     rootMenu.popMenu();
@@ -1741,6 +1765,8 @@ uint64_t MainWindow::tick() {
   if(video.isActive())
     return 0;
 
+  if(arpgAutotest.isActive() && chapter.isActive())
+    chapter.arpgClose(); // gothic-diablo: the chapter screen pauses the game - the test bot does not wait
   if(Gothic::inst().isPause()) {
     // Diathic: in a pause the interface is still drawn every frame (the sword cursor, the menus' animation);
     // before only on the menu's timer (10 times a second) - the cursor jumped
@@ -1790,6 +1816,8 @@ uint64_t MainWindow::tick() {
       gs->arpgProgress().initWeapons(h);
       }
   }
+
+  arpgAutotest.tick(); // gothic-diablo: the test bot (-autotest), after the game update
 
   if(dialogs.isActive())
     ;//clearInput();
@@ -2054,7 +2082,7 @@ void MainWindow::saveGame(std::string_view slot, std::string_view name) {
   }
 
 void MainWindow::onVideo(std::string_view fname) {
-  if(Gothic::inst().isBenchmarkMode())
+  if(Gothic::inst().isBenchmarkMode() || arpgAutotest.isActive())
     return;
   video.pushVideo(fname);
   }
@@ -2254,6 +2282,11 @@ void MainWindow::render(){
           } else {
           paintArpgBarOverlay(pn);
           }
+        }
+      if(arpgAutotest.isActive()) {
+        // gothic-diablo: the test bot's panel over everything (talks, menus); the report's pictures are taken without it
+        Painter pn(p);
+        arpgAutotest.paint(pn, w(), h());
         }
       }
     uiMesh [cmdId].update(device,uiLayer);

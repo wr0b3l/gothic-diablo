@@ -134,6 +134,11 @@ class GameScript final {
     zenkit::DaedalusSymbol*     findSymbol(std::string_view s);
     zenkit::DaedalusSymbol*     findSymbol(const size_t s);
     size_t                      findSymbolIndex(std::string_view s);
+    // gothic-diablo: the test bot (ArpgPlotBot): the script name of a dialog line (C_INFO instance or the choice function),
+    // whether the npc knows an info (by name), the class of a symbol (C_NPC, C_INFO, C_ITEM; empty: not an instance)
+    std::string                 arpgChoiceName(const DlgChoice& dlg);
+    bool                        arpgKnowsInfo(const Npc& npc, std::string_view info);
+    std::string                 arpgClassOf(std::string_view name);
     size_t                      symbolsCount() const;
 
     const AiState&              aiState  (ScriptFn id);

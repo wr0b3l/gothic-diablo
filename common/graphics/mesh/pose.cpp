@@ -890,6 +890,18 @@ uint16_t Pose::comboLength() const {
   return combo.len();
   }
 
+int64_t Pose::arpgNextHitMs(uint64_t tickCount) const {
+  int64_t best = -1;
+  for(auto& i:lay) {
+    if(i.seq==nullptr || !i.seq->isAttackAnim())
+      continue;
+    const int64_t h = i.seq->nextHitMs(int64_t(tickCount)-int64_t(i.sAnim));
+    if(h>=0 && (best<0 || h<best))
+      best = h;
+    }
+  return best;
+  }
+
 Pose::ComboTiming Pose::comboTiming(uint64_t tickCount) const {
   ComboTiming r;
   for(auto& i:lay) {

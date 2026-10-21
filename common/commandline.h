@@ -50,6 +50,12 @@ class CommandLine {
     std::string_view    defaultSave()      const { return saveDef;    }
     // gothic-diablo: isometric ARPG camera/controls; disabled with -classic
     bool                isArpgMode()       const { return arpgMode;     }
+    // gothic-diablo: the test bot: scenario ("kamera"), worlds ("newworld,oldworld"), every N-th point, points per world
+    std::string_view    arpgAutotest()       const { return arpgTest;       }
+    std::string_view    arpgAutotestWorlds() const { return arpgTestWorlds; }
+    std::string_view    arpgAutotestFrom()   const { return arpgTestFrom;   } // the story bot starts at this label
+    int                 arpgAutotestEvery()  const { return arpgTestEvery;  }
+    int                 arpgAutotestLimit()  const { return arpgTestLimit;  }
 
     std::string         wrldDef;
 
@@ -77,6 +83,9 @@ class CommandLine {
     bool                isVsm        = false;
     bool                isRtSm       = false;
     bool                arpgMode     = true;
+    std::string         arpgTest, arpgTestWorlds, arpgTestFrom;
+    int                 arpgTestEvery = 1;
+    int                 arpgTestLimit = 0;
     GiMethod            isGi         = GiMethod::None;
     bool                forceG1      = false;
     bool                forceG2      = false;

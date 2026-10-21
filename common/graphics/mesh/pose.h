@@ -88,6 +88,8 @@ class Pose final {
       uint16_t hits       = 0;     // gothic-diablo: hits of the whole series (Gothic: 2 untrained, 3-4 warrior / master)
       };
     ComboTiming        comboTiming(uint64_t tickCount) const;
+    // gothic-diablo: ms to the next hit of the attack playing (-1: no attack / no hit left in it)
+    int64_t            arpgNextHitMs(uint64_t tickCount) const;
 
     // gothic-diablo: play attack animations faster: moves them ahead by 'ms'
     void               warpAttack(uint64_t ms, uint64_t tickCount);

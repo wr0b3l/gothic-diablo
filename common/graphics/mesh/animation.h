@@ -90,6 +90,8 @@ class Animation final {
       float                                  totalTime() const;
 
       bool                                   isAttackAnim() const;
+      // gothic-diablo: ms from 't' (ms into the animation) to its next hit frame (OPTIMAL_FRAME), -1: none
+      int64_t                                nextHitMs(int64_t t) const;
       bool                                   isPrehit(uint64_t sTime, uint64_t now) const;
       void                                   processEvents(uint64_t barrier, uint64_t sTime, uint64_t now, EvCount& ev) const;
       void                                   processSfx   (uint64_t barrier, uint64_t sTime, uint64_t now, Npc* npc, Interactive* mob) const;

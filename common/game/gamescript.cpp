@@ -845,6 +845,39 @@ zenkit::DaedalusSymbol* GameScript::findSymbol(const size_t s) {
   return vm.find_symbol_by_index(uint32_t(s));
   }
 
+std::string GameScript::arpgChoiceName(const DlgChoice& dlg) {
+  if(int32_t(dlg.scriptFn)<0 || dlg.handle==nullptr)
+    return "";
+  if(dlg.handle->information==int32_t(dlg.scriptFn)) {
+    auto sym = vm.find_symbol_by_instance(*dlg.handle);
+    return sym!=nullptr ? sym->name() : std::string();
+    }
+  auto sym = vm.find_symbol_by_index(dlg.scriptFn);
+  return sym!=nullptr ? sym->name() : std::string();
+  }
+
+bool GameScript::arpgKnowsInfo(const Npc& npc, std::string_view info) {
+  auto sym = vm.find_symbol_by_name(info);
+  if(sym==nullptr)
+    return false;
+  return doesNpcKnowInfo(*npc.handlePtr(), sym->index());
+  }
+
+std::string GameScript::arpgClassOf(std::string_view name) {
+  auto sym = vm.find_symbol_by_name(name);
+  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::INSTANCE)
+    return "";
+  // instance -> prototype -> class
+  for(int i=0; i<4 && sym!=nullptr; ++i) {
+    if(sym->type()==zenkit::DaedalusDataType::CLASS)
+      return sym->name();
+    if(sym->parent()==uint32_t(-1))
+      break;
+    sym = vm.find_symbol_by_index(sym->parent());
+    }
+  return "";
+  }
+
 size_t GameScript::findSymbolIndex(std::string_view name) {
   auto sym = vm.find_symbol_by_name(name);
   return sym == nullptr ? size_t(-1) : sym->index();

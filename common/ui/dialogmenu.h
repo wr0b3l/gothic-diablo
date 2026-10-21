@@ -39,6 +39,14 @@ class DialogMenu : public Tempest::Widget {
     bool isNpcInDialog(const Npc* npc) const;
 
     bool isActive() const;
+    void arpgAbort(); // gothic-diablo: the test bot ends a talk at once
+    // gothic-diablo: the test bot (ArpgPlotBot): who talks, the lines to pick (script names + text) once they can be picked,
+    // a pick by name (like a click), skipping the spoken line (like a right click)
+    struct ArpgBotLine { std::string name; std::string title; };
+    Npc*  arpgBotNpc() const { return state==State::Idle ? nullptr : other; }
+    bool  arpgBotLines(std::vector<ArpgBotLine>& out) const;
+    bool  arpgBotPick(std::string_view name);
+    void  arpgBotSkip();
     bool hasContent() const;
 
     void print      (std::string_view msg);

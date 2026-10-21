@@ -1825,6 +1825,12 @@ void PlayerControl::processAutoRotate(Npc& pl, float& rot, uint64_t dt) {
 
 // gothic-diablo: Diablo-like mouse controls ////////////////////////////////////////////
 
+// Diathic: a sheep, a meatbug - beasts neutral / friendly to people (B_InitMonsterAttitudes) that do not go for the hero;
+// a click attacks them (the player's choice), the next target of a held attack or of the lock is never one of them
+static bool arpgPeacefulBeast(const Npc& pl, const Npc& npc) {
+  return npc.isMonster() && !npc.isEnemy(pl) && npc.tempAttitude()!=ATT_HOSTILE && npc.target()!=&pl;
+  }
+
 static bool arpgIsHostile(const Npc& pl, const Npc& npc) {
   if(npc.isMonster())
     return true;
@@ -2074,6 +2080,81 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
   arpgClick.stuckPos = pl->position();
   }
 
+void PlayerControl::arpgBotGround(const Tempest::Vec3& p) {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  arpgClick = ArpgClick();
+  if(pl==nullptr)
+    return;
+  arpgClick.kind     = ArpgClick::Ground;
+  arpgClick.point    = p;
+  arpgClick.stuckPos = pl->position();
+  }
+
+void PlayerControl::arpgBotClick(const Focus& f, bool held, bool attack) {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl==nullptr)
+    return;
+  if(attack && f.npc!=nullptr) {
+    arpgClick          = ArpgClick();
+    arpgClick.held     = held;
+    arpgClick.kind     = ArpgClick::Attack;
+    arpgClick.target   = Focus(*f.npc);
+    arpgClick.stuckPos = pl->position();
+    arpgHover          = arpgClick.target;
+    setTarget(f.npc);
+    if(pl->weaponState()==WeaponState::NoWeapon)
+      arpgDrawPreferred(*pl);
+    return;
+    }
+  arpgMouseDown(f);
+  arpgClick.held = held;
+  }
+
+void PlayerControl::arpgBotRelease() {
+  arpgClick.held = false;
+  }
+
+void PlayerControl::arpgBotLock(Npc* n) {
+  if(n!=arpgLock)
+    arpgSetLock(n);
+  }
+
+void PlayerControl::arpgBotDraw() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl!=nullptr && pl->weaponState()==WeaponState::NoWeapon && !pl->isDown())
+    arpgDrawPreferred(*pl);
+  }
+
+void PlayerControl::arpgBotHolster() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl!=nullptr && pl->weaponState()!=WeaponState::NoWeapon && !pl->isDown())
+    wctrl[WeaponClose] = true;
+  }
+
+void PlayerControl::arpgBotDodge(float dirDeg) {
+  arpgBotDodgeDir = dirDeg;
+  arpgBotDodgeSet = true;
+  arpgDodge();
+  }
+
+bool PlayerControl::arpgBotIdle() const {
+  return arpgClick.kind==ArpgClick::None;
+  }
+
+bool PlayerControl::arpgBotPotion() {
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  int32_t total = 0;
+  if(pl==nullptr || arpgPickPotion(*pl, 1, total)==nullptr)
+    return false;
+  arpgPotion(1);
+  return true;
+  }
+
 void PlayerControl::arpgMouseUp() {
   arpgClick.held = false;
   }
@@ -2177,7 +2258,7 @@ Tempest::Vec3 PlayerControl::arpgNextPoint(Npc& pl, const Tempest::Vec3& dest, f
   const float near = c.gridPath ? 35.f : 90.f; // the corners of a way around furniture: closely
   while(c.pathIdx<c.path.size()) {
     const auto d = c.path[c.pathIdx]-pos;
-    if(d.x*d.x+d.z*d.z > near*near)
+    if(d.x*d.x+d.z*d.z > near*near || std::fabs(d.y)>150.f) // Diathic: a point of the stairs below is not passed
       break;
     ++c.pathIdx;
     }
@@ -2369,7 +2450,9 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
   const float dist2 = d.x*d.x+d.z*d.z;
   const float step  = 900.f*(float(dt)/1000.f);
 
-  bool inRange = dist2<=reach*reach;
+  // Diathic: and on the same floor - a point right under the hero (a tower, the stairs) is not reached yet
+  const float height  = (c.kind==ArpgClick::Ground) ? 150.f : 250.f;
+  bool inRange = dist2<=reach*reach && (c.kind==ArpgClick::Attack || c.kind==ArpgClick::Strike || std::fabs(d.y)<=height);
   if(c.kind==ArpgClick::Attack) {
     const auto ws = pl.weaponState();
     if(ws==WeaponState::Fist || ws==WeaponState::W1H || ws==WeaponState::W2H) {
@@ -2561,6 +2644,8 @@ int PlayerControl::arpgStartRoll(Npc& pl, float& rot) {
   const float lr = movement.strafeRightLeft.value();
   if(auto camera = Gothic::inst().camera(); camera!=nullptr && (fb!=0.f || lr!=0.f))
     dir = camera->arpgYaw() + std::atan2(-lr, fb)*180.f/float(M_PI);
+  if(arpgBotDodgeSet)
+    dir = arpgBotDodgeDir; // the test bot rolls where it wants (away / aside), not to the mouse
 
   if(!pl.arpgHasOverlay(sk))
     pl.addOverlay(sk, 1600); // ms, the roll takes ~1 s
@@ -2582,6 +2667,7 @@ int PlayerControl::arpgStartRoll(Npc& pl, float& rot) {
   // the first ~2/3: the roll itself; Zwinność: longer
   pl.arpgSetInvulnerable(uint64_t(std::min(len,1.f)*650.f + pk.rollInvuln*1000.f));
   arpgDodgeReq  = false;
+  arpgBotDodgeSet = false;
   arpgDodgeLock = std::clamp(len*0.85f, 0.4f, 1.f);         // the end blends into running
   arpgRollCd    = std::max(0.1f, arpgDodgeLock + 0.25f - pk.rollCdCut -   // Lekki krok
                            (pl.weaponState()==WeaponState::W1H ? pk.rollCd1H : 0.f)); // Diathic: Zwinny krok
@@ -2668,8 +2754,9 @@ bool PlayerControl::arpgStartDodge(Npc& pl, float& rot) {
       face = std::atan2(d.z,d.x)*180.f/float(M_PI);
     }
 
-  // dodge direction: W/S/A/D on screen, otherwise away from the enemy
-  float dir = face+180.f;
+  // dodge direction: W/S/A/D on screen, otherwise away from the enemy (the test bot: its own direction)
+  float dir = arpgBotDodgeSet ? arpgBotDodgeDir : face+180.f;
+  arpgBotDodgeSet = false;
   const float fb = movement.forwardBackward.value();
   const float lr = movement.strafeRightLeft.value();
   if(fb!=0.f || lr!=0.f)
@@ -2920,7 +3007,7 @@ void PlayerControl::arpgPlanPath(Npc& pl, const Tempest::Vec3& dest) {
   // the first waypoint is often behind the hero: skip it when the next one is closer
   while(c.pathIdx+1<c.path.size()) {
     const auto a = c.path[c.pathIdx]-pos, b = c.path[c.pathIdx+1]-pos, ab = c.path[c.pathIdx+1]-c.path[c.pathIdx];
-    const float da = a.x*a.x+a.z*a.z, db = b.x*b.x+b.z*b.z, dab = ab.x*ab.x+ab.z*ab.z;
+    const float da = a.x*a.x+a.y*a.y+a.z*a.z, db = b.x*b.x+b.y*b.y+b.z*b.z, dab = ab.x*ab.x+ab.y*ab.y+ab.z*ab.z; // the stairs: with the height
     if(db<dab || db<da)
       ++c.pathIdx; else
       break;
@@ -3068,7 +3155,7 @@ Npc* PlayerControl::arpgNextEnemy(Npc& pl, const Npc* except, float range) const
   Npc*  best  = nullptr;
   float bestS = 1e9f;
   w->detectNpc(pos, range, [&](Npc& n) {
-    if(&n==&pl || &n==except || n.isDown() || !arpgIsEnemy(n))
+    if(&n==&pl || &n==except || n.isDown() || !arpgIsEnemy(n) || arpgPeacefulBeast(pl, n))
       return;
     const auto  d = n.position()-pos;
     const float l = std::sqrt(d.x*d.x+d.z*d.z);

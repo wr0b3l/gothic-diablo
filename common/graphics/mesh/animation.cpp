@@ -455,6 +455,24 @@ void Animation::Sequence::processEvents(uint64_t barrier, uint64_t sTime, uint64
     }
   }
 
+int64_t Animation::Sequence::nextHitMs(int64_t t) const {
+  if(data==nullptr || data->numFrames==0 || data->fpsRate<=0.f || reverse || animCls==Animation::Loop)
+    return -1;
+  auto&   d    = *data;
+  int64_t best = -1;
+  for(auto& e:d.events) {
+    if(e.type!=zenkit::MdsEventType::OPTIMAL_FRAME)
+      continue;
+    for(auto i:e.frames) {
+      const uint64_t fr = frameClamp(i,d.firstFrame,d.numFrames,d.lastFrame);
+      const int64_t  ms = int64_t(float(fr)*1000.f/d.fpsRate);
+      if(ms>t && (best<0 || ms-t<best))
+        best = ms-t;
+      }
+    }
+  return best;
+  }
+
 void Animation::Sequence::processEvent(const zenkit::MdsEventTag& e, Animation::EvCount &ev, uint64_t time) {
   switch(e.type) {
     case zenkit::MdsEventType::OPTIMAL_FRAME:
