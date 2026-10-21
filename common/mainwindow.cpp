@@ -14,6 +14,7 @@
 #include <Tempest/Layout>
 #include <Tempest/Application>
 #include <Tempest/Log>
+#include <cctype>
 
 #include "ui/dialogmenu.h"
 #include "ui/menuroot.h"
@@ -1172,8 +1173,23 @@ void MainWindow::paintFocus(Painter& p, const Focus& focus, const Matrix4x4& vp)
     }*/
   }
 
-bool MainWindow::arpgLabelRect(const Focus& f, const Matrix4x4& vp, Rect& out) const {
+static std::string arpgLabelName(const Focus& f) {
   auto name = f.displayName();
+  if(!name.empty() || f.interactive==nullptr)
+    return std::string(name);
+  // unnamed mob with a script action: Greg's treasure spots (dug up with a pickaxe) or another one
+  std::string fn(f.interactive->arpgStateFunc());
+  for(auto& c:fn)
+    c = char(std::toupper(uint8_t(c)));
+  if(fn=="B_SCGETTREASURE")
+    return ArpgMenu::gtxt("Miejsce do kopania");
+  if(!fn.empty() || !f.interactive->arpgUseItem().empty())
+    return ArpgMenu::gtxt("Użyj");
+  return std::string();
+  }
+
+bool MainWindow::arpgLabelRect(const Focus& f, const Matrix4x4& vp, Rect& out) const {
+  const auto name = arpgLabelName(f);
   if(name.empty())
     return false;
   auto pw  = 1.f;
@@ -1212,7 +1228,7 @@ void MainWindow::drawArpgLabel(Painter& p, const Rect& r, const Focus& f, bool h
     type = Resources::FontType::Yellow;
   auto& fnt = Resources::font(type, scale);
   p.setBrush(Color(1.0));
-  fnt.drawText(p, r.x+pad, r.y+r.h-pad, f.displayName());
+  fnt.drawText(p, r.x+pad, r.y+r.h-pad, arpgLabelName(f));
   }
 
 void MainWindow::paintArpgFocus(Painter& p, const Focus& focus, const Matrix4x4& vp) {

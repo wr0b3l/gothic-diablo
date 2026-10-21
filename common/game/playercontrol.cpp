@@ -1843,6 +1843,12 @@ float PlayerControl::arpgCeiling() const {
   return std::numeric_limits<float>::max();
   }
 
+bool PlayerControl::arpgUsableMob(const Interactive& m) {
+  // named mobs, and unnamed ones with a script action (Greg's treasure spots: no focus name,
+  // dug up with a pickaxe — in Gothic you stand on the cross and press the action key)
+  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty();
+  }
+
 Focus PlayerControl::arpgPick() {
   arpgGroundValid = false;
 
@@ -1923,7 +1929,7 @@ Focus PlayerControl::arpgPick() {
       cand.push_back({&it, nullptr, d-8.f*scale}); // items win close calls
     });
   w->forEachInteractiveNear(center, radius, [&](Interactive& m) {
-    if(m.focusName().empty() || m.position().y>ceiling)
+    if(!arpgUsableMob(m) || m.position().y>ceiling)
       return;
     float d = screenDist(m.displayPosition());
     if(land.vob==&m)
@@ -2793,11 +2799,18 @@ bool PlayerControl::arpgCanSee(const Tempest::Vec3& p, float baseY, const Intera
   const auto  d      = p-center;
   if(d.x*d.x+d.z*d.z > radius*radius || baseY>arpgCeiling())
     return false;
-  const auto eye  = pl->centerPosition() + Tempest::Vec3(0,50.f,0);
-  const auto land = w->physic()->ray(eye, p);
-  if(!land.hasCol || (self!=nullptr && land.vob==self))
+  const auto eye     = pl->centerPosition() + Tempest::Vec3(0,50.f,0);
+  auto       visible = [&](const Tempest::Vec3& t) {
+    const auto land = w->physic()->ray(eye, t);
+    if(!land.hasCol || (self!=nullptr && land.vob==self))
+      return true;
+    return (land.v-t).quadLength() < 100.f*100.f;
+    };
+  if(visible(p))
     return true;
-  return (land.v-p).quadLength() < 100.f*100.f;
+  // a mob lying on or sunk into the ground (treasure spots): the ray hits the ground well before it
+  constexpr float lift = 60.f;
+  return self!=nullptr && visible(p+Tempest::Vec3(0,lift,0));
   }
 
 void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
@@ -2818,7 +2831,7 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
       out.push_back(Focus(it));
     });
   w->forEachInteractiveNear(center, radius, [&](Interactive& m) {
-    if(m.focusName().empty())
+    if(!arpgUsableMob(m))
       return;
     if(arpgCanSee(m.displayPosition(), m.position().y, &m))
       out.push_back(Focus(m));

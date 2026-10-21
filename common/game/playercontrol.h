@@ -323,6 +323,7 @@ class PlayerControl final {
     bool           arpgSwing(Npc& pl, float& rot, bool allowRot, float faceAng, float faceDa);
     float          arpgSteer(Npc& pl, const Tempest::Vec3& next, uint64_t dt);
     bool           arpgCanSee(const Tempest::Vec3& p, float baseY, const Interactive* self) const;
+    static bool    arpgUsableMob(const Interactive& m);
     bool           arpgFeelerClear(const Npc& pl, float ang, float len) const;
     float          arpgFreeDistance(const Npc& pl, float ang) const;
 
