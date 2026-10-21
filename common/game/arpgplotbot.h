@@ -14,6 +14,7 @@ class Npc;
 class Item;
 class PlayerControl;
 class DialogMenu;
+class InventoryMenu;
 
 // gothic-diablo: what the test bot shows on the screen while it plays (MainWindow draws it over everything,
 // the pictures of the report are taken without it). Texts in UTF-8.
@@ -42,6 +43,7 @@ class ArpgPlotBot final {
       std::function<void(const std::string&, const std::string&)> save;    // slot file, name in the menu
       PlayerControl*                                              player  = nullptr;
       DialogMenu*                                                 dialogs = nullptr;
+      InventoryMenu*                                              inventory = nullptr; // trade ("kup", "sprzedaj")
       };
 
     ArpgPlotBot(std::string name, std::string runDir, Hooks hooks);
@@ -52,6 +54,8 @@ class ArpgPlotBot final {
     void        tick(World& w, Npc& pl);
     std::string summary() const;
     void        panel(ArpgBotPanel& out, const Npc* pl) const;
+    // the trade window stays open: the step now (or the one after the talk now) buys or sells
+    bool        keepsTrade() const;
 
   private:
     struct Step {
@@ -145,6 +149,14 @@ class ArpgPlotBot final {
     uint64_t                 attackT  = 0;
     uint64_t                 potionT  = 0;
     uint64_t                 strayT   = 0;
+    uint64_t                 finishT  = 0;      // the last click of the finishing blow
+    // collecting ("zbierz"), hunting ("poluj"), digging ("kop")
+    const void*              collectIt = nullptr;
+    uint64_t                 collectT0 = 0;
+    Npc*                     hunted    = nullptr;
+    size_t                   huntKills = 0;
+    uint64_t                 digT0     = 0;
+    int                      digClicks = 0;
 
     size_t                   nOk = 0, nFail = 0, nSkip = 0, nEvents = 0, nHeal = 0, nStuck = 0, nErrSaves = 0;
     size_t                   nDeaths = 0, nPotions = 0;
@@ -176,6 +188,7 @@ class ArpgPlotBot final {
     void        guardHealth(Npc& pl, uint64_t now);
     bool        defendTick(World& w, Npc& pl, uint64_t now);
     int         fightTick(World& w, Npc& pl, Npc& tg, uint64_t now); // -1: the target is out of reach
+    int         engage(World& w, Npc& pl, Npc& tg, uint64_t now, std::string& fail); // walk up, fight: -1 failed, 0 walking, 1 fighting
     void        fightEnd(Npc& pl);
     bool        choresTick(World& w, Npc& pl, uint64_t now);
     bool        healTick(World& w, Npc& pl, uint64_t now);
@@ -203,4 +216,12 @@ class ArpgPlotBot final {
     void        doSleep(World& w, Npc& pl, const Step& s, uint64_t now);
     void        doSave (World& w, Npc& pl, const Step& s, uint64_t now);
     void        doJump (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doCollect(World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doBuy  (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doSell (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doDig  (World& w, Npc& pl, const Step& s, uint64_t now);
+    void        doHunt (World& w, Npc& pl, const Step& s, uint64_t now);
+    bool        tradeOpen() const;
+    void        tradeDone();
+    bool        pickUp(World& w, Npc& pl, Item& it, uint64_t now, const std::string& what); // walk to it, click; false: failed
   };

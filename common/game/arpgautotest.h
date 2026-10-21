@@ -15,6 +15,7 @@ class World;
 class Npc;
 class PlayerControl;
 class DialogMenu;
+class InventoryMenu;
 class ArpgPlotBot;
 
 // gothic-diablo: the test bot (faza 10). Started with -autotest <scenario>; runs without windows or questions and
@@ -31,6 +32,7 @@ class ArpgAutotest final {
       std::function<void(const std::string&, const std::string&)> save; // slot file, name in the menu
       PlayerControl*                   player  = nullptr;
       DialogMenu*                      dialogs = nullptr;
+      InventoryMenu*                   inventory = nullptr; // the story bot trades in it
       };
 
     ArpgAutotest();

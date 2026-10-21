@@ -86,9 +86,10 @@ class Scripts:
             body = s[start:i]
             fn = m.group(1).upper()
             self.funcs[fn] = body
-            for c in re.finditer(r'(?i)Info_AddChoice\s*\(\s*(\w+)\s*,[^;]*?,\s*(\w+)\s*\)', body):
-                self.choices.setdefault(c.group(2).upper(), set()).add(c.group(1).upper())
-                self.adds.setdefault(fn, []).append(c.group(2).upper())
+            # the choice function is the last argument (the text may call functions: B_BuildLearnString(...))
+            for c in re.finditer(r'(?is)Info_AddChoice\s*\(\s*(\w+)\s*,(.*?),\s*(\w+)\s*\)\s*;', body):
+                self.choices.setdefault(c.group(3).upper(), set()).add(c.group(1).upper())
+                self.adds.setdefault(fn, []).append(c.group(3).upper())
         for m in re.finditer(r'(?i)\b(?:var|const)\s+int\s+(\w+)', s):
             self.ints.add(m.group(1).upper())
         for m in re.finditer(r'(?i)\bconst\s+int\s+([\w\s,]+?)\s*=', s):
@@ -157,7 +158,11 @@ def main():
         elif kind == 'item':
             ok = sc.cls(u) == 'C_ITEM'
         elif kind == 'int':
-            ok = re.fullmatch(r'[-+]?\d+', n) is not None or u in sc.ints
+            m = re.fullmatch(r'(\w+)\[(\w+)\]', u)
+            if m:  # an element of an array: NAZWA[INDEKS]
+                ok = m.group(1) in sc.ints and (m.group(2).isdigit() or m.group(2) in sc.ints)
+            else:
+                ok = re.fullmatch(r'[-+]?\d+', n) is not None or u in sc.ints
         elif kind == 'topic':
             ok = u in sc.strings
         elif kind == 'place':
@@ -174,6 +179,10 @@ def main():
         if not args:
             errors.append(f'linia {line}: brak warunku')
             return
+        if 'i' in args:
+            k = args.index('i')
+            cond(args[:k], line)
+            return cond(args[k + 1:], line)
         if args[0] == 'nie':
             return cond(args[1:], line)
         k, r = args[0], args[1:]
@@ -200,6 +209,12 @@ def main():
             need('place', g(1), line)
         elif k in ('rozdzial', 'godzina'):
             pass
+        elif k == 'cecha':
+            if g(0) not in ('sila', 'zrecznosc', 'nauka', 'poziom', 'zycie', 'zyciemax', 'mana', 'doswiadczenie'):
+                errors.append(f'linia {line}: nieznana cecha {g(0)}')
+            need('int', g(2), line)
+            if g(1) not in ('==', '!=', '>=', '<=', '>', '<'):
+                errors.append(f'linia {line}: zły operator {g(1)}')
         else:
             errors.append(f'linia {line}: nieznany warunek {k}')
 
@@ -256,6 +271,35 @@ def main():
             need('place', r[0], no)
         elif v in ('czekaj', 'sprawdz'):
             cond(r, no)
+        elif v == 'zbierz':
+            need('item', r[0] if r else '', no)
+            if len(r) < 2 or not r[1].isdigit():
+                errors.append(f'linia {no}: zbierz <przedmiot> <ile> [<miejsce>] [<cm>]')
+            if len(r) > 2:
+                need('place', r[2], no)
+        elif v == 'kup':
+            need('item', r[0] if r else '', no)
+            if len(r) > 1 and not r[1].isdigit():
+                errors.append(f'linia {no}: kup <przedmiot> [<ile>]')
+        elif v == 'sprzedaj':
+            if not r or (r[0] != 'bronie' and not need('item', r[0], no)):
+                pass
+            if len(r) > 1 and not (r[1].isdigit() or r[1] == 'wszystko'):
+                errors.append(f'linia {no}: sprzedaj <przedmiot>|bronie [<ile>|wszystko]')
+        elif v == 'kop':
+            if len(r) < 2:
+                errors.append(f'linia {no}: kop <miejsce> <przedmiot>')
+            else:
+                need('place', r[0], no)
+                need('item', r[1], no)
+        elif v == 'poluj':
+            if len(r) < 5 or not r[1].isdigit() or not r[3].isdigit():
+                errors.append(f'linia {no}: poluj <trofeum> <ile> <miejsce> <cm> <postać>...')
+            else:
+                need('item', r[0], no)
+                need('place', r[2], no)
+                for x in r[4:]:
+                    need('npc', x, no)
         elif v == 'spij':
             if not re.fullmatch(r'\d\d:\d\d', r[0] if r else ''):
                 errors.append(f'linia {no}: spij HH:MM')

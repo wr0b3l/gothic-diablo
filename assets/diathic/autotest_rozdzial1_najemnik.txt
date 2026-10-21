@@ -1,0 +1,354 @@
+# Diathic - bot fabuły: rozdział 1, ścieżka najemnika (tryb uczciwy)
+# Kolejność z solucji (gry-online.pl, Gothic II Noc Kruka, rozdział I) i skryptów 2.6 PL:
+# Xardas -> Lester -> Cavalorn i bandyci -> farma Lobarta (rzepa, patelnia Hildy, wino Vina, bandyci Maletha: ubranie
+# robocze za 30 zł) -> Greg (chce do miasta) -> brama jako farmer -> Vatras (list, Wodny Krąg, błogosławieństwo) -> Lares
+# (tylko „Vatras mnie przysyła”: Greg idzie do karczmy; BEZ pomocy Laresa w gildii, bez Martina) -> mistrzowie: ork Harada,
+# skóry wilków dla Bospera, zgoda Constantina, błogosławieństwa dla Thorbena -> karczma: Greg, jaskinia i 5 skarbów (kilof)
+# -> czeladnik Harada -> farma Onara: Sentenza, Lee, Torlof (próba: straż u Bengara), głosy (Wilk, Sentenza, Rod: zakład
+# o siłę), Onar -> najemnik -> górne miasto (list Lee) -> Lord Hagen -> przełęcz = rozdział 2.
+# Zapis kroków: autotest_rozdzial1.txt (tam też zwykłe kroki); tu dodatkowo:
+#   zbierz <przedmiot> <ile> [<miejsce>] [<cm>]    rzeczy jednego rodzaju leżące wokół miejsca (rzepa z pola)
+#   kup <przedmiot> [<ile>]                         w oknie handlu (otwiera je rozmowa z DIA_*_TRADE)
+#   sprzedaj <przedmiot>|bronie [<ile>|wszystko]    bronie = broń nie w ręku (łup)
+#   kop <miejsce> <przedmiot>                        zakopany skarb przy punkcie (narzędzie z obiektu, np. kilof)
+#   poluj <trofeum> <ile> <miejsce> <cm> <postać>... zwierzęta tego rodzaju wokół miejsca, aż trofeów jest dość
+# Warunki dodatkowo: cecha sila|zrecznosc|nauka|poziom|zycie|zyciemax|mana|doswiadczenie <op> <N>,
+#   <warunek> i <warunek>, zmienna NAZWA[INDEKS] (tablice skryptów)
+
+po_bledzie dalej
+po_smierci dalej
+gdy DIA_Canthar_PAYPRICEINCITY_Nein
+gdy DIA_Moe_Hallo_Gehen DIA_Moe_Hallo_Vergisses
+gdy DIA_Addon_Greg_NW_Hallo_ja
+gdy DIA_Sentenza_Hello_JustLooking DIA_Sentenza_Hello_SearchMe
+
+# ---------------------------------------------------------------- wieża Xardasa
+etykieta xardas
+rozmowa NONE_100_Xardas DIA_Xardas_Hello
+wybor DIA_Addon_Xardas_Hello_Dragons
+wybor DIA_Addon_Xardas_Hello_Man
+rozmowa NONE_100_Xardas DIA_Xardas_TODO
+rozmowa NONE_100_Xardas DIA_Xardas_ARTEFAKT
+rozmowa NONE_100_Xardas DIA_Xardas_PALADIN
+rozmowa NONE_100_Xardas DIA_Xardas_WEAPON
+rozmowa NONE_100_Xardas DIA_Xardas_FirstEXIT
+czekaj rozdzial 1 na 20
+sprawdz dziennik TOPIC_INNOSEYE aktywny
+
+# ---------------------------------------------------------------- Lester w dolinie
+zapisz lester
+etykieta lester
+rozmowa PC_Psionic DIA_Lester_Hello
+wybor DIA_Lester_Hello_Lester
+rozmowa PC_Psionic DIA_Lester_WhatHappened
+rozmowa PC_Psionic DIA_Lester_MineColony
+rozmowa PC_Psionic DIA_Lester_SEND_XARDAS
+
+# ---------------------------------------------------------------- Cavalorn i bandyci (zadanie 3)
+zapisz cavalorn
+etykieta cavalorn
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_HALLO
+wybor DIA_Addon_Cavalorn_HALLO_Ja
+wybor DIA_Addon_Cavalorn_HALLO_Stadt
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_JUNGS
+sprawdz zmienna SC_KnowsRanger == 1
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_Ring
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_WASMACHSTDU
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_Banditen
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_ARTEFAKT
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_HELFEN
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_AUSRUESTUNG
+sprawdz przedmiot ItMW_Addon_Knife01
+zaloz ItMW_Addon_Knife01
+rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_LETSKILLBANDITS
+zabij BDT_1013_Bandit_L BDT_1014_Bandit_L BDT_1015_Bandit_L
+# Cavalorn daje list, gdy stoi przy bandytach (NW_XARDAS_BANDITS_LEFT); inaczej list jest u Brago (łup) - wtedy otwarty,
+# bo Vatras przyjmie zapieczętowany tylko od Cavalorna (MIS_Addon_Cavalorn_Letter2Vatras), a otwarty zawsze
+? rozmowa BAU_4300_Addon_Cavalorn DIA_Addon_Cavalorn_BragoKilled
+jesli zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to sprawdz przedmiot ItWr_SaturasFirstMessage_Addon_Sealed
+jesli nie zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to uzyj ItWr_SaturasFirstMessage_Addon_Sealed
+jesli nie zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_RUNNING to sprawdz przedmiot ItWr_SaturasFirstMessage_Addon
+
+# ---------------------------------------------------------------- farma Lobarta: ubranie robocze (80 zł - 5 x 10 = 30 zł)
+zapisz farma
+etykieta farma
+# Maleth (pastwisko przy drodze): bandyci od Cavalorna już nie żyją -> 3 wina; jak wejść do miasta
+rozmowa BAU_954_Maleth DIA_Maleth_BANDITS
+rozmowa BAU_954_Maleth DIA_Maleth_BanditsDEAD
+rozmowa BAU_954_Maleth DIA_Maleth_ToTheCity
+koniec
+sprawdz zmienna MIS_Maleth_Bandits == LOG_SUCCESS
+# Lobart: „za farmerami”, ubranie, praca w polu
+rozmowa BAU_950_Lobart DIA_Lobart_Hallo
+wybor DIA_Lobart_Hallo_ForThePeasants
+rozmowa BAU_950_Lobart DIA_Lobart_KLEIDUNG
+rozmowa BAU_950_Lobart DIA_Lobart_WorkNOW
+wybor DIA_Lobart_WorkNOW_Ok
+koniec
+sprawdz zmienna MIS_Lobart_Rueben == LOG_RUNNING
+# Vino: butelka wina od Maletha
+rozmowa BAU_952_Vino DIA_Vino_SeekWork
+rozmowa BAU_952_Vino DIA_Vino_BringWine
+koniec
+sprawdz zmienna MIS_Vino_Wein == LOG_SUCCESS
+# rzepa z pola -> Lobart (5 zł) -> Hilda (20 zł na patelnię)
+zbierz ItPl_Beet 20 NW_FARM1_FIELD_04 3000
+rozmowa BAU_950_Lobart DIA_Lobart_RuebenRunning
+wybor DIA_Lobart_RuebenRunning_Gold
+koniec
+rozmowa BAU_951_Hilda DIA_Hilda_BringBeet
+rozmowa BAU_951_Hilda DIA_Hilda_Einkaufen
+koniec
+sprawdz zmienna MIS_Hilda_PfanneKaufen == LOG_RUNNING
+# Canthar (bez przepustki): patelnia; brakuje złota na ubranie -> nóż Cavalorna (jest maczuga) i łup na sprzedaż
+rozmowa VLK_468_Canthar DIA_Canthar_WhatOffer
+wybor DIA_Canthar_WhatOffer_No
+rozmowa VLK_468_Canthar DIA_Canthar_TRADE
+kup ItMi_Pan
+jesli przedmiot ItMi_Gold < 30 i przedmiot ItMw_Nagelknueppel to sprzedaj ItMW_Addon_Knife01
+jesli przedmiot ItFo_Wine to sprzedaj ItFo_Wine wszystko
+jesli przedmiot ItMi_Gold < 30 to sprzedaj bronie
+koniec
+rozmowa BAU_951_Hilda DIA_Hilda_PfanneGeholt
+koniec
+sprawdz zmienna MIS_Hilda_PfanneKaufen == LOG_SUCCESS
+rozmowa BAU_950_Lobart DIA_Lobart_BuyClothes
+wybor DIA_Lobart_BuyClothes_BUY
+koniec
+sprawdz przedmiot ITAR_Bau_L
+zaloz ITAR_Bau_L
+
+# ---------------------------------------------------------------- Greg na drodze do miasta (nie dostaje ubrania)
+zapisz greg
+etykieta greg
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_Hallo
+? wybor DIA_Addon_Greg_NW_Hallo_ja
+koniec
+sprawdz zmienna MIS_Addon_Greg_BringMeToTheCity == LOG_RUNNING
+
+# ---------------------------------------------------------------- brama miasta: farmer do kowala
+zapisz brama
+etykieta brama
+rozmowa Mil_310_Stadtwache DIA_Mil_310_Stadtwache_ZumSchmied
+sprawdz zmienna Mil_310_schonmalreingelassen == 1
+
+# ---------------------------------------------------------------- Vatras: list Cavalorna, Wodny Krąg (zadanie 11)
+zapisz vatras
+etykieta vatras
+rozmowa VLK_439_Vatras DIA_Vatras_GREET
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_Cavalorn
+jesli zmienna MIS_Addon_Cavalorn_KillBrago == LOG_SUCCESS to wybor DIA_Addon_Vatras_Cavalorn_Cavalorn
+jesli nie zmienna MIS_Addon_Cavalorn_KillBrago == LOG_SUCCESS to wybor DIA_Addon_Vatras_Cavalorn_Bandit
+sprawdz zmienna MIS_Addon_Cavalorn_Letter2Vatras == LOG_SUCCESS
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_WannaBeRanger
+wybor DIA_Vatras_INFLUENCE_FIRST_TRUTH
+wybor DIA_Vatras_INFLUENCE_SECOND_TRUTH
+wybor DIA_Vatras_INFLUENCE_THIRD_TRUTH
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_HowToJoin
+wybor DIA_Addon_Vatras_HowToJoin_WhatsGreat
+rozmowa VLK_439_Vatras DIA_Addon_Vatras_GuildBypass
+wybor DIA_Addon_Vatras_GuildBypass_BACK
+koniec
+sprawdz zmienna Vatras_GehZuLares == 1
+? sprawdz przedmiot ItMi_Ornament_Addon_Vatras
+
+# ---------------------------------------------------------------- Lares: tylko Wodny Krąg (bez pomocy w gildii) -> Greg w karczmie
+zapisz lares
+etykieta lares
+rozmowa VLK_449_Lares DIA_Lares_HALLO
+wybor DIA_Lares_HALLO_YES
+wybor DIA_Lares_HALLO_LEE
+rozmowa VLK_449_Lares DIA_Addon_Lares_Vatras
+koniec
+sprawdz zmienna GregLocation == Greg_Taverne
+
+# ---------------------------------------------------------------- mistrzowie: zadania i zgody
+zapisz mistrzowie
+etykieta mistrzowie
+rozmowa VLK_412_Harad DIA_Harad_Arbeit
+rozmowa VLK_412_Harad DIA_Harad_Taugenichts
+koniec
+sprawdz zmienna MIS_Harad_Orc == LOG_RUNNING
+rozmowa VLK_413_Bosper DIA_Bosper_SeekWork
+rozmowa VLK_413_Bosper DIA_Bosper_OtherMasters
+rozmowa VLK_413_Bosper DIA_Bosper_ZUSTIMMUNG
+rozmowa VLK_413_Bosper DIA_Bosper_Job
+jesli cecha nauka >= 5 to rozmowa VLK_413_Bosper DIA_Bosper_TeachFUR
+koniec
+sprawdz zmienna MIS_Bosper_WolfFurs == LOG_RUNNING
+rozmowa VLK_417_Constantino DIA_Constantino_AboutLehrling
+koniec
+rozmowa VLK_462_Thorben DIA_Thorben_Arbeit
+rozmowa VLK_462_Thorben DIA_Thorben_OtherMasters
+wybor DIA_Thorben_OtherMasters_Devoutly
+koniec
+sprawdz zmienna MIS_Thorben_GetBlessings == LOG_RUNNING
+rozmowa VLK_439_Vatras DIA_Vatras_MORE
+rozmowa VLK_439_Vatras DIA_Vatras_INFLUENCE
+koniec
+sprawdz zmienna Vatras_Segen == 1
+
+# ---------------------------------------------------------------- przed miastem: ork Harada, wilki dla Bospera
+zapisz ork
+etykieta ork
+zabij OrcWarrior_Harad
+? zabierz ItMw_2H_OrcAxe_01 800
+sprawdz przedmiot ItMw_2H_OrcAxe_01
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_FARM1_CITYWALL_FOREST_03 2500 Wolf YWolf
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_FARM1_PATH_CITY_05_B 2500 Wolf YWolf
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_FARM1_PATH_SPAWN_07 2500 Wolf YWolf
+
+# ---------------------------------------------------------------- karczma: Isgaroth (błogosławieństwo), Greg i jego jaskinia
+zapisz karczma
+etykieta karczma
+? rozmowa KDF_509_Isgaroth DIA_Isgaroth_Segen
+koniec
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_MeetGregSecondTime
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_was
+wybor DIA_Addon_Greg_NW_was_no
+wybor DIA_Addon_Greg_NW_was_HierGold
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_RakeCaveLos
+sprawdz zmienna MIS_Addon_Greg_RakeCave == LOG_RUNNING
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_TAVERNE_TROLLAREA_MONSTER_04_01 2500 Wolf YWolf
+idz NW_BIGFARM_LAKE_CAVE_01
+czekaj blisko PIR_1300_Addon_Greg_NW NW_BIGFARM_LAKE_CAVE_01 1000 na 300
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_RakeCaveThere
+koniec
+sprawdz przedmiot ItMw_2H_Axe_L_01
+kop NW_BIGFARM_LAKE_CAVE_07 ItSe_GoldPocket25
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_RakeCavePlundered
+wybor DIA_Addon_Greg_NW_RakeCavePlundered_gold
+sprawdz zmienna Greg_SuchWeiter == 1
+
+# ---------------------------------------------------------------- pozostałe skarby Grega -> skrzyżowanie (30 zł)
+zapisz skarby
+etykieta skarby
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_BIGFARM_LAKE_MONSTER_01_01 2500 Wolf YWolf
+? jesli zmienna PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur] == 1 i przedmiot ItAt_WolfFur < 6 to poluj ItAt_WolfFur 6 NW_BIGFARM_LAKE_MONSTER_03_01 2500 Wolf YWolf
+kop NW_LAKE_GREG_TREASURE_01 ItSe_GoldPocket100
+kop NW_FARM3_GREGTREASURE_01 ItMi_GoldCup
+kop NW_FARM3_MOUNTAINLAKE_MONSTER_01 ItMi_SilverChalice
+kop NW_BIGMILL_FARM3_01 ItAm_Prot_Point_01
+rozmowa PIR_1300_Addon_Greg_NW DIA_Addon_Greg_NW_FoundTreasure
+wybor DIA_Addon_Greg_NW_FoundTreasure_ja
+koniec
+sprawdz zmienna MIS_Addon_Greg_RakeCave == LOG_SUCCESS
+
+# ---------------------------------------------------------------- miasto: czeladnik u Harada (4 głosy mistrzów)
+zapisz czeladnik
+etykieta czeladnik
+rozmowa VLK_413_Bosper DIA_Bosper_BringFur
+rozmowa VLK_413_Bosper DIA_Bosper_ZUSTIMMUNG
+koniec
+sprawdz zmienna MIS_Bosper_WolfFurs == LOG_SUCCESS
+jesli zmienna Isgaroth_Segen == 0 to rozmowa KDF_511_Daron DIA_Daron_Spenden
+koniec
+rozmowa VLK_462_Thorben DIA_Thorben_ZUSTIMMUNG
+koniec
+sprawdz zmienna MIS_Thorben_GetBlessings == LOG_SUCCESS
+rozmowa VLK_412_Harad DIA_Harad_OrcSuccess
+rozmowa VLK_412_Harad DIA_Harad_LEHRLING
+wybor DIA_Harad_LEHRLING_OK
+koniec
+sprawdz zmienna Player_IsApprentice == APP_Harad
+
+# ---------------------------------------------------------------- farma Onara: Sentenza, Lee, próba Torlofa
+zapisz onar
+etykieta onar
+# Sentenza przeszukuje przy wejściu (50 zł = jego głos); gdy wtedy było mniej złota: płaci teraz
+rozmowa SLD_814_Sentenza DIA_Sentenza_Hello
+? wybor DIA_Sentenza_Hello_JustLooking
+? wybor DIA_Sentenza_Hello_SearchMe
+jesli nie zmienna Sentenza_GoldTaken == 1 i przedmiot ItMi_Gold >= 50 to rozmowa SLD_814_Sentenza DIA_Sentenza_Pay50
+koniec
+rozmowa SLD_800_Lee DIA_Lee_WannaJoin
+rozmowa SLD_800_Lee DIA_Lee_ClearWhat
+rozmowa SLD_800_Lee DIA_Lee_OtherSld
+koniec
+rozmowa SLD_801_Torlof DIA_Torlof_WannaJoin
+rozmowa SLD_801_Torlof DIA_Torlof_Probe
+rozmowa SLD_801_Torlof DIA_Torlof_Respekt
+rozmowa SLD_801_Torlof DIA_Torlof_Aufgaben
+wybor DIA_Torlof_Aufgaben_Miliz
+koniec
+sprawdz zmienna MIS_Torlof_BengarMilizKlatschen == LOG_RUNNING
+
+# ---------------------------------------------------------------- Bengar: straż (Rumbold i Rick) przegnana na zawsze
+zapisz bengar
+etykieta bengar
+rozmowa BAU_960_Bengar DIA_Bengar_HALLO
+rozmowa BAU_960_Bengar DIA_Bengar_MILIZ
+rozmowa BAU_960_Bengar DIA_Bengar_MILIZKLATSCHEN
+rozmowa Mil_335_Rumbold DIA_Rumbold_Hallo
+wybor DIA_Rumbold_HALLO_Attack
+wybor DIA_Rumbold_HALLO_ENDAttack
+zabij Mil_335_Rumbold Mil_336_Rick
+? rozmowa BAU_960_Bengar DIA_Bengar_MILIZWEG
+koniec
+rozmowa SLD_801_Torlof DIA_Torlof_BengarSuccess
+koniec
+sprawdz zmienna MIS_Torlof_BengarMilizKlatschen == LOG_SUCCESS
+
+# ---------------------------------------------------------------- głosy: Wilk, Rod (zakład: siła 30 od Torlofa)
+zapisz glosy
+etykieta glosy
+rozmowa SLD_811_Wolf DIA_Wolf_Hallo
+rozmowa SLD_811_Wolf DIA_Wolf_WannaJoin
+koniec
+rozmowa SLD_801_Torlof DIA_Torlof_WhatCanYouTeach
+rozmowa SLD_801_Torlof DIA_Torlof_Teach
+jesli cecha nauka >= 5 i cecha sila <= 25 to wybor DIA_Torlof_Teach_STR_5
+jesli cecha nauka >= 5 i cecha sila <= 25 to wybor DIA_Torlof_Teach_STR_5
+jesli cecha nauka >= 5 i cecha sila <= 25 to wybor DIA_Torlof_Teach_STR_5
+jesli cecha nauka >= 5 i cecha sila <= 25 to wybor DIA_Torlof_Teach_STR_5
+jesli cecha nauka >= 1 i cecha sila < 30 to wybor DIA_Torlof_Teach_STR_1
+jesli cecha nauka >= 1 i cecha sila < 30 to wybor DIA_Torlof_Teach_STR_1
+jesli cecha nauka >= 1 i cecha sila < 30 to wybor DIA_Torlof_Teach_STR_1
+jesli cecha nauka >= 1 i cecha sila < 30 to wybor DIA_Torlof_Teach_STR_1
+wybor DIA_Torlof_Teach_Back
+koniec
+jesli cecha sila >= 30 i przedmiot ItMi_Gold >= 30 to rozmowa SLD_804_Rod DIA_Rod_WannaJoin
+jesli cecha sila >= 30 i zmienna Rod_SchwachGesagt == 1 to rozmowa SLD_804_Rod DIA_Rod_StarkGenug
+jesli cecha sila >= 30 i info DIA_Rod_StarkGenug to rozmowa SLD_804_Rod DIA_Rod_BINStarkGenug
+jesli cecha sila >= 30 i info DIA_Rod_BINStarkGenug to rozmowa SLD_804_Rod DIA_Rod_Wette
+jesli cecha sila >= 30 i info DIA_Rod_Wette to wybor DIA_Rod_Wette_Yes
+jesli zmienna Rod_WetteGewonnen == 1 to wybor DIA_Rod_Wette_GiveBack
+jesli zmienna Rod_WetteGewonnen == 1 to wybor DIA_Rod_Wette_GiveBack2
+jesli przedmiot ItMw_2h_Rod to rozmowa SLD_804_Rod DIA_Rod_GiveItBack
+koniec
+
+# ---------------------------------------------------------------- Torlof: dość głosów -> Lee -> Onar -> Lee: najemnik
+zapisz najemnik
+etykieta najemnik
+rozmowa SLD_801_Torlof DIA_Torlof_RUF
+koniec
+sprawdz zmienna Torlof_GenugStimmen == 1
+rozmowa SLD_800_Lee DIA_Lee_JoinNOW
+koniec
+sprawdz zmienna Lee_SendToOnar == 1
+rozmowa BAU_900_Onar DIA_Onar_LeeSentMe
+rozmowa BAU_900_Onar DIA_Onar_HowMuch
+wybor DIA_Onar_HowMuch_Ok
+koniec
+rozmowa SLD_800_Lee DIA_Lee_JoinNOW
+sprawdz gildia GIL_SLD
+rozmowa SLD_800_Lee DIA_Lee_ToHagen
+koniec
+sprawdz przedmiot ItWr_Passage_MIS
+? zaloz ItAr_Sld_L
+
+# ---------------------------------------------------------------- górne miasto, Lord Hagen (oferta Lee) -> rozdział 2
+zapisz hagen
+etykieta hagen
+rozmowa Mil_305_Torwache DIA_Mil_305_Torwache_PassAsSld
+sprawdz zmienna Mil_305_schonmalreingelassen == 1
+rozmowa PAL_205_Torwache DIA_PAL_205_Torwache_PassAsSld
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Hallo
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Frieden
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Armee
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Proof
+sprawdz zmienna Hagen_BringProof == 1
+rozmowa PAL_200_Hagen DIA_Lord_Hagen_Pass
+czekaj rozdzial 2 na 30
+sprawdz przedmiot ItKe_Pass_MIS
+zapisz rozdzial2

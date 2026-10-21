@@ -19,6 +19,7 @@
 #include "world/world.h"
 #include "game/arpgplotbot.h"
 #include "ui/dialogmenu.h"
+#include "ui/inventorymenu.h"
 #include "ui/arpgmenu.h"
 #include "utils/gthfont.h"
 #include "resources.h"
@@ -404,6 +405,7 @@ void ArpgAutotest::tickPlot() {
     h.save    = hooks.save;
     h.player  = hooks.player;
     h.dialogs = hooks.dialogs;
+    h.inventory = hooks.inventory;
     plot = std::make_unique<ArpgPlotBot>(sc, dir, std::move(h));
     Log::i("autotest: bot fabuly, wyniki w ", dir);
     }
@@ -417,8 +419,10 @@ void ArpgAutotest::tickPlot() {
   auto pl    = Gothic::inst().player();
   if(world==nullptr || pl==nullptr || Gothic::inst().checkLoading()!=Gothic::LoadState::Idle)
     return;
-  // letters, the inventory: the bot does not read; talks are the bot's own business
-  if(hooks.uiBusy && hooks.uiBusy())
+  // letters, the inventory: the bot does not read; talks are the bot's own business; the trade window only while the
+  // scenario buys or sells
+  const bool trading = plot->keepsTrade() && hooks.inventory!=nullptr && hooks.inventory->isOpen()==InventoryMenu::State::Trade;
+  if(hooks.uiBusy && hooks.uiBusy() && !trading)
     hooks.closeUi();
   plot->tick(*world, *pl);
   }

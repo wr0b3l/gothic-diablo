@@ -101,6 +101,7 @@ MainWindow::MainWindow(Device& device)
     [this](const std::string& slot, const std::string& name) { saveGame(slot, name); },
     &player,
     &dialogs,
+    &inventory,
     });
 
   if(!Gothic::inst().defaultSave().empty()){

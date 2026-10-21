@@ -24,7 +24,9 @@
 #include "game/inventory.h"
 #include "game/arpgstatus.h"
 #include "ui/dialogmenu.h"
+#include "ui/inventorymenu.h"
 #include "world/focus.h"
+#include "world/objects/interactive.h"
 #include "world/objects/item.h"
 #include "world/objects/npc.h"
 #include "world/waypath.h"
@@ -48,6 +50,10 @@ namespace {
   constexpr uint64_t kTakeMs        = 120000;
   constexpr uint64_t kDefendMs      = 60000;
   constexpr uint64_t kPotionGapMs   = 4000;
+  constexpr uint64_t kCollectItemMs = 15000;   // "zbierz": a thing not reached in this time is left
+  constexpr uint64_t kDigMs         = 12000;   // "kop": in the digging this long at most (then out of it)
+  constexpr int      kDigClicks     = 6;       // "kop": clicks on the spot before it counts as failed
+  constexpr float    kDigRange      = 500.f;   // "kop": the spot (and what it gives) this close to the point
 
   // walking (cm)
   constexpr float    kRouteMinGap   = 300.f;   // route points closer than this to the last one are dropped
@@ -418,10 +424,20 @@ bool ArpgPlotBot::intValue(World& w, const std::string& n, int32_t& out) const {
     out = int32_t(std::strtol(n.c_str(), nullptr, 10));
     return true;
     }
-  auto sym = w.script().findSymbol(n);
-  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::INT)
+  // "NAZWA[INDEKS]": an element of an array (PLAYER_TALENT_TAKEANIMALTROPHY[TROPHY_Fur], RAKEPLACE[1])
+  std::string base = n;
+  uint16_t    idx  = 0;
+  if(const size_t br = n.find('['); br!=std::string::npos && br>0 && n.back()==']') {
+    int32_t i = 0;
+    if(!intValue(w, n.substr(br+1, n.size()-br-2), i) || i<0 || i>0xFFFF)
+      return false;
+    base = n.substr(0, br);
+    idx  = uint16_t(i);
+    }
+  auto sym = w.script().findSymbol(base);
+  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::INT || idx>=sym->count())
     return false;
-  out = sym->get_int();
+  out = sym->get_int(idx);
   return true;
   }
 
@@ -473,6 +489,12 @@ bool ArpgPlotBot::checkCond(World& w, const std::vector<std::string>& a, size_t 
     why += "brak warunku";
     return false;
     }
+  if(auto i = std::find(a.begin()+int(from), a.end(), "i"); i!=a.end()) {
+    // "<warunek> i <warunek>"
+    const std::vector<std::string> l(a.begin()+int(from), i), r(i+1, a.end());
+    const bool okL = checkCond(w, l, 0, why);
+    return checkCond(w, r, 0, why) && okL;
+    }
   if(a[from]=="nie")
     return checkCond(w, a, from+1, why);
   const std::string& k = a[from];
@@ -487,6 +509,13 @@ bool ArpgPlotBot::checkCond(World& w, const std::vector<std::string>& a, size_t 
   if(k=="blisko")    return checkName(w, arg(1), "npc", why) && checkName(w, arg(2), "place", why);
   if(k=="obok")      return checkName(w, arg(1), "npc", why);
   if(k=="godzina")   return true;
+  if(k=="cecha") {
+    static const char* names[] = {"sila", "zrecznosc", "nauka", "poziom", "zycie", "zyciemax", "mana", "doswiadczenie"};
+    const bool known = std::any_of(std::begin(names), std::end(names), [&](const char* n) { return arg(1)==n; });
+    if(!known)
+      why += (why.empty() ? "" : "; ") + std::string("nieznana cecha ") + arg(1);
+    return known && checkName(w, arg(3), "int", why);
+    }
   why += "nieznany warunek " + k;
   return false;
   }
@@ -516,6 +545,25 @@ void ArpgPlotBot::validate(World& w) {
       ok = checkName(w, at(0), "place", why) && ok;
     else if(v=="czekaj" || v=="sprawdz")
       ok = checkCond(w, s.arg, 0, why) && ok;
+    else if(v=="zbierz") {
+      // zbierz <przedmiot> <ile> [<miejsce>] [<cm>]
+      ok = checkName(w, at(0), "item", why) && isNumber(at(1)) && ok;
+      if(s.arg.size()>2)
+        ok = checkName(w, at(2), "place", why) && ok;
+      }
+    else if(v=="kup")
+      ok = checkName(w, at(0), "item", why) && (s.arg.size()<2 || isNumber(at(1))) && ok;
+    else if(v=="sprzedaj")
+      ok = (at(0)=="bronie" || checkName(w, at(0), "item", why)) && (s.arg.size()<2 || isNumber(at(1)) || at(1)=="wszystko") && ok;
+    else if(v=="kop")
+      ok = checkName(w, at(0), "place", why) && checkName(w, at(1), "item", why) && ok;
+    else if(v=="poluj") {
+      // poluj <trofeum> <ile> <miejsce> <cm> <postać>...
+      ok = checkName(w, at(0), "item", why) && isNumber(at(1)) && checkName(w, at(2), "place", why) && isNumber(at(3)) && ok;
+      ok = s.arg.size()>4 && ok;
+      for(size_t i=4; i<s.arg.size(); ++i)
+        ok = checkName(w, s.arg[i], "npc", why) && ok;
+      }
     else if(v=="spij")
       ok = at(0).size()==5 && at(0)[2]==':';
     else if(v=="koniec" || v=="etykieta" || v=="zapisz")
@@ -599,7 +647,9 @@ void ArpgPlotBot::panel(ArpgBotPanel& out, const Npc* pl) const {
               " | uniki " + std::to_string(nDodge) + " | zdarzenia " + std::to_string(nEvents) +
               " | " + t;
   if(pl!=nullptr)
-    out.stats += " | zdrowie " + std::to_string(pl->attribute(ATR_HITPOINTS)) + "/" + std::to_string(pl->attribute(ATR_HITPOINTSMAX));
+    out.stats += " | zdrowie " + std::to_string(pl->attribute(ATR_HITPOINTS)) + "/" + std::to_string(pl->attribute(ATR_HITPOINTSMAX)) +
+                 " | poziom " + std::to_string(pl->level()) + " | złoto " + std::to_string(pl->inventory().goldCount()) +
+                 " | PN " + std::to_string(pl->learningPoints());
   if(!started)
     out.doing = "czeka na świat gry";
   else if(cur<steps.size()) {
@@ -668,6 +718,10 @@ void ArpgPlotBot::skipStep(const std::string& why) {
   walk     = Walk();
   phase    = 0;
   picked   = false;
+  collectIt = nullptr;
+  hunted    = nullptr;
+  huntKills = 0;
+  digClicks = 0;
   stepT0   = phaseT0 = Application::tickCount();
   if(hooks.player!=nullptr)
     hooks.player->arpgBotRelease();
@@ -721,6 +775,10 @@ void ArpgPlotBot::nextStep(bool ok, const std::string& why) {
   walk     = Walk();
   phase    = 0;
   picked   = false;
+  collectIt = nullptr;
+  hunted    = nullptr;
+  huntKills = 0;
+  digClicks = 0;
   stepT0   = phaseT0 = Application::tickCount();
   if(hooks.player!=nullptr)
     hooks.player->arpgBotRelease();
@@ -1169,12 +1227,14 @@ bool ArpgPlotBot::choresTick(World& w, Npc& pl, uint64_t now) {
       event("bron", "założona lepsza broń: " + toUtf8(nw), false);
     };
 
-  // 1. bodies of the enemies killed: "take all"
+  // 1. bodies of the enemies killed: "take all" (hunting: the trophies are the point, the bot goes back for them)
+  const bool  hunting = cur<steps.size() && steps[cur].verb=="poluj";
+  const float lootR   = hunting ? 2500.f : kLootRange;
   if(choreBody==nullptr) {
     for(size_t i=0; i<bodies.size();) {
       Focus f;
       f.npc = bodies[i];
-      if(w.validateFocus(f).npc==nullptr || dist2d(bodies[i]->position(), pl.position())>kLootRange) {
+      if(w.validateFocus(f).npc==nullptr || dist2d(bodies[i]->position(), pl.position())>lootR) {
         bodies.erase(bodies.begin()+int(i));
         continue;
         }
@@ -1439,6 +1499,15 @@ bool ArpgPlotBot::cond(World& w, Npc& pl, const std::vector<std::string>& a, siz
     why = "brak warunku";
     return false;
     }
+  if(auto i = std::find(a.begin()+int(from), a.end(), "i"); i!=a.end()) {
+    // "<warunek> i <warunek>": both
+    const std::vector<std::string> l(a.begin()+int(from), i), r(i+1, a.end());
+    std::string wl, wr;
+    const bool okL = cond(w, pl, l, 0, wl);
+    const bool okR = okL && cond(w, pl, r, 0, wr);
+    why = okL ? wl + " i " + wr : wl;
+    return okL && okR;
+    }
   if(a[from]=="nie") {
     const bool r = cond(w, pl, a, from+1, why);
     why = "nie (" + why + ")";
@@ -1561,6 +1630,26 @@ bool ArpgPlotBot::cond(World& w, Npc& pl, const std::vector<std::string>& a, siz
       return false;
     return a0<=a1 ? (m>=a0 && m<a1) : (m>=a0 || m<a1);
     }
+  if(k=="cecha") {
+    // cecha sila|zrecznosc|nauka|poziom|zycie|zyciemax|mana|doswiadczenie <op> <N>
+    const std::string& c = arg(1);
+    int32_t x = 0, y = 0;
+    if(c=="sila")               x = pl.attribute(ATR_STRENGTH);
+    else if(c=="zrecznosc")     x = pl.attribute(ATR_DEXTERITY);
+    else if(c=="nauka")         x = pl.learningPoints();
+    else if(c=="poziom")        x = pl.level();
+    else if(c=="zycie")         x = pl.attribute(ATR_HITPOINTS);
+    else if(c=="zyciemax")      x = pl.attribute(ATR_HITPOINTSMAX);
+    else if(c=="mana")          x = pl.attribute(ATR_MANA);
+    else if(c=="doswiadczenie") x = pl.experience();
+    else {
+      why = "nieznana cecha " + c;
+      return false;
+      }
+    intValue(w, arg(3), y);
+    why = c + " " + std::to_string(x) + ", oczekiwane " + arg(2) + " " + arg(3);
+    return cmp(x, arg(2), y);
+    }
   why = "nieznany warunek " + k;
   return false;
   }
@@ -1613,7 +1702,7 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
       }
     steps[cur].cond.clear(); // holds: the step itself from now on
     }
-  const bool talkStep = s.verb=="rozmowa" || s.verb=="wybor" || s.verb=="koniec";
+  const bool talkStep = s.verb=="rozmowa" || s.verb=="wybor" || s.verb=="koniec" || s.verb=="kup" || s.verb=="sprzedaj";
   if(!talkStep) {
     // checks keep the talk of the step before open; steps that need the hero free end it quietly; any other talk is noted
     const bool check   = s.verb=="sprawdz" || s.verb=="czekaj" || s.verb=="etykieta";
@@ -1625,7 +1714,8 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
     if(talking==nullptr && fights && defendTick(w, pl, now))
       return;
     // between the fights, on the way: heal, take from the bodies, pick up, the best weapon
-    const bool free = s.verb=="idz" || s.verb=="zabierz" || s.verb=="czekaj" || s.verb=="zabij";
+    const bool free = s.verb=="idz" || s.verb=="zabierz" || s.verb=="czekaj" || s.verb=="zabij" ||
+                      s.verb=="zbierz" || s.verb=="poluj" || s.verb=="kop";
     if(talking==nullptr && free && choresTick(w, pl, now))
       return;
     }
@@ -1647,6 +1737,11 @@ void ArpgPlotBot::tick(World& w, Npc& pl) {
   else if(v=="spij")     doSleep(w, pl, s, now);
   else if(v=="zapisz")   doSave (w, pl, s, now);
   else if(v=="przenies") doJump (w, pl, s, now);
+  else if(v=="zbierz")   doCollect(w, pl, s, now);
+  else if(v=="kup")      doBuy  (w, pl, s, now);
+  else if(v=="sprzedaj") doSell (w, pl, s, now);
+  else if(v=="kop")      doDig  (w, pl, s, now);
+  else if(v=="poluj")    doHunt (w, pl, s, now);
   else if(v=="etykieta") nextStep(true, "");
   else                   nextStep(false, "nieznany krok");
   }
@@ -1736,6 +1831,14 @@ void ArpgPlotBot::doTalk(World& w, Npc& pl, const Step& s, uint64_t now) {
     nextStep(false, "rozmowa zamknięta, " + info + " nieznane");
     return;
     }
+  if(tradeOpen()) {
+    // the line opened the trade (DIA_*_TRADE): done, "kup" / "sprzedaj" go on in the window
+    if(picked || info.empty() || w.script().arpgKnowsInfo(pl, info))
+      nextStep(true, "handel otwarty");
+    else
+      hooks.inventory->close();
+    return;
+    }
   dlg->arpgBotSkip();
   std::vector<DialogMenu::ArpgBotLine> lines;
   if(!dlg->arpgBotLines(lines)) {
@@ -1801,6 +1904,8 @@ void ArpgPlotBot::doPick(World& w, Npc& pl, const Step& s, uint64_t now) {
       nextStep(false, "brak rozmowy");
     return;
     }
+  if(tradeOpen())
+    hooks.inventory->close(); // the choices are under the trade window
   dlg->arpgBotSkip();
   doing = "wybór w rozmowie z " + nameOf(*dlg->arpgBotNpc()) + ": " + s.arg[0] + (phase==1 ? " (wybrany, kwestie)" : "");
   std::vector<DialogMenu::ArpgBotLine> lines;
@@ -1835,6 +1940,8 @@ void ArpgPlotBot::doExit(World& w, Npc& pl, const Step& s, uint64_t now) {
     nextStep(true, phase==1 ? "" : "już zamknięta");
     return;
     }
+  if(tradeOpen())
+    hooks.inventory->close(); // the trade first, then the talk
   dlg->arpgBotSkip();
   std::vector<DialogMenu::ArpgBotLine> lines;
   if(!dlg->arpgBotLines(lines)) {
@@ -1903,25 +2010,15 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
     nextStep(false, std::string("limit czasu walki, żyje: ") + nameOf(*tg));
     return;
     }
+  std::string fail;
+  const int   r = engage(w, pl, *tg, now, fail);
+  if(r<0) {
+    nextStep(false, fail);
+    return;
+    }
+  if(r==0)
+    return;
   const float d = dist2d(pl.position(), tg->position());
-  const bool  viaWaynet = now<fightWalkUntil && d>250.f;
-  if(d>kFightWalk || viaWaynet) {
-    // far, or out of reach of the fight clicks (stairs, a rock between): the waynet takes the hero there
-    if(!walk.on || dist2d(walk.dest, tg->position())>300.f)
-      walkStart(w, pl, tg->position(), viaWaynet ? 200.f : kFightWalk*0.8f);
-    walkWhat = "idzie do " + nameOf(*tg) + (viaWaynet ? " (drogą, poza zasięgiem)" : " (walka)");
-    if(walkTick(w, pl, now)<0)
-      nextStep(false, std::string("nie doszedł do ") + nameOf(*tg));
-    return;
-    }
-  walk.on   = false;
-  lastEnemy = nameOf(*tg);
-  if(fightTick(w, pl, *tg, now)<0) {
-    event("obrona", "poza zasięgiem: " + nameOf(*tg) + " – drogą przez punkty", false);
-    fightEnd(pl);
-    fightWalkUntil = now+15000;
-    return;
-    }
   size_t alive = 0;
   for(auto& n:s.arg)
     if(auto npc = findNpc(w, n); npc!=nullptr && !npc->isDead())
@@ -1929,6 +2026,40 @@ void ArpgPlotBot::doKill(World& w, Npc& pl, const Step& s, uint64_t now) {
   doing = "walczy z " + nameOf(*tg) + " (" + std::to_string(tg->attribute(ATR_HITPOINTS)) + "/" +
           std::to_string(tg->attribute(ATR_HITPOINTSMAX)) + "), " + meters(d) + ", żywych celów " + std::to_string(alive) +
           ", " + std::to_string((now-stepT0)/1000) + " s" + (lastMove.empty() ? std::string() : " | " + lastMove);
+  }
+
+int ArpgPlotBot::engage(World& w, Npc& pl, Npc& tg, uint64_t now, std::string& fail) {
+  const float d = dist2d(pl.position(), tg.position());
+  const bool  viaWaynet = now<fightWalkUntil && d>250.f;
+  if(d>kFightWalk || viaWaynet) {
+    // far, or out of reach of the fight clicks (stairs, a rock between): the waynet takes the hero there
+    if(!walk.on || dist2d(walk.dest, tg.position())>300.f)
+      walkStart(w, pl, tg.position(), viaWaynet ? 200.f : kFightWalk*0.8f);
+    walkWhat = "idzie do " + nameOf(tg) + (viaWaynet ? " (drogą, poza zasięgiem)" : " (walka)");
+    if(walkTick(w, pl, now)<0) {
+      fail = "nie doszedł do " + nameOf(tg);
+      return -1;
+      }
+    return 0;
+    }
+  walk.on   = false;
+  lastEnemy = nameOf(tg);
+  if(tg.isDown()) {
+    // unconscious, not dead: the finishing blow (the weapon in hand, a click on the body)
+    if(hooks.player!=nullptr && now-finishT>1500) {
+      finishT = now;
+      hooks.player->arpgBotLock(nullptr);
+      hooks.player->arpgBotClick(Focus(tg), false, true);
+      }
+    lastMove = "dobija";
+    return 1;
+    }
+  if(fightTick(w, pl, tg, now)<0) {
+    event("obrona", "poza zasięgiem: " + nameOf(tg) + " – drogą przez punkty", false);
+    fightEnd(pl);
+    fightWalkUntil = now+15000;
+    }
+  return 1;
   }
 
 void ArpgPlotBot::doTake(World& w, Npc& pl, const Step& s, uint64_t now) {
@@ -2026,10 +2157,12 @@ void ArpgPlotBot::doSave(World& w, Npc& pl, const Step& s, uint64_t now) {
     nextStep(false, "brak zapisu");
     return;
     }
+  // bot_<scenariusz>_<nazwa>: every scenario has its own (-Od <etykieta> in dev.ps1 looks for it)
   const std::string n = s.arg.empty() ? std::to_string(cur+1) : s.arg[0];
-  hooks.save("save_slot_bot_" + n + ".sav", "Bot: " + n + " (" + name + ")");
-  event("zapis", "-save bot_" + n, false);
-  nextStep(true, "-save bot_" + n);
+  const std::string f = "bot_" + name + "_" + n;
+  hooks.save("save_slot_" + f + ".sav", "Bot: " + n + " (" + name + ")");
+  event("zapis", "-save " + f, false);
+  nextStep(true, "-save " + f);
   }
 
 void ArpgPlotBot::doJump(World& w, Npc& pl, const Step& s, uint64_t now) {
@@ -2046,4 +2179,406 @@ void ArpgPlotBot::doJump(World& w, Npc& pl, const Step& s, uint64_t now) {
     c->reset(&pl);
   event("zaciecie", "przeniesienie ze scenariusza: " + s.arg[0], false);
   nextStep(true, "");
+  }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// collecting, trading, digging, hunting
+
+bool ArpgPlotBot::pickUp(World& w, Npc& pl, Item& it, uint64_t now, const std::string& what) {
+  const float dd = dist2d(it.position(), pl.position());
+  if(dd>600.f) {
+    if(!walk.on || dist2d(walk.dest, it.position())>300.f)
+      walkStart(w, pl, it.position(), 400.f);
+    walkWhat = "idzie po " + what;
+    return walkTick(w, pl, now)>=0;
+    }
+  walk.on = false;
+  if(hooks.player->arpgBotIdle() || now-walk.clickT>kTalkClickMs) {
+    walk.clickT = now;
+    hooks.player->arpgBotClick(Focus(it), false, false);
+    }
+  doing = "podnosi " + what + " (" + meters(dd) + ")";
+  return true;
+  }
+
+void ArpgPlotBot::doCollect(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // zbierz <przedmiot> <ile> [<miejsce>] [<cm>]: things of one kind lying around one place (the turnips of a field)
+  const size_t id   = itemId(w, s.arg[0]);
+  const size_t want = size_t(std::max(1, std::atoi(s.arg[1].c_str())));
+  if(id==size_t(-1) || hooks.player==nullptr) {
+    nextStep(false, "nieznany przedmiot " + s.arg[0]);
+    return;
+    }
+  const size_t have = pl.itemCount(id);
+  if(phase==0) {
+    countBefore = have;
+    phase       = 1;
+    }
+  const std::string got = "zebrał " + std::to_string(have>countBefore ? have-countBefore : 0) + ", ma " +
+                          std::to_string(have) + "/" + std::to_string(want);
+  if(have>=want) {
+    nextStep(true, got);
+    return;
+    }
+  Vec3       center = pl.position();
+  float      reach  = 0;
+  const bool place  = s.arg.size()>2;
+  if(place && !targetPos(w, s.arg[2], center, reach)) {
+    nextStep(false, "nieznane miejsce " + s.arg[2] + " w świecie " + std::string(w.name()));
+    return;
+    }
+  const float range = s.arg.size()>3 ? float(std::max(200, std::atoi(s.arg[3].c_str()))) : 2500.f;
+
+  // the thing now: still lying there, not given up
+  Item* it = nullptr;
+  if(collectIt!=nullptr) {
+    Focus f;
+    f.item = static_cast<Item*>(const_cast<void*>(collectIt));
+    it = w.validateFocus(f).item;
+    if(it==nullptr) {
+      collectIt = nullptr; // taken
+      walk.on   = false;
+      }
+    else if(now-collectT0>kCollectItemMs) {
+      givenUp.push_back(collectIt);
+      event("zbieranie", "nie dosięga: " + s.arg[0], false);
+      collectIt = nullptr;
+      it        = nullptr;
+      walk.on   = false;
+      }
+    }
+  if(it==nullptr) {
+    float bestD = 1e9f;
+    w.forEachItemNear(center, range, [&](Item& i) {
+      if(i.clsId()!=id || std::find(givenUp.begin(), givenUp.end(), &i)!=givenUp.end())
+        return;
+      const float d = dist2d(i.position(), pl.position());
+      if(d<bestD) {
+        bestD = d;
+        it    = &i;
+        }
+      });
+    if(it==nullptr) {
+      if(place && dist2d(pl.position(), center)>600.f) {
+        // the place first: what lies there is seen from up close
+        if(!walk.on || dist2d(walk.dest, center)>300.f)
+          walkStart(w, pl, center, 400.f);
+        walkWhat = "idzie na " + s.arg[2];
+        if(walkTick(w, pl, now)<0)
+          nextStep(false, "nie doszedł na " + s.arg[2]);
+        return;
+        }
+      nextStep(false, got + " – więcej nie ma w promieniu " + std::to_string(int(range)) + " cm");
+      return;
+      }
+    collectIt = it;
+    collectT0 = now;
+    walk.on   = false;
+    }
+  if(!pickUp(w, pl, *it, now, s.arg[0])) {
+    givenUp.push_back(it);
+    collectIt = nullptr;
+    walk.on   = false;
+    }
+  doing = "zbiera " + s.arg[0] + " " + std::to_string(have) + "/" + std::to_string(want) + " | " + doing;
+  }
+
+bool ArpgPlotBot::tradeOpen() const {
+  return hooks.inventory!=nullptr && hooks.inventory->isOpen()==InventoryMenu::State::Trade;
+  }
+
+bool ArpgPlotBot::keepsTrade() const {
+  auto trades = [&](size_t i) { return i<steps.size() && (steps[i].verb=="kup" || steps[i].verb=="sprzedaj"); };
+  if(done || cur>=steps.size())
+    return false;
+  if(trades(cur))
+    return true;
+  const auto& v = steps[cur].verb;
+  return (v=="rozmowa" || v=="wybor") && trades(cur+1);
+  }
+
+void ArpgPlotBot::tradeDone() {
+  // the last trade step: the window closes, the talk goes on
+  const bool more = cur+1<steps.size() && (steps[cur+1].verb=="kup" || steps[cur+1].verb=="sprzedaj");
+  if(!more && tradeOpen())
+    hooks.inventory->close();
+  }
+
+void ArpgPlotBot::doBuy(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // kup <przedmiot> [<ile>]: in the trade window the talk opened (DIA_*_TRADE)
+  if(!tradeOpen()) {
+    doing = "czeka na okno handlu";
+    if(now-stepT0>kCheckMs)
+      nextStep(false, "handel nie jest otwarty");
+    return;
+    }
+  const size_t id  = itemId(w, s.arg[0]);
+  const auto*  oth = hooks.inventory->arpgOtherInventory();
+  if(id==size_t(-1) || oth==nullptr) {
+    nextStep(false, "nieznany przedmiot " + s.arg[0]);
+    return;
+    }
+  const size_t  want  = s.arg.size()>1 ? size_t(std::max(1, std::atoi(s.arg[1].c_str()))) : 1;
+  const size_t  has   = oth->itemCount(id);
+  const int32_t price = oth->priceOf(id);
+  if(has==0) {
+    tradeDone();
+    nextStep(false, "handlarz nie ma " + s.arg[0]);
+    return;
+    }
+  const size_t gold0 = pl.inventory().goldCount();
+  const size_t n0    = pl.itemCount(id);
+  hooks.inventory->arpgMove(true, id, std::min(want, has));
+  const size_t n1    = pl.itemCount(id);
+  const size_t gold1 = pl.inventory().goldCount();
+  const size_t got   = n1>n0 ? n1-n0 : 0;
+  const size_t paid  = gold0>gold1 ? gold0-gold1 : 0;
+  tradeDone();
+  if(got==0) {
+    nextStep(false, "nie kupił " + s.arg[0] + " (złota " + std::to_string(gold0) + ", cena " + std::to_string(price) + ")");
+    return;
+    }
+  event("handel", "kupił " + s.arg[0] + " x" + std::to_string(got) + " za " + std::to_string(paid) + " zł", false);
+  nextStep(got>=want, "x" + std::to_string(got) + " za " + std::to_string(paid) + " zł, zostało " + std::to_string(gold1));
+  }
+
+void ArpgPlotBot::doSell(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // sprzedaj <przedmiot>|bronie [<ile>|wszystko]: "bronie" = the weapons not in hand (the loot)
+  if(!tradeOpen()) {
+    doing = "czeka na okno handlu";
+    if(now-stepT0>kCheckMs)
+      nextStep(false, "handel nie jest otwarty");
+    return;
+    }
+  std::vector<std::pair<size_t,size_t>> sell; // class, count
+  std::string names;
+  bool        weapons = false;
+  if(s.arg[0]=="bronie") {
+    for(auto it = pl.inventory().iterator(Inventory::T_Inventory); it.isValid(); ++it) {
+      const auto& h = it->handle();
+      if((h.main_flag & int32_t(ITM_CAT_NF | ITM_CAT_FF))==0 || it.isEquipped() || it->isMission())
+        continue;
+      sell.push_back({it->clsId(), it.count()});
+      names += (names.empty() ? "" : ", ") + toUtf8(it->displayName()) + (it.count()>1 ? " x" + std::to_string(it.count()) : std::string());
+      weapons = true;
+      }
+    }
+  else {
+    const size_t id = itemId(w, s.arg[0]);
+    const size_t n  = id==size_t(-1) ? 0 : pl.itemCount(id);
+    if(n==0) {
+      tradeDone();
+      nextStep(false, "brak " + s.arg[0] + " w plecaku");
+      return;
+      }
+    size_t cnt = n;
+    if(s.arg.size()>1 && s.arg[1]!="wszystko")
+      cnt = std::min(n, size_t(std::max(1, std::atoi(s.arg[1].c_str()))));
+    sell.push_back({id, cnt});
+    names   = s.arg[0] + (cnt>1 ? " x" + std::to_string(cnt) : std::string());
+    for(auto it = pl.inventory().iterator(Inventory::T_Inventory); it.isValid(); ++it)
+      if(it->clsId()==id && (it->handle().main_flag & int32_t(ITM_CAT_NF | ITM_CAT_FF))!=0)
+        weapons = true;
+    }
+  if(sell.empty()) {
+    tradeDone();
+    nextStep(true, "nic do sprzedania");
+    return;
+    }
+  const size_t gold0 = pl.inventory().goldCount();
+  for(auto& i:sell)
+    hooks.inventory->arpgMove(false, i.first, i.second);
+  const size_t gold1 = pl.inventory().goldCount();
+  const size_t gain  = gold1>gold0 ? gold1-gold0 : 0;
+  if(weapons) {
+    const std::string nw = pl.arpgEquipBestWeapons();
+    if(!nw.empty())
+      event("bron", "założona broń: " + toUtf8(nw), false);
+    }
+  event("handel", "sprzedał " + names + " za " + std::to_string(gain) + " zł", false);
+  tradeDone();
+  nextStep(true, names + " za " + std::to_string(gain) + " zł, złota " + std::to_string(gold1));
+  }
+
+void ArpgPlotBot::doDig(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // kop <miejsce> <przedmiot>: a buried treasure (Greg's crosses): the spot with a script action by the point, the tool it
+  // asks for in the backpack, a click on it like a player; then what came out of the ground is picked up
+  const size_t id    = itemId(w, s.arg[1]);
+  Vec3         at    = {};
+  float        reach = 0;
+  if(id==size_t(-1) || hooks.player==nullptr || !targetPos(w, s.arg[0], at, reach)) {
+    nextStep(false, "nieznane miejsce " + s.arg[0] + " albo przedmiot " + s.arg[1]);
+    return;
+    }
+  if(phase==0) {
+    countBefore = pl.itemCount(id);
+    phase       = 1;
+    digClicks   = 0;
+    digT0       = 0;
+    }
+  if(pl.itemCount(id)>countBefore) {
+    nextStep(true, "wykopał " + s.arg[1]);
+    return;
+    }
+  // already out of the ground: picked up
+  Item* found = nullptr;
+  float bestD = kDigRange;
+  w.forEachItemNear(at, kDigRange, [&](Item& it) {
+    const float d = dist2d(it.position(), at);
+    if(it.clsId()==id && d<bestD) {
+      bestD = d;
+      found = &it;
+      }
+    });
+  if(found!=nullptr) {
+    if(pl.interactive()!=nullptr) {
+      pl.setInteraction(nullptr); // out of the digging first
+      return;
+      }
+    if(!pickUp(w, pl, *found, now, s.arg[1]))
+      nextStep(false, "nie doszedł do " + s.arg[1]);
+    return;
+    }
+  if(pl.interactive()!=nullptr) {
+    if(digT0==0)
+      digT0 = now;
+    doing = "kopie przy " + s.arg[0] + " (" + std::to_string((now-digT0)/1000) + " s)";
+    if(now-digT0>kDigMs) {
+      pl.setInteraction(nullptr);
+      digT0 = 0;
+      }
+    return;
+    }
+  digT0 = 0;
+  if(dist2d(pl.position(), at)>300.f) {
+    if(!walk.on || dist2d(walk.dest, at)>300.f)
+      walkStart(w, pl, at, 200.f);
+    walkWhat = "idzie kopać: " + s.arg[0];
+    if(walkTick(w, pl, now)<0)
+      nextStep(false, "nie doszedł do " + s.arg[0]);
+    return;
+    }
+  walk.on = false;
+  Interactive* spot = nullptr;
+  float        sd   = kDigRange;
+  w.forEachInteractiveNear(at, kDigRange, [&](Interactive& m) {
+    if(m.arpgStateFunc().empty() && m.arpgUseItem().empty())
+      return;
+    const float d = dist2d(m.position(), at);
+    if(d<sd) {
+      sd   = d;
+      spot = &m;
+      }
+    });
+  if(spot==nullptr) {
+    nextStep(false, "brak miejsca do kopania przy " + s.arg[0]);
+    return;
+    }
+  if(!spot->arpgUseItem().empty()) {
+    const size_t tool = w.script().findSymbolIndex(std::string(spot->arpgUseItem()));
+    if(tool!=size_t(-1) && pl.itemCount(tool)==0) {
+      nextStep(false, "brak narzędzia " + std::string(spot->arpgUseItem()));
+      return;
+      }
+    }
+  if(digClicks>=kDigClicks && now-walk.clickT>kTalkClickMs*2) {
+    nextStep(false, "kopanie przy " + s.arg[0] + " nic nie dało");
+    return;
+    }
+  if(digClicks<kDigClicks && (hooks.player->arpgBotIdle() || now-walk.clickT>kTalkClickMs*2)) {
+    walk.clickT = now;
+    ++digClicks;
+    hooks.player->arpgBotClick(Focus(*spot), false, false);
+    }
+  doing = "kopie przy " + s.arg[0] + " (klik " + std::to_string(digClicks) + "/" + std::to_string(kDigClicks) + ")";
+  }
+
+void ArpgPlotBot::doHunt(World& w, Npc& pl, const Step& s, uint64_t now) {
+  // poluj <trofeum> <ile> <miejsce> <cm> <postać>...: beasts of these kinds around the place, until the trophies are in
+  // the backpack (the chores take them from the bodies)
+  const size_t id    = itemId(w, s.arg[0]);
+  const size_t want  = size_t(std::max(1, std::atoi(s.arg[1].c_str())));
+  Vec3         at    = {};
+  float        reach = 0;
+  if(id==size_t(-1) || hooks.player==nullptr || !targetPos(w, s.arg[2], at, reach)) {
+    nextStep(false, "nieznane trofeum " + s.arg[0] + " albo miejsce " + s.arg[2]);
+    return;
+    }
+  const float  range = float(std::max(500, std::atoi(s.arg[3].c_str())));
+  const size_t have  = pl.itemCount(id);
+  const std::string tally = "trofea " + std::to_string(have) + "/" + std::to_string(want) + ", zabite " + std::to_string(huntKills);
+  if(have>=want) {
+    fightEnd(pl);
+    nextStep(true, tally);
+    return;
+    }
+  if(hunted!=nullptr && hunted->isDead()) {
+    if(std::find(bodies.begin(), bodies.end(), hunted)==bodies.end())
+      bodies.push_back(hunted);
+    ++huntKills;
+    hunted = nullptr;
+    fightEnd(pl);
+    return; // the chores take the trophy
+    }
+  if(hunted!=nullptr && dist2d(hunted->position(), at)>range*1.5f) {
+    hunted = nullptr; // ran off
+    fightEnd(pl);
+    }
+  if(hunted==nullptr) {
+    auto isIgnored = [&](const Npc* n) {
+      return std::any_of(ignored.begin(), ignored.end(), [&](const std::pair<const Npc*,uint64_t>& i) { return i.first==n && i.second>now; });
+      };
+    float bestD = 1e9f;
+    for(size_t i=4; i<s.arg.size(); ++i) {
+      const size_t sym = w.script().findSymbolIndex(s.arg[i]);
+      if(sym==size_t(-1))
+        continue;
+      for(size_t n=0; ; ++n) {
+        Npc* npc = w.findNpcByInstance(sym, n);
+        if(npc==nullptr)
+          break;
+        if(npc->isDead() || isIgnored(npc) || dist2d(npc->position(), at)>range)
+          continue;
+        const float d = dist2d(npc->position(), pl.position());
+        if(d<bestD) {
+          bestD  = d;
+          hunted = npc;
+          }
+        }
+      }
+    if(hunted==nullptr) {
+      if(phase==0 && dist2d(pl.position(), at)>600.f) {
+        // the place first: the beasts roam, the bodies show up on the way
+        if(!walk.on || dist2d(walk.dest, at)>300.f)
+          walkStart(w, pl, at, 400.f);
+        walkWhat = "idzie polować: " + s.arg[2];
+        const int r = walkTick(w, pl, now);
+        if(r<0)
+          nextStep(false, "nie doszedł do " + s.arg[2]);
+        else if(r>0)
+          phase = 1;
+        return;
+        }
+      if(!bodies.empty() || choreBody!=nullptr)
+        return; // the last body first
+      nextStep(false, "brak zwierzyny przy " + s.arg[2] + ", " + tally);
+      return;
+      }
+    phase = 1;
+    walk.on = false;
+    event("polowanie", nameOf(*hunted) + " (" + meters(bestD) + ")", false);
+    }
+  std::string fail;
+  const int   r = engage(w, pl, *hunted, now, fail);
+  if(r<0) {
+    ignored.push_back({hunted, now+kIgnoreMs});
+    event("polowanie", "nie dosięga: " + nameOf(*hunted), false);
+    hunted  = nullptr;
+    walk.on = false;
+    fightEnd(pl);
+    return;
+    }
+  if(r>0)
+    doing = "poluje: " + nameOf(*hunted) + " (" + std::to_string(hunted->attribute(ATR_HITPOINTS)) + "/" +
+            std::to_string(hunted->attribute(ATR_HITPOINTSMAX)) + "), " + tally + (lastMove.empty() ? std::string() : " | " + lastMove);
   }
