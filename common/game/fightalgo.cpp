@@ -105,6 +105,18 @@ bool FightAlgo::fillQueue(GameScript& owner, const zenkit::IFightAi& src) {
 FightAlgo::Action FightAlgo::nextFromQueue(Npc& npc, Npc& tg, GameScript& owner) {
   using zenkit::FightAiMove;
 
+  // Diathic: the block (parade or jump back) holds 3 hits of the hero like his own; worn out, the NPC does something
+  // else until a charge is back: an attack or a step aside (Npc::arpgBlockWorn)
+  auto arpgWornBlock = [&]() {
+    if(owner.rand(2)) {
+      tr[0] = owner.rand(2) ? MV_ATTACKL : MV_ATTACKR;
+      tr[1] = MV_ATTACK;
+      } else {
+      tr[0] = owner.rand(2) ? MV_STRAFEL : MV_STRAFER;
+      tr[1] = FightAlgo::MV_STRAFE_E;
+      }
+    };
+
   if(tr[0]==MV_NULL) {
     switch(queueId) {
       case FightAiMove::TURN:
@@ -119,6 +131,10 @@ FightAlgo::Action FightAlgo::nextFromQueue(Npc& npc, Npc& tg, GameScript& owner)
         break;
         }
       case FightAiMove::JUMP_BACK:{
+        if(npc.arpgBlockWorn(tg)) {
+          arpgWornBlock();
+          break;
+          }
         tr[0] = MV_JUMPBACK;
         break;
         }
@@ -174,21 +190,8 @@ FightAlgo::Action FightAlgo::nextFromQueue(Npc& npc, Npc& tg, GameScript& owner)
         break;
         }
       case FightAiMove::PARRY:{
-        // Diathic: the block holds 3 hits of the hero like his own; worn out, the NPC does something else until a
-        // charge is back: attacks, jumps back or steps aside (Npc::arpgBlockWorn)
         if(npc.arpgBlockWorn(tg)) {
-          const uint32_t r = owner.rand(4);
-          if(r<2) {
-            tr[0] = owner.rand(2) ? MV_ATTACKL : MV_ATTACKR;
-            tr[1] = MV_ATTACK;
-            }
-          else if(r==2) {
-            tr[0] = MV_JUMPBACK;
-            }
-          else {
-            tr[0] = owner.rand(2) ? MV_STRAFEL : MV_STRAFER;
-            tr[1] = FightAlgo::MV_STRAFE_E;
-            }
+          arpgWornBlock();
           break;
           }
         tr[0] = MV_BLOCK;

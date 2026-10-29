@@ -206,6 +206,7 @@ Npc::Npc(World &owner, size_t instance, std::string_view waypoint, NpcProcessPol
     hnpc->damage_type = 2;
   setTrueGuild(hnpc->guild); // https://worldofplayers.ru/threads/12446/post-878087
   setPerceptionTime(5000);   // https://github.com/Try/OpenGothic/pull/720#issuecomment-2602908614
+  arpgSyncBeastHp();         // Diathic: monsters and orcs: more life in the ARPG mode
   }
 
 Npc::~Npc(){
@@ -257,6 +258,12 @@ void Npc::save(Serialize &fout, size_t id, std::string_view directory) {
   fout.setEntry("worlds/",fout.worldName(),directory,id,"/inventory");
   if(!invent.isEmpty() || id==size_t(-1))
     invent.save(fout);
+
+  // Diathic: Gothic's max life of a monster raised in the ARPG mode (ArpgStatus::MonsterHpMul)
+  if(arpgHpBase!=0) {
+    fout.setEntry("worlds/",fout.worldName(),directory,id,"/diathic");
+    fout.write(arpgHpBase);
+    }
   }
 
 void Npc::load(Serialize &fin, size_t id, std::string_view directory) {
@@ -326,6 +333,12 @@ void Npc::load(Serialize &fin, size_t id, std::string_view directory) {
 
   if(fin.setEntry("worlds/",fin.worldName(),directory,id,"/inventory"))
     invent.load(fin,*this);
+
+  // Diathic: the life of monsters raised or not (saves from before 2026-10-29, a save of the other mode)
+  arpgHpBase = 0;
+  if(fin.setEntry("worlds/",fin.worldName(),directory,id,"/diathic"))
+    fin.read(arpgHpBase);
+  arpgSyncBeastHp();
 
   // post-alignment
   updateTransform();
@@ -2460,12 +2473,17 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
     return;
     }
 
-  // Diathic: the others block the hero's hits like he blocks theirs (2026-10-19): the charges, the leak when worn
-  const bool blockWears = arpgParry || (!isPlayer() && other.isPlayer() && Camera::isArpgEnabled());
-  if(!(isBlock || isJumpb) || (b!=nullptr && !arrowBlock)) {
+  // Diathic: the others block the hero's hits like he blocks theirs (2026-10-19): the charges, the leak when worn.
+  // Their jump back (Gothic: a block for the whole animation, a parade hit from the side too) wears the charges like
+  // a block, Łamacz gardy and the skills go through it (2026-10-29); the hero's own jump back stays Gothic's
+  const bool foeWears   = !isPlayer() && other.isPlayer() && Camera::isArpgEnabled();
+  const bool blockWears = arpgParry || foeWears;
+  const bool jumpb      = isJumpb && !(foeWears && guardBreak);
+  const bool wears      = blockWears && (isBlock || (foeWears && jumpb));
+  if(!(isBlock || jumpb) || (b!=nullptr && !arrowBlock)) {
     takeDamage(other,b,COLL_DOEVERYTHING,0,false);
     }
-  else if(blockWears && isBlock && arpgBlockCh<=0 && !bastion) {
+  else if(wears && arpgBlockCh<=0 && !bastion) {
     // Diathic: the block is worn out: one more below 0 (to -BlockDebt), 25% of the damage through for each
     arpgBlockCh = std::max(arpgBlockCh-1, -ArpgStatus::BlockDebt);
     arpgDmgScale  = std::min(1.f, float(-arpgBlockCh)*ArpgStatus::BlockLeak);
@@ -2477,7 +2495,7 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
       visual.emitBlockEffect(*this,other);
     }
   else {
-    if(blockWears && isBlock && !bastion)
+    if(wears && !bastion)
       arpgBlockCh = std::max(0, arpgBlockCh-1); // Diathic: one hit of the block's 3
     if(Camera::isArpgEnabled() && (other.isPlayer() || isPlayer()))
       owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 2); // gothic-diablo: "blocked"
@@ -2501,6 +2519,34 @@ bool Npc::arpgBlockWorn(const Npc& tg) const {
 int32_t Npc::arpgBlockMax() const {
   const auto* pk = arpgPerks();
   return ArpgStatus::BlockCharges + (pk!=nullptr ? pk->blockCharges : 0);
+  }
+
+bool Npc::arpgIsBeast() const {
+  // Diathic: all but people - monsters, animals, orcs, lizard men (2026-10-29), only in the ARPG mode
+  if(isPlayer() || !Camera::isArpgEnabled())
+    return false;
+  const auto SEPERATOR_HUM = owner.version().game==2 ? GIL_SEPERATOR_HUM : GIL_G1_SEPERATOR_HUM;
+  return SEPERATOR_HUM<guild();
+  }
+
+void Npc::arpgSyncBeastHp() {
+  // Diathic: max life x ArpgStatus::MonsterHpMul (the life left: the same part of it); the classic mode or the hero
+  // in the body of a monster: Gothic's life back
+  auto&      hp    = hnpc->attribute[ATR_HITPOINTS];
+  auto&      hpMax = hnpc->attribute[ATR_HITPOINTSMAX];
+  const bool want  = arpgIsBeast();
+  if(want && arpgHpBase==0 && hpMax>0) {
+    arpgHpBase = hpMax;
+    hpMax      = int32_t(std::lround(float(hpMax)*ArpgStatus::MonsterHpMul));
+    if(hp>0)
+      hp = std::min(hpMax, std::max<int32_t>(1, int32_t(std::lround(float(hp)*float(hpMax)/float(arpgHpBase)))));
+    }
+  else if(!want && arpgHpBase>0) {
+    if(hp>0 && hpMax>0)
+      hp = std::min(arpgHpBase, std::max<int32_t>(1, int32_t(std::lround(float(hp)*float(arpgHpBase)/float(hpMax)))));
+    hpMax      = arpgHpBase;
+    arpgHpBase = 0;
+    }
   }
 
 void Npc::arpgDirectDamage(Npc& from, int32_t v) {
@@ -2624,6 +2670,9 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
       }
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*mul)));
     }
+  // Diathic: monsters and orcs hit harder (ArpgStatus::MonsterDmgMul): swings, shots, spells
+  if(hitResult.value>0 && other.arpgIsBeast())
+    hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*ArpgStatus::MonsterDmgMul)));
   if(hitResult.value>0 && isPlayer() && !isSpell) {
     // gothic-diablo: Twarda skóra: some protection for a moment after a hit taken
     if(auto pk = arpgPerks(); pk!=nullptr && pk->hardSkin>0) {
@@ -3012,9 +3061,9 @@ void Npc::tick(uint64_t dt) {
     }
   else if(!isPlayer() && Camera::isArpgEnabled()) {
     // Diathic: people and monsters block like the hero (the charges worn by his hits): one back a second out of
-    // the block (Gothic's parade)
+    // the block (Gothic's parade and jump back)
     const uint64_t now = owner.tickCount();
-    if(visual.pose().isDefence(now) || arpgBlockCh>=arpgBlockMax()) {
+    if(visual.pose().isJumpBack(now) || arpgBlockCh>=arpgBlockMax()) {
       arpgBlockRegen = now+ArpgStatus::BlockRegenMs;
       }
     else if(now>=arpgBlockRegen) {

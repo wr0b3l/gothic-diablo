@@ -99,3 +99,11 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Księga umiejętności (decyzja „4 + 4”): strona główna = spis — lewa: pasywne (Cios, Atak ładowany, Fikołek, Biegłość), prawa: umiejętności (Blok, Jednoręczna, Dwuręczna, Łuk i kusza, z ich umiejętnościami i klawiszami); klik = przewrócenie strony na drzewko: lewa drzewko, prawa opis węzła; „Wróć do spisu” / Backspace
 - Wartości do balansu: `ArpgStatus::ArmorK` 100, `NormalHit` 0,5, `DanceCutTime` 0,36 s, `DanceHitAt` 0,17 s, `DanceMul` 1, `DanceArc` 150°
 - Do testu: Taniec ostrzy (3 i 4 cięcia, trafienia w liczbach), obrażenia różnych broni i siły (bez stałych 5), parowanie bez odepchnięcia, blok bandytów / orków (pasek nad głową, po 3 blokach atak / odskok), F i Shift + LPM, przypisanie do 3–0 i runy, stary zapis (umiejętności same na wolne klawisze), strona „Sterowanie”, spis i przewracanie stron
+
+## Poprawki potworów (2026-10-29, gałąź poprawki-potwory)
+- Użytkownik: potwory w Jarkendarze i Górniczej Dolinie nadal mają nieskończony blok, a zmiany balansu ich nie obejmują
+  - przyczyna: odskok (FA_ENEMY_PREHIT, większość potworów i orkowie) liczył się jako blok przez całą animację bez zużycia ładunków, więc cios bohatera nie dochodził do liczenia obrażeń; w Khorinis walki głównie z ludźmi (parada — działała), kretoszczurami i goblinami
+  - decyzja „propozycja A”: odskok wrogów zużywa ładunki bloku jak parada; AI z zużytym blokiem zamiast odskoku i parady: atak (50%) albo krok w bok (50%) — odskok z 25% z 2026-10-19 usunięty, bo jest teraz blokiem
+  - potwory, zwierzęta i orkowie (decyzja: „potwory + orkowie”, ludzie bez zmian): życie +20%, obrażenia +10%
+- Wartości do balansu: `ArpgStatus::MonsterHpMul` 1,2, `MonsterDmgMul` 1,1
+- Do testu: zębacz / cieniostwór / ork — po 3 blokach („Blok”) czwarty cios przechodzi częściowo, pasek ładunków nad głową; potem atak albo krok w bok zamiast odskoku; potwory wytrzymują więcej ciosów i biją mocniej; stary zapis w Jarkendarze / Górniczej Dolinie (życie podniesione raz, nie przy każdym wczytaniu)

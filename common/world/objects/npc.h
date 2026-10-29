@@ -203,6 +203,8 @@ class Npc final {
     int32_t    arpgBlockCharges() const { return arpgBlockCh; }
     bool       arpgBlockWorn(const Npc& tg) const; // Diathic: its block is worn out against the hero (AI: no parade)
     int32_t    arpgBlockMax() const;       // Diathic: ArpgStatus::BlockCharges + Twarda garda
+    bool       arpgIsBeast() const;        // Diathic: a monster, animal or orc in the ARPG mode (ArpgStatus::MonsterHpMul)
+    void       arpgSyncBeastHp();          // Diathic: its life x MonsterHpMul in the ARPG mode, Gothic's in the classic one
     bool       arpgBlockHeld() const;
     Npc*       arpgTakeRiposte() { auto r = arpgRiposteTg; arpgRiposteTg = nullptr; return r; } // Diathic: Riposta
     // Diathic: a skill of the weapon trees deals damage: x mul; knock: throws down; stagger: ms of a stagger; bleed: part
@@ -616,6 +618,7 @@ class Npc final {
     uint64_t  arpgParadeStart = 0;     // hero: when the block held now started (parry)
     int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hits the block still holds (below 0: damage leaks); everyone
     uint64_t  arpgBlockRegen  = 0;     // hero: the next charge back
+    int32_t   arpgHpBase      = 0;     // Diathic: Gothic's max life before ArpgStatus::MonsterHpMul (0 = not raised); saved
     float     arpgDmgScale    = 1.f;   // a hit through the block: part of the damage
     bool      arpgBlockLeak   = false; // a hit through the block: no stumble (the block stays)
     uint64_t  arpgBastionUntil = 0;    // hero: Bastion after a parry
