@@ -312,6 +312,7 @@ class PlayerControl final {
     float          arpgSteer(Npc& pl, const Tempest::Vec3& next, uint64_t dt);
     bool           arpgCanSee(const Tempest::Vec3& p, float baseY, const Interactive* self) const;
     static bool    arpgUsableMob(const Interactive& m);
+    Npc*           arpgValid(const Focus& f) const; // f.npc if it still exists
     bool           arpgFeelerClear(const Npc& pl, float ang, float len) const;
     float          arpgFreeDistance(const Npc& pl, float ang) const;
 
