@@ -44,6 +44,10 @@ namespace ArpgStatus {
   constexpr float    ArmorK        = 100.f;
   constexpr float    NormalHit     = 0.5f;
 
+  // Diathic: monsters, animals and orcs (all but people, 2026-10-29): more life and harder hits
+  constexpr float    MonsterHpMul  = 1.2f;
+  constexpr float    MonsterDmgMul = 1.1f;
+
   // Diathic: the weapon trees (balance)
   constexpr float    RageDmg       = 0.3f;  // Szał najemnika: +damage below 30% of health ...
   constexpr float    RageLeech     = 0.03f; // ... and leech
