@@ -807,6 +807,7 @@ bool PlayerControl::tickMove(uint64_t dt) {
   if(camera!=nullptr && camera->isArpgActive()) {
     arpgTickLock(*pl);  // Diathic: lock on a target
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
+    arpgKeepOut(*pl, dtF);
     }
   else
     arpgSetLock(nullptr);
@@ -1832,7 +1833,10 @@ static bool arpgIsHostile(const Npc& pl, const Npc& npc) {
     return true;
   if(Gothic::inst().version().game==2 && npc.guild()>GIL_SEPERATOR_ORC)
     return true; // orcs and other non-human creatures
-  return npc.isEnemy(pl);
+  if(!npc.isEnemy(pl))
+    return false;
+  auto w = Gothic::inst().world();
+  return w==nullptr || !w->script().arpgFakeBandit(npc, pl); // Diathic: bandits and the hero in bandit armour
   }
 
 float PlayerControl::arpgCeiling() const {
@@ -1880,7 +1884,30 @@ Focus PlayerControl::arpgPick() {
     }
   const Tempest::Vec3 to = from + dir*len;
 
-  const auto land = physic.ray(from, to);
+  // Diathic: the see-through circle (main.frag arpgHidden, part 2) hides walls, tree trunks and slopes between
+  // the camera and the hero; the cursor goes through them to what is drawn behind (the ground in the hole)
+  const auto& av      = cm->arpgView();
+  float       holeR   = 2.f; // cursor distance from the hole center, 1 = rim (above 1: outside)
+  const float heroCam = (av.center-arpgCursor.rayFrom).length();
+  if(av.enabled && av.seeThrough>0.f && av.fadeRadius>0.f && arpgCursor.screen.y>0.f) {
+    Tempest::Vec4 c = {av.center.x, av.center.y, av.center.z, 1.f};
+    arpgCursor.viewProj.project(c);
+    if(c.w>0.f) {
+      const float cx = (arpgCursor.pixel.x+0.5f)/arpgCursor.screen.x*2.f-1.f;
+      const float cy = (arpgCursor.pixel.y+0.5f)/arpgCursor.screen.y*2.f-1.f;
+      const float sx = (cx-c.x/c.w)*(arpgCursor.screen.x/arpgCursor.screen.y);
+      const float sy = (cy-c.y/c.w)*0.85f;
+      holeR = std::hypot(sx, sy)/(av.fadeRadius*av.seeThrough);
+      }
+    }
+  constexpr float holePick = 0.8f; // main.frag: the rim is dithered from 0.6 to 1.0, at 0.8 half the pixels are gone
+  auto inHole = [&](const Tempest::Vec3& p) {
+    return holeR<holePick && p.y>av.feet.y+50.f && (p-arpgCursor.rayFrom).length()<heroCam-100.f;
+    };
+
+  auto land = physic.ray(from, to);
+  for(int i=0; i<6 && land.hasCol && inHole(land.v); ++i)
+    land = physic.ray(land.v+dir*2.f, to);
   if(land.hasCol) {
     arpgGround      = land.v;
     arpgGroundValid = true;
@@ -2790,6 +2817,38 @@ bool PlayerControl::arpgIsEnemy(const Npc& npc) const {
   if(pl==nullptr || &npc==pl || npc.isDown())
     return false;
   return &npc==arpgLockTarget() || arpgIsHostile(*pl,npc); // Diathic: the locked one is fought, friend or not
+  }
+
+void PlayerControl::arpgKeepOut(Npc& pl, float dtF) {
+  // Diathic: Gothic's collision ellipsoid of a long creature (swampshark) covers only a part of its body,
+  // the hero walked into the rest of it (steps of the swings, the way to the root bone): pushed out to its side
+  constexpr float pushSpeed = 600.f; // cm/s: a body that turns into the hero moves him smoothly
+  if(dtF<=0.f || pl.isDown() || pl.isDead() || pl.interactive()!=nullptr)
+    return;
+  auto w = Gothic::inst().world();
+  if(w==nullptr)
+    return;
+  const auto  pos   = pl.position();
+  const float heroR = pl.arpgBodyHalf();
+  w->detectNpc(pos, 1200.f, [&](Npc& n) {
+    if(&n==&pl || n.isDead() || !n.isMonster())
+      return;
+    Tempest::Vec3 at;
+    const float d = n.arpgBodyDist(pos, &at);
+    if(d<0.f)
+      return;
+    const float clear = heroR + n.arpgBodyHalf();
+    if(d>=clear)
+      return;
+    Tempest::Vec2 away = {pos.x-at.x, pos.z-at.z};
+    if(away.length()<1.f)
+      away = {pos.x-n.position().x, pos.z-n.position().z};
+    if(away.length()<1.f)
+      return;
+    away = away/away.length();
+    const float push = std::min(clear-d, pushSpeed*dtF);
+    pl.tryMove(Tempest::Vec3(away.x*push, 0.f, away.y*push));
+    });
   }
 
 Npc* PlayerControl::arpgLockTarget() const {

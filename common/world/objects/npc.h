@@ -249,6 +249,11 @@ class Npc final {
     bool       arpgSkillArrow(const Tempest::Vec3* from, const Tempest::Vec3& vel, const Npc* tg, float mul);
     bool       arpgUseArrow(); // one arrow / bolt of the weapon in hand used up (Kołczan: sometimes not); false: none
     bool       arpgInReach(const Npc& tg, float mul) const; // gothic-diablo: in reach of a swing (flat, height tolerant)
+    // Diathic: the body of a long creature (swampshark): Gothic's collision ellipsoid covers only a part of it.
+    // Flat distance from p to the trunk bones (spine, tail, neck, head; no arms, legs, wings, slots), the closest
+    // point in `at`; -1 = the body fits in the collision ellipsoid (most creatures) or no skeleton
+    float      arpgBodyDist(const Tempest::Vec3& p, Tempest::Vec3* at) const;
+    float      arpgBodyHalf() const;        // Diathic: half of the body width (collision box)
     void       arpgSetShotMul(float mul) { arpgShotMul = mul; } // gothic-diablo: the next arrow: damage x mul, always hits
     bool       arpgKnockBack(Npc& from, float speed);  // gothic-diablo: push away without damage
     bool       arpgUseItem(size_t cls);                // gothic-diablo: use an item like in the inventory

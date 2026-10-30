@@ -2124,7 +2124,8 @@ bool Npc::commitDamageArpg() {
   auto wanted = [&](Npc& n) {
     if(&n==this || n.isDown())
       return false;
-    return (&n==currentTarget) || (n.isEnemy(*this) && !owner.script().isFriendlyFire(*this,n));
+    return (&n==currentTarget) || (n.isEnemy(*this) && !owner.script().isFriendlyFire(*this,n) &&
+                                   !owner.script().arpgFakeBandit(n,*this)); // Diathic: bandits, bandit armour
     };
 
   std::vector<Npc*> hit, wave;
@@ -2208,7 +2209,75 @@ bool Npc::arpgInReach(const Npc& tg, float mul) const {
   const auto  d  = fightDistanceTo(tg);
   const float dy = std::max(0.f, std::abs(d.y)-120.f);
   const float pd = fghAlgo.prefferedAttackDistance(*this,tg,owner.script())*mul;
-  return d.x*d.x + d.z*d.z + dy*dy <= pd*pd;
+  if(d.x*d.x + d.z*d.z + dy*dy <= pd*pd)
+    return true;
+  // Diathic: a long body (swampshark): its tail or side in reach counts, the hero does not walk round to the root bone
+  const float bd = tg.arpgBodyDist(position(), nullptr);
+  if(bd<0.f)
+    return false;
+  const auto& gv  = owner.script().guildVal();
+  const float own = pd - float(gv.fight_range_base[tg.guild()])*mul; // the hero's base + the weapon
+  return bd <= own + tg.arpgBodyHalf();
+  }
+
+float Npc::arpgBodyHalf() const {
+  const Vec3* b = bBoxCol();
+  if(b==nullptr)
+    return 30.f;
+  return 0.5f*std::min(std::abs(b[1].x-b[0].x), std::abs(b[1].z-b[0].z));
+  }
+
+float Npc::arpgBodyDist(const Tempest::Vec3& p, Tempest::Vec3* at) const {
+  const Skeleton* sk = visual.visualSkeleton();
+  const Vec3*     b  = bBoxCol();
+  if(sk==nullptr || b==nullptr || sk->nodes.empty())
+    return -1.f;
+
+  auto trunk = [](std::string_view n) {
+    for(auto skip:{"ARM", "HAND", "FIN", "CLAVICLE", "THIGH", "CALF", "FOOT", "TOE", "LEG", "WING", "CLAW", "ZS_"})
+      if(n.find(skip)!=std::string_view::npos)
+        return false;
+    return true;
+    };
+
+  const Vec3  org   = position();
+  const float collR = 0.5f*std::max(std::abs(b[1].x-b[0].x), std::abs(b[1].z-b[0].z));
+  float       far2  = 0.f;
+  float       best  = -1.f;
+  Vec3        bestP = org;
+  const size_t n = sk->nodes.size();
+  for(size_t i=0; i<n; ++i) {
+    const auto& nd = sk->nodes[i];
+    if(!trunk(nd.name))
+      continue;
+    const Vec3 a = visual.mapBone(i);
+    if(a.y<p.y-100.f || a.y>p.y+250.f)
+      continue; // over the hero's head (a flyer) or deep below
+    const float ox = a.x-org.x, oz = a.z-org.z;
+    far2 = std::max(far2, ox*ox+oz*oz);
+    // the segment to the parent bone (a single point for the root)
+    Vec3 c = a;
+    if(nd.parent<n && trunk(sk->nodes[nd.parent].name)) {
+      const Vec3  e  = visual.mapBone(nd.parent);
+      const float sx = e.x-a.x, sz = e.z-a.z;
+      const float l2 = sx*sx+sz*sz;
+      if(l2>1.f) {
+        const float t = std::clamp(((p.x-a.x)*sx+(p.z-a.z)*sz)/l2, 0.f, 1.f);
+        c = a + (e-a)*t;
+        }
+      }
+    const float dx = p.x-c.x, dz = p.z-c.z;
+    const float d  = std::sqrt(dx*dx+dz*dz);
+    if(best<0.f || d<best) {
+      best  = d;
+      bestP = c;
+      }
+    }
+  if(best<0.f || far2 <= (collR+30.f)*(collR+30.f))
+    return -1.f; // Gothic's collision covers the body
+  if(at!=nullptr)
+    *at = bestP;
+  return best;
   }
 
 void Npc::arpgStartSpecial(float mul, bool knock) {
