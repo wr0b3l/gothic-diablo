@@ -376,6 +376,7 @@ class PlayerControl final {
     bool           arpgCursorAim(const Npc& pl, Tempest::Vec3& out) const;
     Npc*           arpgNextEnemy(Npc& pl, const Npc* except, float range) const;
     void           arpgTickLock(Npc& pl);
+    void           arpgKeepOut (Npc& pl, float dtF); // Diathic: the hero does not walk into a long body (swampshark)
     void           arpgToggleLock(Npc& pl);
     void           arpgSetLock(Npc* n);
     int            arpgStartRoll(Npc& pl, float& rot);

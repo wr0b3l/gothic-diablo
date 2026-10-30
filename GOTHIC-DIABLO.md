@@ -254,6 +254,14 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Skarby Grega (krzyże na ziemi, kopanie kilofem): miejsca bez nazwy fokusu — wskazywanie, LPM i etykiety Z biorą też obiekty bez nazwy, jeśli mają akcję skryptu (funkcja stanu albo wymagany przedmiot); etykieta „Miejsce do kopania” (inne takie obiekty: „Użyj”); obiekt na ziemi albo lekko w niej widoczny, gdy promień do punktu 60 cm wyżej jest wolny | `PlayerControl::arpgUsableMob`, `arpgPick`, `arpgVisibleObjects`, `arpgCanSee`; `Interactive::arpgUseItem` / `arpgStateFunc`; `MainWindow` (`arpgLabelName`) |
 | Crash przy rysowaniu kursora (raport testera, tester-3697: `arpgCursorOnEnemy` → `Npc::isDead` na nieistniejącej postaci): postać pod kursorem jest wybierana raz na klatkę, a mogła zniknąć (usunięta przez skrypt, wczytany zapis, inny świat; rysowanie trwa też przy pauzie). Każde użycie postaci spod kursora poza `tickFocus` sprawdza, czy jeszcze istnieje; zmiana świata czyści kursor | `PlayerControl::arpgValid` (`World::validateFocus`), `arpgCursorOnEnemy`, `arpgCursorAim`, `arpgFightFace`, `implMove` (łuk), `arpgSkillStart`, `arpgToggleLock`, `onKeyReleased`, `clearFocus` |
 
+## Poprawki: prześwit, bandyci, duże stwory (gałąź poprawki-przeswit-frakcje)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Kursor przez prześwit: pień drzewa, ściana albo zbocze wycięte w kole prześwitu (powyżej stóp + 50 cm, bliżej kamery niż bohater − 1 m, kursor w środku koła do 0,8 promienia) nie łapie kursora — punkt na ziemi (ruch, atak w miejscu, cios za kursorem) to to, co widać w dziurze | `PlayerControl::arpgPick` (`inHole`), `shader/materials/main.frag` — `arpgHidden` |
+| Bandyci (GIL_BDT) nie są wrogami bohatera w zbroi bandyty (ITAR_BDT_M / H, zbroja Thorusa) ani w Jarkendarze po rozmowie w obozie — jak w skryptach (C_PlayerIsFakeBandit w B_AssessEnemy): LPM = rozmowa, bez auto-celu, czerwonej etykiety i trafień łukiem ciosu; wróg znowu, gdy bandyta sam atakuje bohatera; Ctrl + LPM atakuje jak każdego | `GameScript::arpgFakeBandit`, `arpgIsHostile`, `Npc::commitDamageArpg` |
+| Długie stwory (węże błotne): elipsa kolizji Gothica obejmuje tylko część ciała — bohater nie wchodzi w resztę: odepchnięcie (do 6 m/s) od kości tułowia (kręgosłup, ogon, szyja, głowa; bez kończyn i skrzydeł) na odległość pół szerokości bohatera + pół szerokości stwora; cios sięga też ogona i boku (zasięg bohatera z bronią + pół szerokości od linii kości), więc bohater nie obchodzi ciała do kości głównej | `PlayerControl::arpgKeepOut`, `Npc::arpgBodyDist`, `arpgBodyHalf`, `arpgInReach` |
+
 ## Poprawki potworów (gałąź poprawki-potwory)
 
 | Co | Gdzie w kodzie |
@@ -292,6 +300,9 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Bonus broni do procentu (np. nóż +3%): skrypty on_equip wołają B_AddFightSkill ze stałymi — GameScript::arpgEquipFightBonus odejmuje go przy limicie Biegłości
 - Stwory zauważają bohatera z 80% senses_range (Npc::canSenseNpc) — reagowały „za wcześnie”, bo z góry widać daleko
 - Statusy negatywne (Zachwianie, Podpalenie, Krwawienie): wspólna tabela ArpgStatus (game/arpgstatus.h); parowanie: dźwięk CS_IAI_ME_ME + dzwonek, jeśli dźwięki gry mają taki po nazwie (log.txt: „Diathic: parry, bells…”)
+
+- Bandyci w Gothicu II: gildia GIL_BDT jest wroga bohaterowi (Npc::isEnemy = postawa gildii); przebranie sprawdzają skrypty — C_PlayerIsFakeBandit (zbroja ITAR_BDT_M / ITAR_BDT_H / ItAR_Thorus_Addon albo Jarkendar bez zbroi po Player_HasTalkedToBanditCamp; nie dla AIV_IgnoresArmor / AIV_IgnoresFakeGuild) w B_AssessEnemy, ZS_Attack, B_AssessPlayer
+- Kolizja postać–postać: elipsa z collision_bbox modelu (DynamicWorld::NpcBody), zasięg walki od kości głównej (FIGHT_RANGE_BASE w Species.d: wąż błotny 200, troll i smok 250, człowiek 60)
 
 ### Kamera i zasłanianie
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)

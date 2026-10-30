@@ -3529,6 +3529,17 @@ void GameScript::arpgRaiseFightTalent(Npc& npc, int talent, int32_t delta) {
   vm.call_function<void>(fn, npc.handlePtr(), int32_t(talent), delta);
   }
 
+bool GameScript::arpgFakeBandit(const Npc& npc, const Npc& hero) {
+  if(owner.version().game!=2 || npc.guild()!=GIL_BDT || !hero.isPlayer())
+    return false;
+  if(npc.isAttack() && npc.target()==&hero)
+    return false; // he fights the hero already (attacked, or saw through the disguise)
+  auto fn = vm.find_symbol_by_name("C_PlayerIsFakeBandit");
+  if(fn==nullptr)
+    return false;
+  return vm.call_function<int>(fn, npc.handlePtr(), hero.handlePtr())!=0;
+  }
+
 int32_t GameScript::arpgEquipFightBonus(const Npc& npc, int talent) {
   if(talent<1 || talent>4)
     return 0;

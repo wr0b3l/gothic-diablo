@@ -184,6 +184,9 @@ class GameScript final {
     // Diathic: weapon percents the equipped items give (their on_equip calls B_AddFightSkill, e.g. +3% of a knife);
     // they do not count for the limit of Biegłość
     int32_t          arpgEquipFightBonus(const Npc& npc, int talent);
+    // Diathic: a bandit leaves the hero in bandit armour alone (C_PlayerIsFakeBandit, as B_AssessEnemy does),
+    // although his guild is hostile to the hero; true also when he does not fight the hero right now
+    bool             arpgFakeBandit(const Npc& npc, const Npc& hero);
     std::string_view messageFromSvm(std::string_view id,int voice) const;
     std::string_view messageByName (std::string_view id) const;
     uint32_t         messageTime   (std::string_view id) const;
