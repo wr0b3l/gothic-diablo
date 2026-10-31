@@ -4,6 +4,7 @@
 #include <diathicassets.h>
 
 #include "game/arpgkeys.h"
+#include "game/arpgboss.h"
 #include "game/savegameheader.h"
 
 #include <Tempest/Except>
@@ -237,6 +238,7 @@ void MainWindow::paintEvent(PaintEvent& event) {
           ArpgWorldMap::Ctx ctx{*world, *pl0, camera, player, w(), h(), Gothic::interfaceScale(this)};
           arpgWorldMap.paintOverlay(p, ctx);
           }
+        paintArpgBossZones(p,vp); // Diathic: the warnings of the bosses' attacks lie on the ground, under the labels
         // gothic-diablo: labels like in Diablo; Z = labels of everything in sight
         if(arpgShowAll)
           paintArpgLabels(p,vp,focus); else
@@ -244,6 +246,7 @@ void MainWindow::paintEvent(PaintEvent& event) {
         if(!arpgShowAll || focus.npc!=nullptr)
           paintArpgFocus(p,focus,vp);
         paintArpgCombat(p,vp);
+        paintArpgBossBar(p);
         paintArpgRemarks(p,vp);
         paintArpgCombo(p,vp);
         paintArpgMinimap(p);
@@ -2630,6 +2633,10 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         type = Resources::FontType::Yellow;
         std::snprintf(txt, sizeof(txt), "Unik");
         }
+      else if(e.kind==6) {
+        type = Resources::FontType::Disabled;
+        std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt("Nietykalny").c_str());
+        }
       else if(e.kind==5) {
         // a skill of the trees went off
         type = Resources::FontType::Yellow;
@@ -2849,6 +2856,178 @@ Tempest::Rect MainWindow::arpgBarSlot(int i) const {
 // Diathic: Gothic's bars, nicer: life left of the skill bar, mana right of it, as tall as half a slot, with the
 // numbers, a pale trail of what was just lost (shrinks after 0.5 s), life under 25% pulses red;
 // a thin experience bar over the slots (level to level)
+void MainWindow::paintArpgBossZones(Painter& p, const Matrix4x4& vp) {
+  // Diathic: the attacks of the bosses (ArpgBoss): a red shape on the ground until the hit (its inner part grows
+  // with the time left), then the puddles and fire patches that stay, and the waves running out in a ring
+  auto world = Gothic::inst().world();
+  auto pl    = Gothic::inst().player();
+  if(world==nullptr || pl==nullptr || dialogs.isActive() || inventory.isActive())
+    return;
+  const uint64_t now = world->tickCount();
+  auto toScreen = [&](Vec3 pos, float& sx, float& sy) {
+    float pw = 1.f;
+    vp.project(pos.x,pos.y,pos.z,pw);
+    if(pw<=0.f)
+      return false;
+    pos /= pw;
+    sx = (0.5f*pos.x+0.5f)*float(w());
+    sy = (0.5f*pos.y+0.5f)*float(h());
+    return true;
+    };
+  // both windings: the UI pipeline culls one
+  auto quad = [&](const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d) {
+    float ax, ay, bx, by, cx, cy, dx, dy;
+    if(!toScreen(a,ax,ay) || !toScreen(b,bx,by) || !toScreen(c,cx,cy) || !toScreen(d,dx,dy))
+      return;
+    p.drawTriangle(ax,ay,0,0, bx,by,0,0, cx,cy,0,0);
+    p.drawTriangle(ax,ay,0,0, cx,cy,0,0, bx,by,0,0);
+    p.drawTriangle(ax,ay,0,0, cx,cy,0,0, dx,dy,0,0);
+    p.drawTriangle(ax,ay,0,0, dx,dy,0,0, cx,cy,0,0);
+    };
+  // a part of a ring around c: angles a0..a1 (radians), radii r0..r1
+  auto sector = [&](const Vec3& c, float a0, float a1, float r0, float r1, int n) {
+    for(int i=0; i<n; ++i) {
+      const float b0 = a0+(a1-a0)*float(i)/float(n), b1 = a0+(a1-a0)*float(i+1)/float(n);
+      const Vec3  e0 = {std::cos(b0), 0.f, std::sin(b0)}, e1 = {std::cos(b1), 0.f, std::sin(b1)};
+      quad(c+e0*r0, c+e0*r1, c+e1*r1, c+e1*r0);
+      }
+    };
+  // a strip along d from t0 to t1, half width hw
+  auto strip = [&](const Vec3& o, const Vec3& d, float t0, float t1, float hw0, float hw1) {
+    const Vec3 sd = {-d.z, 0.f, d.x};
+    quad(o+d*t0+sd*hw0, o+d*t1+sd*hw0, o+d*t1+sd*hw1, o+d*t0+sd*hw1);
+    };
+  auto brush = [&](float r, float g, float b, float a) {
+    p.setBrush(Brush(Color(r, g, b, a), Painter::Alpha));
+    };
+
+  world->detectNpc(pl->position(), ArpgBossCfg::Range, [&](Npc& n) {
+    const auto* boss = n.arpgBoss();
+    if(boss==nullptr)
+      return;
+    for(auto& z:boss->zones()) {
+      const Vec3  c     = z.pos + Vec3(0.f, 12.f, 0.f);
+      const Vec3  d     = {z.dirX, 0.f, z.dirZ};
+      const float k     = ArpgBoss::progress(z, now);
+      const bool  warn  = now<z.fire;
+      const float pulse = 0.85f + 0.15f*std::sin(float(now%100000)*0.012f);
+      const float full  = 2.f*float(M_PI);
+      switch(z.shape) {
+        case ArpgBoss::Circle: {
+          if(warn) {
+            brush(0.8f, 0.05f, 0.03f, 0.22f);
+            sector(c, 0.f, full, 0.f, z.r, 32);
+            brush(1.f, 0.25f, 0.08f, 0.35f);
+            sector(c, 0.f, full, 0.f, z.r*k, 32);
+            brush(1.f, 0.2f, 0.1f, 0.7f);
+            sector(c, 0.f, full, z.r-14.f, z.r, 32);
+            }
+          else if(z.end>z.fire) {
+            const float a = (1.f-std::max(0.f, k-0.8f)/0.2f)*0.32f*pulse; // fades out at the end
+            if(z.look==ArpgBoss::Poison)
+              brush(0.25f, 0.75f, 0.12f, a); else
+              brush(1.f, 0.45f, 0.08f, a);
+            sector(c, 0.f, full, 0.f, z.r, 32);
+            }
+          break;
+          }
+        case ArpgBoss::Cone: {
+          if(!warn)
+            break;
+          const float base = std::atan2(z.dirZ, z.dirX), hw = z.w*float(M_PI)/180.f;
+          brush(0.8f, 0.05f, 0.03f, 0.22f);
+          sector(c, base-hw, base+hw, 0.f, z.r, 16);
+          brush(1.f, 0.3f, 0.05f, 0.35f);
+          sector(c, base-hw, base+hw, 0.f, z.r*k, 16);
+          brush(1.f, 0.2f, 0.1f, 0.7f);
+          sector(c, base-hw, base+hw, z.r-16.f, z.r, 16);
+          break;
+          }
+        case ArpgBoss::Line: {
+          if(!warn)
+            break;
+          if(z.look==ArpgBoss::Bolt)
+            brush(0.5f, 0.1f, 0.7f, 0.25f); else
+            brush(0.8f, 0.05f, 0.03f, 0.22f);
+          strip(c, d, 0.f, z.r, -z.w, z.w);
+          if(z.look==ArpgBoss::Bolt)
+            brush(0.75f, 0.3f, 1.f, 0.38f); else
+            brush(0.55f, 0.75f, 1.f, 0.35f);
+          strip(c, d, 0.f, z.r*k, -z.w, z.w);
+          brush(1.f, 0.2f, 0.1f, 0.65f);
+          strip(c, d, 0.f, z.r, z.w-12.f, z.w);
+          strip(c, d, 0.f, z.r, -z.w, -z.w+12.f);
+          break;
+          }
+        case ArpgBoss::Ring: {
+          if(warn) {
+            // where it starts, and (faint) how far it runs
+            brush(0.5f, 0.05f, 0.5f, 0.25f);
+            sector(c, 0.f, full, 0.f, z.r*k, 32);
+            brush(0.8f, 0.2f, 0.9f, 0.6f);
+            sector(c, 0.f, full, z.r-14.f, z.r, 32);
+            brush(0.8f, 0.2f, 0.9f, 0.2f);
+            sector(c, 0.f, full, z.r2-10.f, z.r2, 48);
+            } else {
+            const float R = ArpgBoss::ringRadius(z, now);
+            brush(0.35f, 0.05f, 0.45f, 0.55f*pulse);
+            sector(c, 0.f, full, std::max(0.f, R-z.w*0.5f), R+z.w*0.5f, 48);
+            brush(0.85f, 0.4f, 1.f, 0.6f);
+            sector(c, 0.f, full, R+z.w*0.5f-10.f, R+z.w*0.5f, 48);
+            }
+          break;
+          }
+        }
+      }
+    });
+  }
+
+void MainWindow::paintArpgBossBar(Painter& p) {
+  // Diathic: the boss in a fight: his name and life at the top of the screen, marks where the next phases start
+  auto world = Gothic::inst().world();
+  auto pl    = Gothic::inst().player();
+  if(world==nullptr || pl==nullptr || dialogs.isActive() || inventory.isActive())
+    return;
+  Npc* b = ArpgBosses::shown(*world, *pl);
+  if(b==nullptr || b->arpgBoss()==nullptr)
+    return;
+  const auto*    st    = b->arpgBoss();
+  const float    scale = Gothic::interfaceScale(this);
+  const uint64_t now   = world->tickCount();
+  const int      W     = std::min(int(float(w())*0.42f), int(640.f*scale));
+  const int      H     = std::max(6, int(12.f*scale));
+  const int      x     = (w()-W)/2;
+  const int      y     = int(52.f*scale);
+  const int32_t  hpM   = std::max(1, b->attribute(ATR_HITPOINTSMAX));
+  const float    v     = std::clamp(float(b->attribute(ATR_HITPOINTS))/float(hpM), 0.f, 1.f);
+
+  p.setBrush(Brush(Color(0.f, 0.f, 0.f, 0.75f), Painter::Alpha));
+  p.drawRect(x-2, y-2, W+4, H+4);
+  p.setBrush(Brush(Color(0.18f, 0.02f, 0.02f, 0.9f), Painter::Alpha));
+  p.drawRect(x, y, W, H);
+  p.setBrush(Brush(Color(0.72f, 0.06f, 0.04f, 1.f), Painter::Alpha));
+  p.drawRect(x, y, int(float(W)*v), H);
+  if(st->shielded(now)) {
+    const float a = 0.35f + 0.25f*std::sin(float(now%100000)*0.02f);
+    p.setBrush(Brush(Color(1.f, 0.8f, 0.3f, a), Painter::Alpha));
+    p.drawRect(x, y, W, H);
+    }
+  // the phase marks
+  p.setBrush(Brush(Color(1.f, 0.88f, 0.55f, 0.9f), Painter::Alpha));
+  for(float m:{ArpgBossCfg::Phase2, ArpgBossCfg::Phase3})
+    p.drawRect(x+int(float(W)*m)-1, y-3, 2, H+6);
+
+  auto& fnt = Resources::font(scale*0.95f);
+  const std::string name(b->displayName());
+  const auto ts = fnt.textSize(name);
+  fnt.drawText(p, (w()-ts.w)/2, y-int(6.f*scale), name);
+  char ph[32] = {};
+  std::snprintf(ph, sizeof(ph), "Faza %d", st->phase());
+  const std::string pt = ArpgMenu::gtxt(ph);
+  auto& small = Resources::font(scale*0.75f);
+  small.drawText(p, x+W+int(8.f*scale), y+H, pt);
+  }
+
 void MainWindow::paintArpgVitals(Painter& p) {
   auto pl = Gothic::inst().player();
   if(pl==nullptr || barBack==nullptr)

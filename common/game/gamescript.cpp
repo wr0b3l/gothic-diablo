@@ -1450,8 +1450,12 @@ Attitude GameScript::guildAttitude(const Npc &p0, const Npc &p1) const {
   }
 
 Attitude GameScript::personAttitude(const Npc &p0, const Npc &p1) const {
-  if(!p0.isPlayer() && !p1.isPlayer())
+  if(!p0.isPlayer() && !p1.isPlayer()) {
+    // Diathic: the minions of a boss (Raven's stone guardians) do not fight him, nor he them
+    if((p0.arpgIsMinion() && p1.arpgBoss()!=nullptr) || (p1.arpgIsMinion() && p0.arpgBoss()!=nullptr))
+      return ATT_FRIENDLY;
     return guildAttitude(p0,p1);
+    }
 
   Attitude att=ATT_NULL;
   const Npc& npc = p0.isPlayer() ? p1 : p0;
