@@ -555,6 +555,11 @@ bool Interactive::isLadder() const {
   return vobType==zenkit::VirtualObjectType::oCMobLadder;
   }
 
+bool Interactive::arpgIsSwitch() const {
+  return vobType==zenkit::VirtualObjectType::oCMobSwitch || vobType==zenkit::VirtualObjectType::oCMobWheel ||
+         !triggerTarget.empty();
+  }
+
 bool Interactive::needToLockpick(const Npc& pl) const {
   const size_t keyInst = keyInstance.empty() ? size_t(-1) : world.script().findSymbolIndex(keyInstance);
   if(keyInst!=size_t(-1) && pl.inventory().itemCount(keyInst)>0)

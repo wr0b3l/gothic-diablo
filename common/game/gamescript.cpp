@@ -3544,6 +3544,22 @@ bool GameScript::arpgFakeBandit(const Npc& npc, const Npc& hero) {
   return vm.call_function<int>(fn, npc.handlePtr(), hero.handlePtr())!=0;
   }
 
+bool GameScript::arpgEnemyOverride(const Npc& npc, const Npc& hero) {
+  // AIV_EnemyOverride: a human who talks before the fight (Raven, Dexter, highwaymen, Dementors) — B_AssessEnemy
+  // leaves the hero alone, the dialogue starts the fight (B_Attack); until then not an enemy in the ARPG view
+  if(owner.version().game!=2 || npc.guild()>=GIL_SEPERATOR_HUM || !hero.isPlayer())
+    return false;
+  if(npc.isAttack() && npc.target()==&hero)
+    return false;
+  auto sym = vm.find_symbol_by_name("AIV_ENEMYOVERRIDE");
+  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::INT || !sym->is_const())
+    return false;
+  const int32_t id = sym->get_int();
+  if(id<0 || size_t(id)>=zenkit::INpc::aivar_count || npc.handlePtr()==nullptr)
+    return false;
+  return npc.handlePtr()->aivar[size_t(id)]!=0;
+  }
+
 int32_t GameScript::arpgEquipFightBonus(const Npc& npc, int talent) {
   if(talent<1 || talent>4)
     return 0;

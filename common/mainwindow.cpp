@@ -1165,6 +1165,8 @@ static std::string arpgLabelName(const Focus& f) {
     return ArpgMenu::gtxt("Miejsce do kopania");
   if(!fn.empty() || !f.interactive->arpgUseItem().empty())
     return ArpgMenu::gtxt("Użyj");
+  if(f.interactive->arpgIsSwitch())
+    return ArpgMenu::gtxt("Przełącznik"); // unnamed switch (Adanos' temple, hidden switches): only under the cursor
   return std::string();
   }
 

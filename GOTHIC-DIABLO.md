@@ -285,6 +285,8 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Smok ożywieniec: fala ciemności — pierścień biegnący od smoka (7 m/s do 18 m), trafia raz 25%, trzeba przez nią przeskoczyć przewrotem; kula śmierci ze skryptów zostaje; faza 3: 3 szkielety | `ArpgBoss::attack` (`Undead`), `ringRadius` |
 | Kruk: faza 1 jak w Gothicu; faza 2: 2 kamienni strażnicy i piorun Beliara w linii (12 m) 25%; faza 3: na przemian piorun i Gniew Beliara (fala do 12 m, 20%); przyzwańcy nie walczą z bossem ani on z nimi | `ArpgBoss::attack` (`Raven`), `spawn`, `GameScript::personAttitude` (`Npc::arpgIsMinion`) |
 | Przyzwańcy: 5 m od bossa, na ziemi (bez miejsc nad urwiskiem), z efektem | `ArpgBoss::spawn` |
+| Rozmowa przed walką: człowiek z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie jest wrogiem, dopóki nie walczy z bohaterem — zwykły kursor, LPM = rozmowa (broń chowana), skrypt po rozmowie zaczyna walkę; Ctrl + LPM dalej atakuje | `PlayerControl::arpgIsHostile`, `GameScript::arpgEnemyOverride` |
+| Przełączniki i dźwignie bez nazwy (świątynia Adanosa, ukryte przełączniki): wskazywalne kursorem z etykietą „Przełącznik”, LPM = użycie; Z ich nie pokazuje (ukryte zostają ukryte) | `PlayerControl::arpgUsableMob`, `arpgVisibleObjects`, `Interactive::arpgIsSwitch`, `arpgLabelName` |
 
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
@@ -321,6 +323,8 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Kolizja postać–postać: elipsa z collision_bbox modelu (DynamicWorld::NpcBody), zasięg walki od kości głównej (FIGHT_RANGE_BASE w Species.d: wąż błotny 200, troll i smok 250, człowiek 60)
 
 - Bossowie: instancja postaci = `GameScript::findSymbol(Npc::instanceSymbol())->name()` (wielkie litery); postać dodana (`World::addNpc`) w trakcie `World::detectNpc` psuje przechodzenie listy — najpierw zebrać, potem dodawać; efekt w punkcie: `Effect(vfx, world, pos)` + `setLooped(false)` + `World::runEffect`; postawa dwóch postaci bez bohatera = tabela gildii (`GameScript::personAttitude`), skrypty potworów atakują wrogie gildie także ludzi (kamienni strażnicy Kruka)
+- Rozmowa przed walką (skrypty): AIV_EnemyOverride (indeks 61 w G2, w kodzie przez symbol) = B_AssessEnemy pomija bohatera; ważna informacja (important) startuje z B_AssessPlayer do 5 m (PERC_DIST_DIALOG), ale dobyta broń wcześniej daje ZS_ReactToWeapon (po 10 s atak); rozmowa zaczęta przez bohatera (Npc::startDialog → B_AssessTalk) działa mimo wrogiej gildii. Kruk traci override po pierwszym ciosie (B_AssessDamage)
+- Przełączniki: oCMobSwitch / oCMobWheel albo mob z triggerTarget; nazwa fokusu bywa pusta (MOBNAME_SECRETSWITCH = ""), w Gothicu i tak używalne
 
 ### Kamera i zasłanianie
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)

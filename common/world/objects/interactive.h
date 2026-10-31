@@ -51,6 +51,8 @@ class Interactive : public Vob {
     // Diathic: script action of the mob (unnamed ones, e.g. Greg's treasure spots, are still usable in ARPG)
     std::string_view    arpgUseItem()   const { return useWithItem; }
     std::string_view    arpgStateFunc() const { return onStateFunc; }
+    // Diathic: a switch or lever (often unnamed: the switches of Adanos' temple), usable in Gothic all the same
+    bool                arpgIsSwitch()  const;
 
     auto                bBox() const -> const Tempest::Vec3*;
 
