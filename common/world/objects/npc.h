@@ -5,6 +5,7 @@
 #include "graphics/meshobjects.h"
 #include "graphics/mdlvisual.h"
 #include "game/arpgstatus.h"
+#include "game/arpgboss.h"
 #include "game/gametime.h"
 #include "game/movealgo.h"
 #include "game/inventory.h"
@@ -199,6 +200,13 @@ class Npc final {
     // Diathic: negative statuses (game/arpgstatus.h); value: damage per second for damage over time
     void       arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from);
     bool       arpgHasStatus(ArpgStatus::Id id) const;
+    // Diathic: bosses (ArpgBoss: the dragons, Raven) and their minions
+    ArpgBoss*  arpgBoss() const { return arpgBossSt.get(); }
+    bool       arpgBossChecked() const { return arpgBossSeen; }
+    void       arpgSetBoss(std::unique_ptr<ArpgBoss>&& b) { arpgBossSt = std::move(b); arpgBossSeen = true; }
+    bool       arpgIsMinion() const { return arpgMinion; }
+    void       arpgSetMinion(bool m) { arpgMinion = m; }
+    bool       arpgDirectHit(Npc& from, int32_t dmg); // Diathic: a boss attack with a warning hits the hero (false: rolled)
     // Diathic: the hero's block: charges (ArpgStatus::BlockCharges .. -BlockDebt), the block held now
     int32_t    arpgBlockCharges() const { return arpgBlockCh; }
     bool       arpgBlockWorn(const Npc& tg) const; // Diathic: its block is worn out against the hero (AI: no parade)
@@ -618,6 +626,9 @@ class Npc final {
       Npc*     from  = nullptr;
       };
     ArpgStatusState arpgSt[ArpgStatus::Count];
+    std::unique_ptr<ArpgBoss> arpgBossSt;  // Diathic: a boss (null: not one, or not checked yet)
+    bool      arpgBossSeen    = false;     // the instance was checked for a boss
+    bool      arpgMinion      = false;     // called by a boss: friendly to the bosses (not saved)
     const VisualFx* arpgBurnFx = nullptr;
     uint64_t  arpgParadeLast  = 0;     // hero: the last frame the block was held
     uint64_t  arpgParadeStart = 0;     // hero: when the block held now started (parry)

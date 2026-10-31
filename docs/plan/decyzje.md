@@ -107,3 +107,28 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - potwory, zwierzęta i orkowie (decyzja: „potwory + orkowie”, ludzie bez zmian): życie +20%, obrażenia +10%
 - Wartości do balansu: `ArpgStatus::MonsterHpMul` 1,2, `MonsterDmgMul` 1,1
 - Do testu: zębacz / cieniostwór / ork — po 3 blokach („Blok”) czwarty cios przechodzi częściowo, pasek ładunków nad głową; potem atak albo krok w bok zamiast odskoku; potwory wytrzymują więcej ciosów i biją mocniej; stary zapis w Jarkendarze / Górniczej Dolinie (życie podniesione raz, nie przy każdym wczytaniu)
+
+## Bossowie — smoki i Kruk (2026-10-31, gałąź bossowie)
+- Użytkownik: „zróbmy mechaniki bossów do smoków i Kruka”; zakres: wszystko naraz (część wspólna + 5 smoków + Kruk w jednym PR)
+- Oryginał (skrypty 2.6 PL): smoki GIL_DRAGON (Dragon_Swamp Pandrodor, Dragon_Rock Pedrakhan, Dragon_Fire Feomathar, Dragon_Ice Finkregh, Dragon_Undead; Dragon_Fire_Island Feodaron nieśmiertelny — bez zmian), 1000 życia, ochrona 170, rozmowa przed walką (Oko Innosa), z daleka (> FIGHT_DIST_DRAGON_MAGIC) ItRu_InstantFireball, ożywieniec ItRu_Deathball (B_SelectSpell), regeneracja +1 życia co 2 przebiegi ZS_MM_Attack_Loop; Kruk BDT_1090_Addon_Raven: 500 życia, FAI_HUMAN_MASTER, ItMw_BeliarWeapon_Raven, świątynia Adanosa (ADW_ADANOSTEMPEL_RAVEN_11), po jego śmierci (RavenIsDead) kamienni strażnicy w walce giną
+- Zasady: tylko tryb ARPG; rozmowy, fabuła, B_DragonKillCounter i nagrody bez zmian; rozpoznanie bossa po nazwie instancji skryptu; kod w arpgboss.cpp / .h, liczby w jednym miejscu
+- Wspólne:
+  - pasek bossa u góry ekranu: imię, życie, znaczniki faz
+  - 3 fazy według życia, progi 70% i 35%; przejście = ryk i 1,5 s nietykalności
+  - ataki z ostrzeżeniem: czerwony kształt na ziemi (koło, stożek, linia) 1–1,5 s, potem obrażenia; przewrót pozwala uciec
+  - przyzwańcy z modeli gry, dobrani do bossa
+- Smoki:
+  - Pandrodor (bagienny): trujące kałuże (nowy status „Zatrucie”); faza 3: bagienne golemy (SwampGolem)
+  - Pedrakhan (skalny): spadające głazy w kołach; faza 3: kamienne golemy (StoneGolem)
+  - Feomathar (ognisty): zionięcie ogniem w stożek z Podpaleniem; faza 3: plamy ognia i ogniste jaszczurki (FireWaran)
+  - Finkregh (lodowy): lodowy podmuch w linii (nowy status „Zmrożenie”, spowolnienie); faza 3: lodowe golemy (IceGolem)
+  - Smok ożywieniec (Irdorath): kula śmierci jak w oryginale + fala ciemności (pierścień, przez który trzeba przeskoczyć przewrotem); faza 3: szkielety (Lesser_Skeleton)
+- Kruk: faza 1 szermierz z Mieczem Beliara (jak w oryginale); faza 2 budzi kamiennych strażników (Stoneguardian) i rzuca piorun Beliara w linii; faza 3 „Gniew Beliara” — fala od Kruka co kilka sekund
+- Test bez fabuły: konsola Marvina `insert Dragon_Fire` (itd.), `insert BDT_1090_Addon_Raven`
+- Do ustalenia po teście: życie bossów (mnożnik ponad MonsterHpMul), obrażenia ataków z ostrzeżeniem, czasy ostrzeżeń, liczba przyzwańców
+- Wartości do balansu: `ArpgBossCfg` w common/game/arpgboss.h (progi faz, czasy ostrzeżeń i ataków, trafienia jako część życia bohatera, Zatrucie, Podpalenie, Zmrożenie, liczba przyzwańców)
+- Do testu (konsola Marvina w trybie ARPG: `insert Dragon_Fire`, `insert Dragon_Swamp`, `insert Dragon_Rock`, `insert Dragon_Ice`, `insert Dragon_Undead`, `insert BDT_1090_Addon_Raven`): pasek u góry w walce; czerwone kształty na ziemi i unik przewrotem; przy 70% i 35% ryk, złoty pasek, „Nietykalny”; przyzwańcy w fazie 3 (Kruk: strażnicy w fazie 2, nie atakują Kruka); Zatrucie w kałuży, Zmrożenie = tylko chód; czy ataki nie są za częste / za mocne
+- Zgłoszone 2026-10-31 (test w świątyni Adanosa): przyciski na ścianie nie podświetlały się; z Krukiem nie dało się porozmawiać przed walką (był czerwony, LPM = atak). Poprawione na gałęzi bossowie:
+  - przełączniki i dźwignie bez nazwy fokusu wskazywalne, etykieta „Przełącznik”; Z ich nie pokazuje (ukryte przełączniki zostają ukryte)
+  - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
+  - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką

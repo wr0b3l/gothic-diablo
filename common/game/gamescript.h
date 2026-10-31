@@ -187,6 +187,7 @@ class GameScript final {
     // Diathic: a bandit leaves the hero in bandit armour alone (C_PlayerIsFakeBandit, as B_AssessEnemy does),
     // although his guild is hostile to the hero; true also when he does not fight the hero right now
     bool             arpgFakeBandit(const Npc& npc, const Npc& hero);
+    bool             arpgEnemyOverride(const Npc& npc, const Npc& hero);
     std::string_view messageFromSvm(std::string_view id,int voice) const;
     std::string_view messageByName (std::string_view id) const;
     uint32_t         messageTime   (std::string_view id) const;

@@ -270,6 +270,24 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | AI z zużytym blokiem: zamiast parady i zamiast odskoku atak z boku + atak (50%) albo krok w bok (50%) | `FightAlgo::nextFromQueue` (`arpgWornBlock`), `Npc::arpgBlockWorn` |
 | Potwory, zwierzęta i orkowie (wszyscy oprócz ludzi, bez bohatera): życie ×1,2 (przy pojawieniu się i przy wczytaniu zapisu, także starego; zapis trzyma życie Gothica, tryb klasyczny je przywraca), obrażenia ×1,1 (ciosy, strzały, czary) | `Npc::arpgIsBeast`, `arpgSyncBeastHp` (`arpgHpBase`, wpis zapisu `/diathic`), `Npc::takeDamage`; `ArpgStatus::MonsterHpMul`, `MonsterDmgMul` |
 
+## Bossowie — smoki i Kruk (gałąź bossowie)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Bossowie rozpoznawani po instancji skryptu: Dragon_Swamp (Pandrodor), Dragon_Rock (Pedrakhan), Dragon_Fire (Feomathar), Dragon_Ice (Finkregh), Dragon_Undead, BDT_1090_Addon_Raven (Kruk); tylko w widoku ARPG, do 40 m od bohatera; walka, rozmowy i fabuła Gothica bez zmian, mechaniki są dodatkiem | `ArpgBoss::detect`, `ArpgBosses::tick` (z `PlayerControl::tickMove`), `Npc::arpgBoss` |
+| Pasek bossa u góry ekranu: imię, życie, znaczniki faz (70% i 35%), „Faza N”; w walce (stan ataku Gothica na bohatera, jeszcze 5 s po nim) | `MainWindow::paintArpgBossBar`, `ArpgBosses::shown` |
+| 3 fazy według życia (70% / 35%, tylko w dół — regeneracja smoków ich nie cofa); nowa faza = ryk (T_WARN, Kruk: efekt Gniewu Beliara) i 1,5 s nietykalności (napis „Nietykalny”, złoty pasek); zapis wczytany w walce: faza z życia bez ryku i przyzwańców | `ArpgBoss::tick`, `onPhase`, `Npc::takeDamage` |
+| Ataki z ostrzeżeniem: czerwony kształt na ziemi 1,3 s (piorun Kruka 1 s), środek rośnie z czasem; potem trafienie częścią maksymalnego życia bohatera (pancerz się nie liczy), przewrót = unik; co 10 s w fazie 1, co 7 s w fazach 2–3, pierwszy 3 s po początku walki | `ArpgBoss::attack`, `resolve`, `strike`, `Npc::arpgDirectHit`, `MainWindow::paintArpgBossZones` |
+| Pandrodor: trujące kałuże (2,5 m, na bohaterze; fazy 2–3: trzy) — trafienie 10%, kałuża zostaje 6 s, stanie w niej = Zatrucie (3% życia na sekundę); faza 3: 2 bagienne golemy | `ArpgBoss::attack` (`Swamp`), `ArpgStatus::Poison` |
+| Pedrakhan: spadające głazy (2,2 m; 2, w fazach 2–3: 4) — 25%; faza 3: 2 kamienne golemy | `ArpgBoss::attack` (`Rock`) |
+| Feomathar: zionięcie ogniem w stożek 60° na 10 m w stronę bohatera — 30% i Podpalenie (3% / s, 4 s); faza 3: 3 plamy ognia w stożku (6 s, Podpalenie) i 2 ogniste jaszczurki | `ArpgBoss::attack` (`Fire`) |
+| Finkregh: lodowy podmuch w linii (14 m, 3 m szerokości; fazy 2–3: wachlarz trzech) — 25% i Zmrożenie (3 s: bohater tylko idzie); faza 3: 2 lodowe golemy | `ArpgBoss::attack` (`Ice`), `ArpgStatus::Chill`, `PlayerControl::arpgTickChill` |
+| Smok ożywieniec: fala ciemności — pierścień biegnący od smoka (7 m/s do 18 m), trafia raz 25%, trzeba przez nią przeskoczyć przewrotem; kula śmierci ze skryptów zostaje; faza 3: 3 szkielety | `ArpgBoss::attack` (`Undead`), `ringRadius` |
+| Kruk: faza 1 jak w Gothicu; faza 2: 2 kamienni strażnicy i piorun Beliara w linii (12 m) 25%; faza 3: na przemian piorun i Gniew Beliara (fala do 12 m, 20%); przyzwańcy nie walczą z bossem ani on z nimi | `ArpgBoss::attack` (`Raven`), `spawn`, `GameScript::personAttitude` (`Npc::arpgIsMinion`) |
+| Przyzwańcy: 5 m od bossa, na ziemi (bez miejsc nad urwiskiem), z efektem | `ArpgBoss::spawn` |
+| Rozmowa przed walką: człowiek z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie jest wrogiem, dopóki nie walczy z bohaterem — zwykły kursor, LPM = rozmowa (broń chowana), skrypt po rozmowie zaczyna walkę; Ctrl + LPM dalej atakuje | `PlayerControl::arpgIsHostile`, `GameScript::arpgEnemyOverride` |
+| Przełączniki i dźwignie bez nazwy (świątynia Adanosa, ukryte przełączniki): wskazywalne kursorem z etykietą „Przełącznik”, LPM = użycie; Z ich nie pokazuje (ukryte zostają ukryte) | `PlayerControl::arpgUsableMob`, `arpgVisibleObjects`, `Interactive::arpgIsSwitch`, `arpgLabelName` |
+
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
 Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury, światło, obraz, efekty. Komplet zasad, podział plików i stan: [`docs/plan/grafika.md`](docs/plan/grafika.md).
@@ -303,6 +321,10 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 
 - Bandyci w Gothicu II: gildia GIL_BDT jest wroga bohaterowi (Npc::isEnemy = postawa gildii); przebranie sprawdzają skrypty — C_PlayerIsFakeBandit (zbroja ITAR_BDT_M / ITAR_BDT_H / ItAR_Thorus_Addon albo Jarkendar bez zbroi po Player_HasTalkedToBanditCamp; nie dla AIV_IgnoresArmor / AIV_IgnoresFakeGuild) w B_AssessEnemy, ZS_Attack, B_AssessPlayer
 - Kolizja postać–postać: elipsa z collision_bbox modelu (DynamicWorld::NpcBody), zasięg walki od kości głównej (FIGHT_RANGE_BASE w Species.d: wąż błotny 200, troll i smok 250, człowiek 60)
+
+- Bossowie: instancja postaci = `GameScript::findSymbol(Npc::instanceSymbol())->name()` (wielkie litery); postać dodana (`World::addNpc`) w trakcie `World::detectNpc` psuje przechodzenie listy — najpierw zebrać, potem dodawać; efekt w punkcie: `Effect(vfx, world, pos)` + `setLooped(false)` + `World::runEffect`; postawa dwóch postaci bez bohatera = tabela gildii (`GameScript::personAttitude`), skrypty potworów atakują wrogie gildie także ludzi (kamienni strażnicy Kruka)
+- Rozmowa przed walką (skrypty): AIV_EnemyOverride (indeks 61 w G2, w kodzie przez symbol) = B_AssessEnemy pomija bohatera; ważna informacja (important) startuje z B_AssessPlayer do 5 m (PERC_DIST_DIALOG), ale dobyta broń wcześniej daje ZS_ReactToWeapon (po 10 s atak); rozmowa zaczęta przez bohatera (Npc::startDialog → B_AssessTalk) działa mimo wrogiej gildii. Kruk traci override po pierwszym ciosie (B_AssessDamage)
+- Przełączniki: oCMobSwitch / oCMobWheel albo mob z triggerTarget; nazwa fokusu bywa pusta (MOBNAME_SECRETSWITCH = ""), w Gothicu i tak używalne
 
 ### Kamera i zasłanianie
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)

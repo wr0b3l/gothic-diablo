@@ -1450,8 +1450,12 @@ Attitude GameScript::guildAttitude(const Npc &p0, const Npc &p1) const {
   }
 
 Attitude GameScript::personAttitude(const Npc &p0, const Npc &p1) const {
-  if(!p0.isPlayer() && !p1.isPlayer())
+  if(!p0.isPlayer() && !p1.isPlayer()) {
+    // Diathic: the minions of a boss (Raven's stone guardians) do not fight him, nor he them
+    if((p0.arpgIsMinion() && p1.arpgBoss()!=nullptr) || (p1.arpgIsMinion() && p0.arpgBoss()!=nullptr))
+      return ATT_FRIENDLY;
     return guildAttitude(p0,p1);
+    }
 
   Attitude att=ATT_NULL;
   const Npc& npc = p0.isPlayer() ? p1 : p0;
@@ -3538,6 +3542,22 @@ bool GameScript::arpgFakeBandit(const Npc& npc, const Npc& hero) {
   if(fn==nullptr)
     return false;
   return vm.call_function<int>(fn, npc.handlePtr(), hero.handlePtr())!=0;
+  }
+
+bool GameScript::arpgEnemyOverride(const Npc& npc, const Npc& hero) {
+  // AIV_EnemyOverride: a human who talks before the fight (Raven, Dexter, highwaymen, Dementors) — B_AssessEnemy
+  // leaves the hero alone, the dialogue starts the fight (B_Attack); until then not an enemy in the ARPG view
+  if(owner.version().game!=2 || npc.guild()>=GIL_SEPERATOR_HUM || !hero.isPlayer())
+    return false;
+  if(npc.isAttack() && npc.target()==&hero)
+    return false;
+  auto sym = vm.find_symbol_by_name("AIV_ENEMYOVERRIDE");
+  if(sym==nullptr || sym->type()!=zenkit::DaedalusDataType::INT || !sym->is_const())
+    return false;
+  const int32_t id = sym->get_int();
+  if(id<0 || size_t(id)>=zenkit::INpc::aivar_count || npc.handlePtr()==nullptr)
+    return false;
+  return npc.handlePtr()->aivar[size_t(id)]!=0;
   }
 
 int32_t GameScript::arpgEquipFightBonus(const Npc& npc, int talent) {

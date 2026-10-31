@@ -1,4 +1,5 @@
 #include "playercontrol.h"
+#include "game/arpgboss.h"
 
 #include <algorithm>
 #include <cmath>
@@ -808,6 +809,9 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgTickLock(*pl);  // Diathic: lock on a target
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
     arpgKeepOut(*pl, dtF);
+    if(w!=nullptr)
+      ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
+    arpgTickChill(*pl);
     }
   else
     arpgSetLock(nullptr);
@@ -1836,7 +1840,10 @@ static bool arpgIsHostile(const Npc& pl, const Npc& npc) {
   if(!npc.isEnemy(pl))
     return false;
   auto w = Gothic::inst().world();
-  return w==nullptr || !w->script().arpgFakeBandit(npc, pl); // Diathic: bandits and the hero in bandit armour
+  if(w==nullptr)
+    return true;
+  // Diathic: bandits and the hero in bandit armour; Raven and others who talk before the fight (LPM = dialogue)
+  return !w->script().arpgFakeBandit(npc, pl) && !w->script().arpgEnemyOverride(npc, pl);
   }
 
 float PlayerControl::arpgCeiling() const {
@@ -1851,8 +1858,9 @@ float PlayerControl::arpgCeiling() const {
 
 bool PlayerControl::arpgUsableMob(const Interactive& m) {
   // named mobs, and unnamed ones with a script action (Greg's treasure spots: no focus name,
-  // dug up with a pickaxe — in Gothic you stand on the cross and press the action key)
-  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty();
+  // dug up with a pickaxe — in Gothic you stand on the cross and press the action key),
+  // and unnamed switches and levers (Adanos' temple: they trigger doors and traps)
+  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty() || m.arpgIsSwitch();
   }
 
 Focus PlayerControl::arpgPick() {
@@ -2783,6 +2791,8 @@ void PlayerControl::arpgVisibleObjects(std::vector<Focus>& out) const {
   w->forEachInteractiveNear(center, radius, [&](Interactive& m) {
     if(!arpgUsableMob(m))
       return;
+    if(m.displayName().empty() && m.arpgIsSwitch() && m.arpgStateFunc().empty() && m.arpgUseItem().empty())
+      return; // an unnamed switch (hidden ones too) is found under the cursor, like Gothic's focus, not listed by Z
     if(arpgCanSee(m.displayPosition(), m.position().y, &m))
       out.push_back(Focus(m));
     });
@@ -2849,6 +2859,20 @@ void PlayerControl::arpgKeepOut(Npc& pl, float dtF) {
     const float push = std::min(clear-d, pushSpeed*dtF);
     pl.tryMove(Tempest::Vec3(away.x*push, 0.f, away.y*push));
     });
+  }
+
+void PlayerControl::arpgTickChill(Npc& pl) {
+  const bool chill   = pl.arpgHasStatus(ArpgStatus::Chill);
+  const bool walking = (pl.walkMode()&WalkBit::WM_Walk)==WalkBit::WM_Walk;
+  if(chill && !walking) {
+    pl.setWalkMode(pl.walkMode()|WalkBit::WM_Walk);
+    arpgChillWalk = true;
+    }
+  else if(!chill && arpgChillWalk) {
+    if(walking)
+      pl.setWalkMode(pl.walkMode() & (~WalkBit::WM_Walk));
+    arpgChillWalk = false;
+    }
   }
 
 Npc* PlayerControl::arpgLockTarget() const {

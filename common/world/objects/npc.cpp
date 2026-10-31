@@ -2417,6 +2417,25 @@ void Npc::arpgParrySound() {
     emitSoundEffect(bell, 2000.f, true);
   }
 
+bool Npc::arpgDirectHit(Npc& from, int32_t dmg) {
+  if(isDead() || dmg<=0)
+    return false;
+  if(arpgIsInvulnerable()) {
+    owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 4); // rolled through it
+    return false;
+    }
+  const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
+  lastHit      = &from;
+  currentOther = &from;
+  changeAttribute(ATR_HITPOINTS, -dmg, false);
+  const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
+  if(lost>0)
+    owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, 1);
+  if(isDead())
+    owner.sendPassivePerc(*this,from,*this,PERC_ASSESSMURDER);
+  return true;
+  }
+
 bool Npc::arpgHasStatus(ArpgStatus::Id id) const {
   return id<ArpgStatus::Count && arpgSt[id].until>owner.tickCount();
   }
@@ -2475,6 +2494,11 @@ void Npc::commitDamage() {
 void Npc::takeDamage(Npc &other, const Bullet* b) {
   if(isDown())
     return;
+  if(arpgBossSt!=nullptr && Camera::isArpgEnabled() && arpgBossSt->shielded(owner.tickCount())) {
+    // Diathic: a boss roaring at the start of a new phase
+    owner.arpgPopup(position()+Tempest::Vec3(0,260.f,0), 0, 6);
+    return;
+    }
   if(arpgIsInvulnerable()) {
     // gothic-diablo: dodge roll (i-frames like in Dark Souls)
     owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 4);
