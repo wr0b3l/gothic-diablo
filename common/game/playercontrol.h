@@ -377,6 +377,8 @@ class PlayerControl final {
     Npc*           arpgNextEnemy(Npc& pl, const Npc* except, float range) const;
     void           arpgTickLock(Npc& pl);
     void           arpgKeepOut (Npc& pl, float dtF); // Diathic: the hero does not walk into a long body (swampshark)
+    void           arpgTickChill(Npc& pl);           // Diathic: Zmrożenie (Finkregh): the hero only walks
+    bool           arpgChillWalk = false;            // the walk was switched on by Zmrożenie
     void           arpgToggleLock(Npc& pl);
     void           arpgSetLock(Npc* n);
     int            arpgStartRoll(Npc& pl, float& rot);

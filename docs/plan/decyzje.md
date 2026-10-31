@@ -126,3 +126,5 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Kruk: faza 1 szermierz z Mieczem Beliara (jak w oryginale); faza 2 budzi kamiennych strażników (Stoneguardian) i rzuca piorun Beliara w linii; faza 3 „Gniew Beliara” — fala od Kruka co kilka sekund
 - Test bez fabuły: konsola Marvina `insert Dragon_Fire` (itd.), `insert BDT_1090_Addon_Raven`
 - Do ustalenia po teście: życie bossów (mnożnik ponad MonsterHpMul), obrażenia ataków z ostrzeżeniem, czasy ostrzeżeń, liczba przyzwańców
+- Wartości do balansu: `ArpgBossCfg` w common/game/arpgboss.h (progi faz, czasy ostrzeżeń i ataków, trafienia jako część życia bohatera, Zatrucie, Podpalenie, Zmrożenie, liczba przyzwańców)
+- Do testu (konsola Marvina w trybie ARPG: `insert Dragon_Fire`, `insert Dragon_Swamp`, `insert Dragon_Rock`, `insert Dragon_Ice`, `insert Dragon_Undead`, `insert BDT_1090_Addon_Raven`): pasek u góry w walce; czerwone kształty na ziemi i unik przewrotem; przy 70% i 35% ryk, złoty pasek, „Nietykalny”; przyzwańcy w fazie 3 (Kruk: strażnicy w fazie 2, nie atakują Kruka); Zatrucie w kałuży, Zmrożenie = tylko chód; czy ataki nie są za częste / za mocne

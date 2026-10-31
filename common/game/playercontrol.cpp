@@ -1,4 +1,5 @@
 #include "playercontrol.h"
+#include "game/arpgboss.h"
 
 #include <algorithm>
 #include <cmath>
@@ -808,6 +809,9 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgTickLock(*pl);  // Diathic: lock on a target
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
     arpgKeepOut(*pl, dtF);
+    if(w!=nullptr)
+      ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
+    arpgTickChill(*pl);
     }
   else
     arpgSetLock(nullptr);
@@ -2849,6 +2853,20 @@ void PlayerControl::arpgKeepOut(Npc& pl, float dtF) {
     const float push = std::min(clear-d, pushSpeed*dtF);
     pl.tryMove(Tempest::Vec3(away.x*push, 0.f, away.y*push));
     });
+  }
+
+void PlayerControl::arpgTickChill(Npc& pl) {
+  const bool chill   = pl.arpgHasStatus(ArpgStatus::Chill);
+  const bool walking = (pl.walkMode()&WalkBit::WM_Walk)==WalkBit::WM_Walk;
+  if(chill && !walking) {
+    pl.setWalkMode(pl.walkMode()|WalkBit::WM_Walk);
+    arpgChillWalk = true;
+    }
+  else if(!chill && arpgChillWalk) {
+    if(walking)
+      pl.setWalkMode(pl.walkMode() & (~WalkBit::WM_Walk));
+    arpgChillWalk = false;
+    }
   }
 
 Npc* PlayerControl::arpgLockTarget() const {

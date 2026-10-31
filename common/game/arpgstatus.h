@@ -9,6 +9,8 @@ namespace ArpgStatus {
     Stagger,  // Zachwianie: the swing stops, no attack, the next hit taken x4 and ends it, blue stars over the head
     Burn,     // Podpalenie: fire every second (Gniew Innosa)
     Bleed,    // Krwawienie: damage every second (Głębokie rany)
+    Poison,   // Zatrucie: damage every second (Pandrodor's puddles)
+    Chill,    // Zmrożenie: the hero only walks (Finkregh's breath)
     Count
     };
 
@@ -22,6 +24,8 @@ namespace ArpgStatus {
       {"Zachwianie",  false},
       {"Podpalenie",  true },
       {"Krwawienie",  true },
+      {"Zatrucie",    true },
+      {"Zmrożenie",   false},
       };
     return infos[id<Count ? id : 0];
     }

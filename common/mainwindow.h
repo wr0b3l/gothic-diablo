@@ -77,6 +77,8 @@ class MainWindow : public Tempest::Window {
     void paintArpgVitals(Tempest::Painter& p);
     void paintArpgMinimap(Tempest::Painter& p);
     void paintArpgCombat(Tempest::Painter& p, const Tempest::Matrix4x4& vp);
+    void paintArpgBossZones(Tempest::Painter& p, const Tempest::Matrix4x4& vp); // Diathic: ArpgBoss
+    void paintArpgBossBar  (Tempest::Painter& p);
     void paintArpgBar   (Tempest::Painter& p);
     void paintArpgBarOverlay(Tempest::Painter& p);
     bool arpgBarVisible () const;
