@@ -270,6 +270,12 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | AI z zużytym blokiem: zamiast parady i zamiast odskoku atak z boku + atak (50%) albo krok w bok (50%) | `FightAlgo::nextFromQueue` (`arpgWornBlock`), `Npc::arpgBlockWorn` |
 | Potwory, zwierzęta i orkowie (wszyscy oprócz ludzi, bez bohatera): życie ×1,2 (przy pojawieniu się i przy wczytaniu zapisu, także starego; zapis trzyma życie Gothica, tryb klasyczny je przywraca), obrażenia ×1,1 (ciosy, strzały, czary) | `Npc::arpgIsBeast`, `arpgSyncBeastHp` (`arpgHpBase`, wpis zapisu `/diathic`), `Npc::takeDamage`; `ArpgStatus::MonsterHpMul`, `MonsterDmgMul` |
 
+## Poprawki: zasięg orków (gałąź poprawki-orkowie-agro)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Orkowie (wszystkie gildie orków: wojownik, elita, szaman, ożywieniec) zauważają bohatera najwyżej z 12 m zamiast 25 m — atakowali spoza ekranu (Górnicza Dolina); pozostałe stwory bez zmian (80% zasięgu) | `Npc::canSenseNpc`, `Npc::ArpgOrcSenseRange` |
+
 ## Bossowie — smoki i Kruk (gałąź bossowie)
 
 | Co | Gdzie w kodzie |
@@ -317,6 +323,7 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Combo w plikach MSB: zwykły S_1HATTACK ma 2 trafienia; 1HST1 4 trafienia i 3 pary okien; 1HST2, 2HST1, 2HST2 mają okno także po ostatnim trafieniu — „ostatni cios serii” trzeba liczyć z liczby trafień (ComboTiming.hits), nie z okien
 - Bonus broni do procentu (np. nóż +3%): skrypty on_equip wołają B_AddFightSkill ze stałymi — GameScript::arpgEquipFightBonus odejmuje go przy limicie Biegłości
 - Stwory zauważają bohatera z 80% senses_range (Npc::canSenseNpc) — reagowały „za wcześnie”, bo z góry widać daleko
+- Orkowie to nie isMonster() (gildie > GIL_SEPERATOR_ORC) — cięcie 80% ich nie obejmowało; w skryptach senses_range = PERC_DIST_ORC_ACTIVE_MAX (2500), orkowie ożywieńcy PERC_DIST_MONSTER_ACTIVE_MAX (1500); B_MM_AssessEnemy: orkowie atakują od razu, z tyłu (bez Npc_CanSeeNpc) najwyżej z 15 m. Widok ARPG (11 m, 55°, pionowe FOV 67,5°, 16:9) na ziemi: ~17 m do górnej krawędzi, ~13 m na boki, ~6 m do dolnej (w stronę kamery)
 - Statusy negatywne (Zachwianie, Podpalenie, Krwawienie): wspólna tabela ArpgStatus (game/arpgstatus.h); parowanie: dźwięk CS_IAI_ME_ME + dzwonek, jeśli dźwięki gry mają taki po nazwie (log.txt: „Diathic: parry, bells…”)
 
 - Bandyci w Gothicu II: gildia GIL_BDT jest wroga bohaterowi (Npc::isEnemy = postawa gildii); przebranie sprawdzają skrypty — C_PlayerIsFakeBandit (zbroja ITAR_BDT_M / ITAR_BDT_H / ItAR_Thorus_Addon albo Jarkendar bez zbroi po Player_HasTalkedToBanditCamp; nie dla AIV_IgnoresArmor / AIV_IgnoresFakeGuild) w B_AssessEnemy, ZS_Attack, B_AssessPlayer

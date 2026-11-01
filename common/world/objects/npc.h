@@ -305,6 +305,7 @@ class Npc final {
     uint32_t   guild() const;
     bool       isMonster() const;
     static constexpr float ArpgMonsterSenseCut = 0.2f; // Diathic: creatures sense the hero at 80% of senses_range
+    static constexpr float ArpgOrcSenseRange   = 1200.f; // Diathic: orcs (2500 cm in scripts) sense the hero up to 12 m (2026-11-01)
     bool       isHuman() const;
     void       setTrueGuild(int32_t g);
     int32_t    trueGuild() const;
