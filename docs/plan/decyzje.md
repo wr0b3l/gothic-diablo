@@ -132,3 +132,10 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - przełączniki i dźwignie bez nazwy fokusu wskazywalne, etykieta „Przełącznik”; Z ich nie pokazuje (ukryte przełączniki zostają ukryte)
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
+
+## Interakcje z postaciami (2026-11-01, gałąź poprawki-interakcje)
+- Użytkownik: sprawdzić ukryte dźwignie i zły rodzaj interakcji bohatera z przedmiotami, wrogami i NPC
+- Znalezione w kodzie: każdy potwór i ork był wrogiem pod kursorem (LPM = atak, automatyczny cel, lock, umiejętności) — także przyzwańcy bohatera, ognik, owce (Liesel, owca Akila), przyjazny ork Ur-Shak i orkowie dowódcy, którzy w grze najpierw mówią; ogłuszonego człowieka nie dało się dobić (LPM zawsze = przeszukanie)
+- Poprawione: stwory przyjazne / w drużynie / z rozmową przed walką = LPM rozmowa, Ctrl + LPM atak; Ctrl + LPM na ogłuszonym = cios dobijający
+- Dźwignie i przełączniki: w kodzie bez nowych braków (wskazywane: z nazwą, z funkcją stanu, z wymaganym przedmiotem, przełącznik / koło, każdy obiekt z triggerTarget; kursor widzi obiekt w ścianie do 1 m za trafieniem promienia); pełna lista obiektów świata tylko z plików gry — test w grze
+- Do testu: przyzwany szkielet / golem / wilk — zwykły kursor, przytrzymany LPM po zabiciu wroga nie przechodzi na przyzwańca, Taniec ostrzy / lock go nie celują; ognik (Jarkendar, od Riordiana) — LPM = rozmowa; owca Liesel / owca Akila — LPM = rozmowa „chodź”; zwykła owca na farmie Onara — LPM nic nie robi (Ctrl + LPM = atak, przestępstwo jak w grze); Ur-Shak — LPM = rozmowa; orkowie dowódcy (rozdział 5) — LPM = rozmowa, po niej walka; ogłuszony człowiek (np. bójka z najemnikiem) — LPM = przeszukanie, Ctrl + LPM = dobicie; chrząszcze i uśpieni kamienni strażnicy w Jarkendarze — LPM nadal atakuje

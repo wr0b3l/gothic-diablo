@@ -276,6 +276,13 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 |---|---|
 | Orkowie (wszystkie gildie orków: wojownik, elita, szaman, ożywieniec) zauważają bohatera najwyżej z 12 m zamiast 25 m — atakowali spoza ekranu (Górnicza Dolina); pozostałe stwory bez zmian (80% zasięgu) | `Npc::canSenseNpc`, `Npc::ArpgOrcSenseRange` |
 
+## Poprawki: interakcje z postaciami (gałąź poprawki-interakcje)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Stwory i orkowie nie zawsze są wrogami: przyzwańcy bohatera i ognik (członkowie drużyny, ATT_FRIENDLY), owce (przyjazne gildii — zabicie to przestępstwo na farmach), przyjazny ork Ur-Shak (GIL_FRIENDLY_ORC, gdy nie jest wrogi) i orkowie dowódcy z rozmową przed walką (AIV_EnemyOverride + dialog) = zwykły kursor, LPM = rozmowa, nie są celem automatycznego ataku, locka ani umiejętności; Ctrl + LPM nadal atakuje; ten, kto walczy z bohaterem, jest wrogiem; chrząszcze (neutralne) i uśpieni kamienni strażnicy / szkielety w krypcie (override bez dialogu) dalej atakowane LPM | `arpgIsHostile`, `GameScript::arpgEnemyOverride` |
+| Ctrl + LPM na ogłuszonym człowieku = podejście i cios dobijający (broń biała); zwykłe LPM = przeszukanie (wcześniej dobić nie dało się wcale) | `PlayerControl::arpgMouseDown` (`finish`), `arpgClickTick` (`Attack`) |
+
 ## Bossowie — smoki i Kruk (gałąź bossowie)
 
 | Co | Gdzie w kodzie |
@@ -324,6 +331,7 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Bonus broni do procentu (np. nóż +3%): skrypty on_equip wołają B_AddFightSkill ze stałymi — GameScript::arpgEquipFightBonus odejmuje go przy limicie Biegłości
 - Stwory zauważają bohatera z 80% senses_range (Npc::canSenseNpc) — reagowały „za wcześnie”, bo z góry widać daleko
 - Orkowie to nie isMonster() (gildie > GIL_SEPERATOR_ORC) — cięcie 80% ich nie obejmowało; w skryptach senses_range = PERC_DIST_ORC_ACTIVE_MAX (2500), orkowie ożywieńcy PERC_DIST_MONSTER_ACTIVE_MAX (1500); B_MM_AssessEnemy: orkowie atakują od razu, z tyłu (bez Npc_CanSeeNpc) najwyżej z 15 m. Widok ARPG (11 m, 55°, pionowe FOV 67,5°, 16:9) na ziemi: ~17 m do górnej krawędzi, ~13 m na boki, ~6 m do dolnej (w stronę kamery)
+- Postawy stworów wobec ludzi (B_InitMonsterAttitudes): owce ATT_FRIENDLY, chrząszcze i GIL_FRIENDLY_ORC (Ur-Shak) ATT_NEUTRAL, reszta ATT_HOSTILE — także gildie przyzwańców; przyzwańcy i ognik są przyjaźni przez B_SetAttitude(ATT_FRIENDLY) i AIV_PARTYMEMBER (GameScript::isFriendlyFire). Stwory z rozmową w skryptach: smoki (B_AssignDragonTalk, ważny dialog do 7 m z Okiem Innosa), Ur-Shak (10 dialogów), owce do prowadzenia (Follow_Sheep, Liesel), ognik (Wisp_Detector), orkowie dowódcy OrcElite_AntiPaladin1–3 (AIV_EnemyOverride, override zdjęty po rozmowie). AIV_EnemyOverride bez dialogu: kamienni strażnicy w Jarkendarze (uśpieni), szkielety w krypcie, ognisty cieniostwór. Ogłuszenie zamiast śmierci tylko człowiek od ciosu człowieka, gdy postawa nie jest wroga (Npc::checkHealth); dobicie = Npc::finishingMove (cel bohatera, zasięg FightAlgo::isInFinishRange, broń biała)
 - Statusy negatywne (Zachwianie, Podpalenie, Krwawienie): wspólna tabela ArpgStatus (game/arpgstatus.h); parowanie: dźwięk CS_IAI_ME_ME + dzwonek, jeśli dźwięki gry mają taki po nazwie (log.txt: „Diathic: parry, bells…”)
 
 - Bandyci w Gothicu II: gildia GIL_BDT jest wroga bohaterowi (Npc::isEnemy = postawa gildii); przebranie sprawdzają skrypty — C_PlayerIsFakeBandit (zbroja ITAR_BDT_M / ITAR_BDT_H / ItAR_Thorus_Addon albo Jarkendar bez zbroi po Player_HasTalkedToBanditCamp; nie dla AIV_IgnoresArmor / AIV_IgnoresFakeGuild) w B_AssessEnemy, ZS_Attack, B_AssessPlayer
