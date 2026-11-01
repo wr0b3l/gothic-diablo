@@ -3546,8 +3546,10 @@ bool GameScript::arpgFakeBandit(const Npc& npc, const Npc& hero) {
 
 bool GameScript::arpgEnemyOverride(const Npc& npc, const Npc& hero) {
   // AIV_EnemyOverride: a human who talks before the fight (Raven, Dexter, highwaymen, Dementors) — B_AssessEnemy
-  // leaves the hero alone, the dialogue starts the fight (B_Attack); until then not an enemy in the ARPG view
-  if(owner.version().game!=2 || npc.guild()>=GIL_SEPERATOR_HUM || !hero.isPlayer())
+  // leaves the hero alone, the dialogue starts the fight (B_Attack); until then not an enemy in the ARPG view.
+  // Creatures (B_MM_AssessEnemy): only with a dialogue (orc commanders, B_AssignORC_AntiPaladinTalk); sleeping
+  // stone guardians and crypt skeletons have none and stay enemies (a click attacks them)
+  if(owner.version().game!=2 || !hero.isPlayer())
     return false;
   if(npc.isAttack() && npc.target()==&hero)
     return false;
@@ -3557,7 +3559,15 @@ bool GameScript::arpgEnemyOverride(const Npc& npc, const Npc& hero) {
   const int32_t id = sym->get_int();
   if(id<0 || size_t(id)>=zenkit::INpc::aivar_count || npc.handlePtr()==nullptr)
     return false;
-  return npc.handlePtr()->aivar[size_t(id)]!=0;
+  if(npc.handlePtr()->aivar[size_t(id)]==0)
+    return false;
+  if(npc.guild()<GIL_SEPERATOR_HUM)
+    return true;
+  const auto inst = static_cast<int>(npc.handlePtr()->symbol_index());
+  for(auto& info : dialogsInfo)
+    if(info->npc==inst)
+      return true;
+  return false;
   }
 
 int32_t GameScript::arpgEquipFightBonus(const Npc& npc, int talent) {

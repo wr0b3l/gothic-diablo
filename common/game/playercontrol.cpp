@@ -1833,13 +1833,24 @@ void PlayerControl::processAutoRotate(Npc& pl, float& rot, uint64_t dt) {
 // gothic-diablo: Diablo-like mouse controls ////////////////////////////////////////////
 
 static bool arpgIsHostile(const Npc& pl, const Npc& npc) {
-  if(npc.isMonster())
+  auto       w     = Gothic::inst().world();
+  const bool g2    = Gothic::inst().version().game==2;
+  const bool beast = npc.isMonster() || (g2 && npc.guild()>GIL_SEPERATOR_ORC); // monsters, orcs, other creatures
+  if(beast) {
+    // Diathic: creatures are fought on a click (neutral meatbugs too), but not the hero's own (summons, the wisp:
+    // party members), friendly ones (sheep: a crime at the farms) and those who talk first (Ur-Shak: GIL_FRIENDLY_ORC,
+    // orc commanders: AIV_EnemyOverride with a dialogue); whoever fights the hero is an enemy
+    if(w==nullptr || (npc.isAttack() && npc.target()==&pl))
+      return true;
+    auto& sc = w->script();
+    if(npc.isFriend() || sc.isFriendlyFire(npc, pl) || sc.arpgEnemyOverride(npc, pl))
+      return false;
+    if(g2 && npc.guild()==GIL_FRIENDLY_ORC)
+      return npc.isEnemy(pl);
     return true;
-  if(Gothic::inst().version().game==2 && npc.guild()>GIL_SEPERATOR_ORC)
-    return true; // orcs and other non-human creatures
+    }
   if(!npc.isEnemy(pl))
     return false;
-  auto w = Gothic::inst().world();
   if(w==nullptr)
     return true;
   // Diathic: bandits and the hero in bandit armour; Raven and others who talk before the fight (LPM = dialogue)
@@ -2075,7 +2086,9 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
       arpgDrawPreferred(*pl);
     return;
     }
-  if(force && (f.npc==nullptr || f.npc->isDown())) {
+  // Diathic: Ctrl + click on an unconscious human = the finishing move (arpgClickTick, Attack); a plain click plunders
+  const bool finish = force && f.npc!=nullptr && !f.npc->isDead() && f.npc->isUnconscious();
+  if(force && !finish && (f.npc==nullptr || f.npc->isDown())) {
     // Ctrl + click on no one: attack in place towards the cursor
     arpgClick.kind = ArpgClick::Strike;
     arpgClick.point = arpgGroundValid ? arpgGround : (pl->position() + Tempest::Vec3(std::cos(pl->rotationRad())*200.f, 0, std::sin(pl->rotationRad())*200.f));
@@ -2086,7 +2099,9 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
     }
   if(f.npc!=nullptr) {
     arpgClick.target = Focus(*f.npc);
-    if(f.npc->isDown())
+    if(finish)
+      arpgClick.kind = ArpgClick::Attack;
+    else if(f.npc->isDown())
       arpgClick.kind = ArpgClick::Loot;
     else if(force || arpgIsHostile(*pl,*f.npc))
       arpgClick.kind = ArpgClick::Attack;
