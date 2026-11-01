@@ -139,3 +139,10 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Poprawione: stwory przyjazne / w drużynie / z rozmową przed walką = LPM rozmowa, Ctrl + LPM atak; Ctrl + LPM na ogłuszonym = cios dobijający
 - Dźwignie i przełączniki: w kodzie bez nowych braków (wskazywane: z nazwą, z funkcją stanu, z wymaganym przedmiotem, przełącznik / koło, każdy obiekt z triggerTarget; kursor widzi obiekt w ścianie do 1 m za trafieniem promienia); pełna lista obiektów świata tylko z plików gry — test w grze
 - Do testu: przyzwany szkielet / golem / wilk — zwykły kursor, przytrzymany LPM po zabiciu wroga nie przechodzi na przyzwańca, Taniec ostrzy / lock go nie celują; ognik (Jarkendar, od Riordiana) — LPM = rozmowa; owca Liesel / owca Akila — LPM = rozmowa „chodź”; zwykła owca na farmie Onara — LPM nic nie robi (Ctrl + LPM = atak, przestępstwo jak w grze); Ur-Shak — LPM = rozmowa; orkowie dowódcy (rozdział 5) — LPM = rozmowa, po niej walka; ogłuszony człowiek (np. bójka z najemnikiem) — LPM = przeszukanie, Ctrl + LPM = dobicie; chrząszcze i uśpieni kamienni strażnicy w Jarkendarze — LPM nadal atakuje
+
+## Przechył w biegu (2026-11-01, gałąź poprawki-przechyl)
+- Użytkownik: postać przechyla się w jedną stronę przy biegu w dół ekranu (S) i na boki — sprawdzić
+- Znalezione w kodzie: przechył Gothica liczony z azymutu kamery; w trybie ARPG to kąt bohater − kamera (W = 0°, S = 180°, A / D = ±90°), stąd stały przechył 14,5°
+- Decyzja: przechył tylko w ostrym skręcie, w stronę skrętu; bieg w jednym kierunku bez przechyłu
+- Wartości: opóźniony kierunek dogania bohatera 3/s, próg 25°, najwięcej 14,5° (`ArpgLean*` w playercontrol.h); skręt o 90° ≈ 11° przez ~0,6 s, o 45° ledwo widać, małe poprawki kierunku bez przechyłu
+- Do testu: bieg S, A, D, W i po skosie — postać pionowo; skręt W → D i W → A w biegu — przechył w stronę skrętu i powrót; ruch na klik po ścieżce — bez kołysania; czy strona przechyłu dobra (jeśli odwrotnie — zmienić znak)
