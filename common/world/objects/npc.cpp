@@ -18,6 +18,7 @@
 #include "camera.h"
 #include "game/gamesession.h"
 #include "game/arpgskills.h"
+#include "game/arpgelite.h"
 #include "game/definitions/sounddefinitions.h"
 #include "gothic.h"
 #include "resources.h"
@@ -264,6 +265,12 @@ void Npc::save(Serialize &fout, size_t id, std::string_view directory) {
     fout.setEntry("worlds/",fout.worldName(),directory,id,"/diathic");
     fout.write(arpgHpBase);
     }
+  // Diathic: the multiplier of its life now (the chapter, an elite leader) and its group (ArpgElite)
+  if(arpgHpMul!=1.f || arpgEliteChecked || arpgPack!=0) {
+    fout.setEntry("worlds/",fout.worldName(),directory,id,"/diathic2");
+    const uint8_t fl = uint8_t((arpgEliteChecked ? 1 : 0) | (arpgLeader ? 2 : 0));
+    fout.write(arpgHpMul, fl, arpgPack);
+    }
   }
 
 void Npc::load(Serialize &fin, size_t id, std::string_view directory) {
@@ -335,9 +342,21 @@ void Npc::load(Serialize &fin, size_t id, std::string_view directory) {
     invent.load(fin,*this);
 
   // Diathic: the life of monsters raised or not (saves from before 2026-10-29, a save of the other mode)
-  arpgHpBase = 0;
-  if(fin.setEntry("worlds/",fin.worldName(),directory,id,"/diathic"))
+  arpgHpBase       = 0;
+  arpgHpMul        = 1.f;
+  arpgEliteChecked = false;
+  arpgLeader       = false;
+  arpgPack         = 0;
+  if(fin.setEntry("worlds/",fin.worldName(),directory,id,"/diathic")) {
     fin.read(arpgHpBase);
+    arpgHpMul = (arpgHpBase!=0 ? ArpgStatus::MonsterHpMul : 1.f); // saves from before 2026-11-01
+    }
+  if(fin.setEntry("worlds/",fin.worldName(),directory,id,"/diathic2")) {
+    uint8_t fl = 0;
+    fin.read(arpgHpMul, fl, arpgPack);
+    arpgEliteChecked = (fl&1)!=0;
+    arpgLeader       = (fl&2)!=0;
+    }
   arpgSyncBeastHp();
 
   // post-alignment
@@ -643,6 +662,12 @@ void Npc::onNoHealth(bool death, HitSound sndMask) {
 
   if(death)
     physic.setEnable(false);
+
+  // Diathic: an elite leader killed by the hero: the rest of its experience (Gothic gives level x 10 in ZS_Dead)
+  if(death && arpgIsEliteLeader() && lastHit!=nullptr && lastHit->isPlayer())
+    ArpgElite::leaderKilled(int32_t(std::lround(float(hnpc->level*ArpgElite::XpPerLevel)*(ArpgElite::LeaderXp-1.f))));
+  if(death)
+    arpgRedOff();
 
   if(death)
     setAnim(lastHitType=='A' ? Anim::DeadA        : Anim::DeadB); else
@@ -1743,6 +1768,8 @@ bool Npc::implAttack(uint64_t dt) {
         }
       const auto atkType = (ws==WeaponState::Fist) ? Anim::Attack : ani[act-FightAlgo::MV_ATTACK];
       const bool atk     = doAttack(atkType, BS_HIT);
+      if(atk)
+        arpgOnAttackStart(); // Diathic: an attack with a red aura
 
       if(atk || mvAlgo.isSwim() || mvAlgo.isDive()) {
         uint64_t aniTime = visual.pose().atkTotalTime()+1;
@@ -2535,6 +2562,12 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
   const auto*    mk         = arpgParry ? arpgPerks() : nullptr;
   const uint64_t nowT       = owner.tickCount();
   const bool     bastion    = mk!=nullptr && arpgBastionUntil>nowT;
+  // Diathic: an attack with a red aura (ArpgElite, 2026-11-01): no parry; a block costs RedBlockCost charges (in Bastion too)
+  const bool     redHit     = arpgParry && b==nullptr && &other!=this && other.arpgRedHit(nowT);
+  const bool     freeBlock  = bastion && !redHit;
+  const int32_t  blockCost  = redHit ? ArpgElite::RedBlockCost : 1;
+  if(redHit)
+    other.arpgRedSwingEnd = nowT; // one hit: the aura goes out
   const bool     inFront    = fghAlgo.isInFocusAngle(*this,other) || bastion;
   const bool     isBlock = (arpgParry || !other.isMonster() || other.inventory().activeWeapon()!=nullptr) &&
                          inFront && pose.isDefence(owner.tickCount()) && !guardBreak;
@@ -2550,7 +2583,7 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
   // (Wyczucie ostrza: a longer window with a 1H weapon; Dłuższe zachwianie; Bastion and Riposta after it)
   const uint64_t parryWin = ArpgStatus::ParryWindowMs +
                             ((mk!=nullptr && weaponState()==WeaponState::W1H) ? uint64_t(mk->parry1H) : 0);
-  if(arpgParry && b==nullptr && !guardBreak && &other!=this && arpgParadeStart!=0 &&
+  if(arpgParry && b==nullptr && !guardBreak && !redHit && &other!=this && arpgParadeStart!=0 &&
      owner.tickCount()<=arpgParadeLast+100 && owner.tickCount()<=arpgParadeStart+parryWin &&
      fghAlgo.isInFocusAngle(*this,other)) {
     const uint64_t extra = mk!=nullptr ? uint64_t(mk->staggerAdd*1000.f) : 0;
@@ -2576,9 +2609,10 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
   if(!(isBlock || jumpb) || (b!=nullptr && !arrowBlock)) {
     takeDamage(other,b,COLL_DOEVERYTHING,0,false);
     }
-  else if(wears && arpgBlockCh<=0 && !bastion) {
+  else if(wears && arpgBlockCh-blockCost<0 && !freeBlock) {
     // Diathic: the block is worn out: one more below 0 (to -BlockDebt), 25% of the damage through for each
-    arpgBlockCh = std::max(arpgBlockCh-1, -ArpgStatus::BlockDebt);
+    // (a red attack: its 3 charges, the ones missing below 0)
+    arpgBlockCh = std::max(arpgBlockCh-blockCost, -ArpgStatus::BlockDebt);
     arpgDmgScale  = std::min(1.f, float(-arpgBlockCh)*ArpgStatus::BlockLeak);
     arpgBlockLeak = true;
     takeDamage(other,b,COLL_DOEVERYTHING,0,false);
@@ -2588,8 +2622,8 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
       visual.emitBlockEffect(*this,other);
     }
   else {
-    if(wears && !bastion)
-      arpgBlockCh = std::max(0, arpgBlockCh-1); // Diathic: one hit of the block's 3
+    if(wears && !freeBlock)
+      arpgBlockCh = std::max(0, arpgBlockCh-blockCost); // Diathic: one hit of the block's 3 (a red attack: 3)
     if(Camera::isArpgEnabled() && (other.isPlayer() || isPlayer()))
       owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 2); // gothic-diablo: "blocked"
     if(invent.activeWeapon()!=nullptr)
@@ -2623,23 +2657,158 @@ bool Npc::arpgIsBeast() const {
   }
 
 void Npc::arpgSyncBeastHp() {
-  // Diathic: max life x ArpgStatus::MonsterHpMul (the life left: the same part of it); the classic mode or the hero
-  // in the body of a monster: Gothic's life back
-  auto&      hp    = hnpc->attribute[ATR_HITPOINTS];
-  auto&      hpMax = hnpc->attribute[ATR_HITPOINTSMAX];
-  const bool want  = arpgIsBeast();
-  if(want && arpgHpBase==0 && hpMax>0) {
+  // Diathic: max life x arpgHpWantMul (the life left: the same part of it); the classic mode or the hero
+  // in the body of a monster: Gothic's life back. Again when the chapter changes or a leader is chosen
+  auto&       hp    = hnpc->attribute[ATR_HITPOINTS];
+  auto&       hpMax = hnpc->attribute[ATR_HITPOINTSMAX];
+  const float want  = arpgHpWantMul();
+  if(hpMax<=0)
+    return;
+  if(arpgHpBase==0) {
+    if(want==1.f) {
+      arpgHpMul = 1.f;
+      return;
+      }
     arpgHpBase = hpMax;
-    hpMax      = int32_t(std::lround(float(hpMax)*ArpgStatus::MonsterHpMul));
-    if(hp>0)
-      hp = std::min(hpMax, std::max<int32_t>(1, int32_t(std::lround(float(hp)*float(hpMax)/float(arpgHpBase)))));
+    arpgHpMul  = 1.f;
     }
-  else if(!want && arpgHpBase>0) {
-    if(hp>0 && hpMax>0)
-      hp = std::min(arpgHpBase, std::max<int32_t>(1, int32_t(std::lround(float(hp)*float(arpgHpBase)/float(hpMax)))));
-    hpMax      = arpgHpBase;
+  if(want==arpgHpMul)
+    return;
+  const int32_t mx = (want==1.f) ? arpgHpBase : std::max<int32_t>(1, int32_t(std::lround(float(arpgHpBase)*want)));
+  if(hp>0)
+    hp = std::min(mx, std::max<int32_t>(1, int32_t(std::lround(float(hp)*float(mx)/float(hpMax)))));
+  hpMax     = mx;
+  arpgHpMul = want;
+  if(want==1.f)
     arpgHpBase = 0;
+  }
+
+bool Npc::arpgIsBossInst() const {
+  if(arpgBossInst<0) {
+    ArpgBoss::Kind k = ArpgBoss::Swamp;
+    arpgBossInst = ArpgBoss::detect(owner, *this, k) ? 1 : 0;
     }
+  return arpgBossInst>0;
+  }
+
+bool Npc::arpgIsEliteLeader() const {
+  return arpgLeader && arpgPack!=0 && arpgIsBeast();
+  }
+
+float Npc::arpgHpWantMul() const {
+  // Diathic: monsters x MonsterHpMul (2026-10-29), monsters and the bosses (Raven too) x the chapter,
+  // an elite leader x LeaderHp (2026-11-01)
+  if(isPlayer() || !Camera::isArpgEnabled())
+    return 1.f;
+  const bool beast = arpgIsBeast();
+  if(!beast && !arpgIsBossInst())
+    return 1.f;
+  float m = ArpgElite::chapterMul(owner);
+  if(beast)
+    m *= ArpgStatus::MonsterHpMul;
+  if(arpgIsEliteLeader())
+    m *= ArpgElite::LeaderHp;
+  return m;
+  }
+
+float Npc::arpgDmgOutMul() const {
+  // Diathic: the same for the damage it deals: MonsterDmgMul, the chapter, a leader (LeaderDmg) or its group
+  // while the leader lives (PackDmg)
+  if(isPlayer() || !Camera::isArpgEnabled())
+    return 1.f;
+  const bool beast = arpgIsBeast();
+  if(!beast && !arpgIsBossInst())
+    return 1.f;
+  float m = ArpgElite::chapterMul(owner);
+  if(beast)
+    m *= ArpgStatus::MonsterDmgMul;
+  if(arpgIsEliteLeader()) {
+    m *= ArpgElite::LeaderDmg;
+    }
+  else if(beast && arpgPack!=0) {
+    bool leader = false;
+    owner.detectNpc(position(), ArpgElite::PackLeaderRange, [&](Npc& n) {
+      if(n.arpgPack==arpgPack && n.arpgLeader && !n.isDead())
+        leader = true;
+      });
+    if(leader)
+      m *= ArpgElite::PackDmg;
+    }
+  return m;
+  }
+
+bool Npc::arpgRedCapable() {
+  if(arpgRedKind<0)
+    arpgRedKind = ArpgElite::redAttacker(owner, *this) ? 1 : 0;
+  return arpgRedKind>0 || arpgIsEliteLeader();
+  }
+
+bool Npc::arpgRedHit(uint64_t now) const {
+  return arpgRedSwingEnd!=0 && now<arpgRedSwingEnd;
+  }
+
+void Npc::arpgRedOff() {
+  if(arpgRedFx!=nullptr) {
+    visual.stopEffect(*arpgRedFx);
+    arpgRedFx = nullptr;
+    }
+  arpgRedArmed    = 0;
+  arpgRedSwingEnd = 0;
+  }
+
+void Npc::arpgTickRed() {
+  // Diathic: attacks with a red aura (ArpgElite, 2026-11-01): in a fight with the hero now and then the aura,
+  // the first attack started RedWarnMs after it or later is the red one: no parry, a block costs RedBlockCost charges
+  const uint64_t now   = owner.tickCount();
+  const Npc*     hero  = owner.player();
+  const bool     fight = arpgRedCapable() && hero!=nullptr && !isDead() && !isDown() && target()==hero && isAttack();
+  if(!fight) {
+    if(arpgRedArmed!=0 || arpgRedSwingEnd!=0)
+      arpgRedOff();
+    arpgRedNext = 0;
+    return;
+    }
+  const bool     leader = arpgIsEliteLeader();
+  const uint32_t lo     = leader ? ArpgElite::RedLeaderMin : ArpgElite::RedEveryMin;
+  const uint32_t hi     = leader ? ArpgElite::RedLeaderMax : ArpgElite::RedEveryMax;
+  auto every = [&]() { return now + uint64_t(lo + owner.script().rand(hi-lo+1)); };
+  if(arpgRedSwingEnd!=0) {
+    if(now>=arpgRedSwingEnd) {
+      arpgRedOff();
+      arpgRedNext = every();
+      }
+    return;
+    }
+  if(arpgRedArmed!=0) {
+    if(now>arpgRedArmed+ArpgElite::RedHoldMs) {
+      arpgRedOff();
+      arpgRedNext = every();
+      }
+    return;
+    }
+  if(arpgRedNext==0) {
+    arpgRedNext = every();
+    return;
+    }
+  if(now<arpgRedNext)
+    return;
+  arpgRedArmed = now;
+  if(auto vfx = Gothic::inst().loadVisualFx("spellFX_INCOVATION_RED")) {
+    Effect e(*vfx, owner, *this, SpellFxKey::Count);
+    e.setActive(true);
+    visual.startEffect(owner, std::move(e), 0, true);
+    arpgRedFx = vfx;
+    }
+  }
+
+void Npc::arpgOnAttackStart() {
+  // Diathic: the fight AI starts an attack: with the aura on long enough, this one is the red one
+  if(arpgRedArmed==0 || arpgRedSwingEnd!=0)
+    return;
+  const uint64_t now = owner.tickCount();
+  if(now<arpgRedArmed+ArpgElite::RedWarnMs)
+    return;
+  arpgRedSwingEnd = now+visual.pose().atkTotalTime()+100;
   }
 
 void Npc::arpgDirectDamage(Npc& from, int32_t v) {
@@ -2763,9 +2932,13 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
       }
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*mul)));
     }
-  // Diathic: monsters and orcs hit harder (ArpgStatus::MonsterDmgMul): swings, shots, spells
-  if(hitResult.value>0 && other.arpgIsBeast())
-    hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*ArpgStatus::MonsterDmgMul)));
+  // Diathic: monsters and orcs hit harder (ArpgStatus::MonsterDmgMul), the chapter, elite leaders and their groups
+  // (Npc::arpgDmgOutMul): swings, shots, spells
+  if(hitResult.value>0) {
+    const float m = other.arpgDmgOutMul();
+    if(m!=1.f)
+      hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*m)));
+    }
   if(hitResult.value>0 && isPlayer() && !isSpell) {
     // gothic-diablo: Twarda skóra: some protection for a moment after a hit taken
     if(auto pk = arpgPerks(); pk!=nullptr && pk->hardSkin>0) {
@@ -3163,6 +3336,10 @@ void Npc::tick(uint64_t dt) {
       arpgBlockCh   += 1;
       arpgBlockRegen = now+ArpgStatus::BlockRegenMs;
       }
+    // Diathic: its life by the chapter, a leader chosen (ArpgElite); attacks with a red aura
+    if(arpgHpMul!=arpgHpWantMul())
+      arpgSyncBeastHp();
+    arpgTickRed();
     }
   arpgTickStatus();
   if(arpgSpinUntil!=0) {
@@ -5730,7 +5907,9 @@ Matrix4x4 Npc::mkPositionMatrix() const {
   if(isPlayer() && !align) {
     mt.rotateOZ(runAng);
     }
-  mt.scale(sz[0],sz[1],sz[2]);
+  // Diathic: an elite leader is a bit bigger (ArpgElite::LeaderScale)
+  const float ek = arpgIsEliteLeader() ? ArpgElite::LeaderScale : 1.f;
+  mt.scale(sz[0]*ek,sz[1]*ek,sz[2]*ek);
   return mt;
   }
 

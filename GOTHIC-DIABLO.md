@@ -283,6 +283,14 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Stwory i orkowie nie zawsze są wrogami: przyzwańcy bohatera i ognik (członkowie drużyny, ATT_FRIENDLY), owce (przyjazne gildii — zabicie to przestępstwo na farmach), przyjazny ork Ur-Shak (GIL_FRIENDLY_ORC, gdy nie jest wrogi) i orkowie dowódcy z rozmową przed walką (AIV_EnemyOverride + dialog) = zwykły kursor, LPM = rozmowa, nie są celem automatycznego ataku, locka ani umiejętności; Ctrl + LPM nadal atakuje; ten, kto walczy z bohaterem, jest wrogiem; chrząszcze (neutralne) i uśpieni kamienni strażnicy / szkielety w krypcie (override bez dialogu) dalej atakowane LPM | `arpgIsHostile`, `GameScript::arpgEnemyOverride` |
 | Ctrl + LPM na ogłuszonym człowieku = podejście i cios dobijający (broń biała); zwykłe LPM = przeszukanie (wcześniej dobić nie dało się wcale) | `PlayerControl::arpgMouseDown` (`finish`), `arpgClickTick` (`Attack`) |
 
+## Poprawki: potwory z rozdziałem, czerwona aura, elity (gałąź poprawki-potwory-elity)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Potwory, zwierzęta i orkowie oraz bossowie (smoki i Kruk): życie i obrażenia ×1,15 za każdy rozdział po pierwszym, składane (rozdział 6 ≈ ×2,01), na to dotychczasowe ×1,2 / ×1,1; przeliczane przy zmianie rozdziału, przy wybraniu dowódcy i przy wczytaniu (zapis trzyma mnożnik) | `Npc::arpgHpWantMul`, `arpgDmgOutMul`, `arpgSyncBeastHp` (wpis zapisu `/diathic2`), `GameScript::arpgChapter` (KAPITEL), `ArpgElite::ChapterMul` |
+| Ataki z czerwoną aurą: ork elita, jaszczuroludzie, trolle (też czarny), cieniostwory (też ogary), golemy, demony i dowódcy elit — w walce z bohaterem co 6–10 s (dowódca 4–7 s) czerwona aura (spellFX_INCOVATION_RED); pierwszy atak zaczęty ≥ 0,8 s po jej pojawieniu się jest czerwony: nie da się go sparować, zablokowany zabiera 3 ładunki bloku (brakujące poniżej 0 przepuszczają 25% obrażeń za ładunek, także w Bastionie); unik i przewrót działają; bez ataku przez 4 s aura gaśnie | `Npc::arpgTickRed`, `arpgOnAttackStart` (akcja ataku AI), `Npc::takeDamage` (`redHit`), `ArpgElite::redAttacker`, stałe `ArpgElite::Red*` |
+| Grupy z dowódcą: potwory jednej gildii w łańcuchu co najwyżej 15 m od siebie (2–8) = grupa, sprawdzana raz, gdy bohater podejdzie na 60 m (samotny potwór — co sekundę od nowa, mogą dojść inne); 25% grup dostaje elitarnego dowódcę (najsilniejszy): życie ×3, obrażenia ×1,5, model ×1,15, etykieta „(elita)”, ataki z czerwoną aurą, doświadczenie ×3 (reszta przez B_GivePlayerXP); pozostali z grupy zadają ×1,25 obrażeń, dopóki dowódca żyje (w promieniu 40 m); bez bossów, przyzwańców, owiec i przyjaznych | `ArpgElite::tick` (`rollGroups`), `Npc::arpgSetPack`, `arpgIsEliteLeader`, `Npc::mkPositionMatrix`, `arpgLabelName` (mainwindow.cpp), `Npc::onNoHealth`, `GameScript::arpgGivePlayerXp` |
+
 ## Bossowie — smoki i Kruk (gałąź bossowie)
 
 | Co | Gdzie w kodzie |
@@ -345,6 +353,7 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)
 - W trybie ARPG krajobraz jest rysowany bez odrzucania tylnych ścian (czarne przekroje) — kamera w zboczu dawała czarny ekran; teraz w takim wypadku wewnętrzna strona bliżej niż postać nie jest rysowana (arpgPlayer.w = 1 + odległość)
 - DynamicWorld::sweep to kula opuszczana pionowo (CollisionWorld::raySweep liczy trafienie z wysokości) — do testu ciała na polu siatki ArpgNav; poziomo nie używać
+- Rozdział gry: zmienna skryptów KAPITEL (1–6). Doświadczenie za zabicie: ZS_Dead daje poziom ofiary × XP_PER_VICTORY (10) przez B_GivePlayerXP (ta sama funkcja wypisuje „Doświadczenie +”). Czerwona poświata wokół postaci: spellFX_INCOVATION_RED (cząsteczki INVOCATION_RED na kości BIP01, czerwone światło, zapętlony dźwięk SFX_Circle)
 - Faza 0: stałej kamery ARPG nie da się zrobić skryptami (CAMERA.DAT, instancje CCamSys: CamModNormal, CamModMelee…)
 
 ### Grafiki z gry (Textures.vdf) i tekst
