@@ -1,5 +1,6 @@
 #include "playercontrol.h"
 #include "game/arpgboss.h"
+#include "game/arpgelite.h"
 
 #include <algorithm>
 #include <cmath>
@@ -809,8 +810,10 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgTickLock(*pl);  // Diathic: lock on a target
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
     arpgKeepOut(*pl, dtF);
-    if(w!=nullptr)
+    if(w!=nullptr) {
       ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
+      ArpgElite::tick(*w, *pl);  // Diathic: groups with an elite leader, its experience
+      }
     arpgTickChill(*pl);
     }
   else

@@ -146,3 +146,10 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Decyzja: przechył tylko w ostrym skręcie, w stronę skrętu; bieg w jednym kierunku bez przechyłu
 - Wartości: opóźniony kierunek dogania bohatera 3/s, próg 25°, najwięcej 14,5° (`ArpgLean*` w playercontrol.h); skręt o 90° ≈ 11° przez ~0,6 s, o 45° ledwo widać, małe poprawki kierunku bez przechyłu
 - Do testu: bieg S, A, D, W i po skosie — postać pionowo; skręt W → D i W → A w biegu — przechył w stronę skrętu i powrót; ruch na klik po ścieżce — bez kołysania; czy strona przechyłu dobra (jeśli odwrotnie — zmienić znak)
+
+## Potwory: rozdziały, czerwona aura, elity (2026-11-01, gałąź poprawki-potwory-elity)
+- Użytkownik: ataki z czerwoną aurą u potworów jak ork elita, jaszczuroludzie, trolle — nieparowalne, zablokowane zabierają od razu 3 ładunki bloku; życie i obrażenia potworów +15% na rozdział; elitarne potwory
+- Decyzje (odpowiedzi 2026-11-01): elity = grupy z dowódcą; aura = te trzy + podobne (cieniostwory, golemy, demony); skalowanie składane (×1,15 za rozdział); bossowie też skalowani
+- Wartości (`ArpgElite` w common/game/arpgelite.h): rozdział ×1,15 (rozdział 6 ≈ ×2,01; z ×1,2 życia potworów ≈ ×2,41); aura co 6–10 s, dowódca 4–7 s, ostrzeżenie ≥ 0,8 s, gaśnie po 4 s bez ataku, blok = 3 ładunki; grupa: łańcuch ≤ 15 m, 2–8 potworów, 25% grup z dowódcą; dowódca: życie ×3, obrażenia ×1,5, model ×1,15, doświadczenie ×3; reszta grupy ×1,25 obrażeń, dopóki dowódca żyje (40 m)
+- Ataki bossów z ostrzeżeniem na ziemi bez zmian (część życia bohatera, rośnie razem z nim); skalowane są ich życie i zwykłe ciosy
+- Do testu: konsola Marvina `insert Troll` / `OrcElite_Roam` / `Draconian` — aura, potem cios: blok zabiera 3 ładunki, parowanie nie działa, unik działa; dźwięk aury nie męczy; grupy w świecie (wilki, orkowie w Górniczej Dolinie; co czwarta grupa ma dowódcę) — dowódca większy, etykieta „(elita)”, więcej życia, po zabiciu „Doświadczenie +”; zmiana rozdziału — życie potworów rośnie (pasek życia u góry); stary zapis wczytuje się bez zmian życia w rozdziale 1; czy elity nie za częste / za mocne w rozdziale 1

@@ -3594,6 +3594,23 @@ static std::string skillsKey() {
   return ArpgKeys::keyName(ArpgKeys::key(ArpgKeys::Skills));
   }
 
+int32_t GameScript::arpgChapter() {
+  // Diathic: monsters stronger chapter by chapter (ArpgElite::ChapterMul)
+  if(arpgKapitel==nullptr)
+    arpgKapitel = vm.find_symbol_by_name("KAPITEL");
+  if(arpgKapitel==nullptr || arpgKapitel->type()!=zenkit::DaedalusDataType::INT)
+    return 1;
+  return std::clamp(arpgKapitel->get_int(), 1, 6);
+  }
+
+void GameScript::arpgGivePlayerXp(int32_t xp) {
+  // Diathic: an elite leader killed (ArpgElite::LeaderXp): the rest of its experience, as a quest gives it
+  auto* fn = vm.find_symbol_by_name("B_GIVEPLAYERXP");
+  if(fn==nullptr || xp<=0 || vm.global_hero()==nullptr || vm.global_hero()->get_instance()==nullptr)
+    return;
+  vm.call_function<void>(fn, xp);
+  }
+
 void GameScript::arpgScanTeachers() {
   // which choice functions teach: calls of B_Teach* (and for weapons the constant arguments of B_TeachFightTalentPercent:
   // talent, percent, the teacher's maximum)
