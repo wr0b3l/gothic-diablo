@@ -10,6 +10,8 @@
 #include <unordered_set>
 
 #include "game/arpgmapdata.h"
+#include "game/arpgteleport.h"
+#include "world/waypoint.h"
 #include "game/gamesession.h"
 #include "game/inventory.h"
 #include "game/playercontrol.h"
@@ -48,11 +50,29 @@ void ArpgWorldMap::setOpen(bool o) {
   open     = o;
   dragging = false;
   editPin  = -1;
+  tpMode   = false;
+  tpHits.clear();
   layersAt = 0; // read the maps of the hero again
   if(open) {
     zoom = 1.f;
     pan  = Vec2(0.5f,0.5f);
     }
+  }
+
+void ArpgWorldMap::openTeleport(int slot) {
+  setOpen(true);
+  tpMode = true;
+  tpSlot = slot;
+  tpPick = size_t(-1);
+  }
+
+bool ArpgWorldMap::takeTeleportPick(size_t& cls, int& slot) {
+  if(tpPick==size_t(-1))
+    return false;
+  cls    = tpPick;
+  slot   = tpSlot;
+  tpPick = size_t(-1);
+  return true;
   }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -365,6 +385,8 @@ void ArpgWorldMap::paint(Painter& p, const Ctx& c) {
     const std::string txt = ArpgMenu::gtxt("Nie ma mapy tego miejsca");
     auto ts = big.textSize(txt);
     big.drawText(p, (c.w-ts.w)/2, c.h/2, txt);
+    if(tpMode)
+      paintTeleport(p, c, nullptr, Rect());
     return;
     }
   if(layer>=layers.size())
@@ -375,6 +397,8 @@ void ArpgWorldMap::paint(Painter& p, const Ctx& c) {
     const std::string txt = ArpgMenu::gtxt("Nie da się wczytać mapy");
     auto ts = big.textSize(txt);
     big.drawText(p, (c.w-ts.w)/2, c.h/2, txt);
+    if(tpMode)
+      paintTeleport(p, c, nullptr, Rect());
     return;
     }
   const Rect r = mapRect(c, *tex);
@@ -442,6 +466,13 @@ void ArpgWorldMap::paint(Painter& p, const Ctx& c) {
     drawHero(p, a, b-a, s);
   }
 
+  if(tpMode) {
+    paintTeleport(p, c, &L, r);
+    hotPin  = -1;
+    hotNpc  = nullptr;
+    hotMark = nullptr;
+    }
+
   // tooltip: marker / pin
   auto tooltip = [&](const std::string& txt) {
     if(txt.empty())
@@ -501,12 +532,110 @@ void ArpgWorldMap::paint(Painter& p, const Ctx& c) {
 
   // help
   {
-    const std::string txt = ArpgMenu::gtxt(editPin>=0
+    const std::string txt = ArpgMenu::gtxt(tpMode
+      ? "LPM na znaczniku albo na liście: teleport   LPM: przesuń   Kółko: przybliż   Esc: zamknij"
+      : editPin>=0
       ? "Pisz opis pinezki, Enter: gotowe"
       : "LPM: przesuń   Kółko: przybliż   PPM: pinezka (na pinezce: usuń)   LPM na pinezce: opis   M / Esc: zamknij");
     auto ts = fnt.textSize(txt);
     fnt.drawText(p, (c.w-ts.w)/2, c.h-int(16.f*s), txt);
   }
+  }
+
+void ArpgWorldMap::paintTeleport(Painter& p, const Ctx& c, const Layer* L, const Rect& r) {
+  // Diathic: "Runa teleportacji": markers of the places in this world (click = teleport) and the list of all
+  // places of the runes the hero has on the right; a place in another world is dimmed with the name of that world
+  tpHits.clear();
+  const float   s    = c.scale;
+  auto          fnt  = Resources::font(s);
+  auto          hiF  = Resources::font(Resources::FontType::Hi, s);
+  auto          dimF = Resources::font(Resources::FontType::Disabled, s);
+  auto          head = Resources::font(Resources::FontType::Hi, s*1.25f);
+  const auto    list = ArpgTeleport::owned(c.world, c.hero);
+  const int32_t cost = ArpgTeleport::cost(c.world);
+  const bool    poor = c.hero.attribute(ATR_MANA)<cost;
+  auto inside = [&](const Rect& h) {
+    return mouse.x>=h.x && mouse.x<h.x+h.w && mouse.y>=h.y && mouse.y<h.y+h.h;
+    };
+
+  std::string hot;
+  if(L!=nullptr && r.w>0) {
+    for(auto& o:list) {
+      if(!ArpgTeleport::here(c.world, *o.dest))
+        continue;
+      const WayPoint* wp = c.world.findPoint(o.dest->wp, false);
+      if(wp==nullptr)
+        continue;
+      const auto  pos = wp->position();
+      const Vec2  sp  = toMap(*L, r, pos.x, pos.z);
+      const float rr  = 9.f*s;
+      const Rect  hr(int(sp.x-rr*1.5f), int(sp.y-rr*1.5f), int(rr*3.f), int(rr*3.f));
+      const bool  hv  = inside(hr);
+      diamond(p, sp.x, sp.y, rr+2.f*s, Color(0.08f,0.03f,0.02f,1.f));
+      diamond(p, sp.x, sp.y, rr, hv ? Color(1.f,0.85f,0.45f,1.f) : Color(0.85f,0.22f,0.12f,1.f));
+      const std::string name = ArpgMenu::gtxt(o.dest->name);
+      auto  ts = fnt.textSize(name);
+      const int tx = int(sp.x+rr+6.f*s), ty = int(sp.y)+ts.h/3;
+      p.setBrush(Brush(Color(0.f,0.f,0.f,0.6f), Painter::Alpha));
+      p.drawRect(tx-int(4.f*s), ty-ts.h, ts.w+int(8.f*s), ts.h+int(6.f*s));
+      (hv ? hiF : fnt).drawText(p, tx, ty, name);
+      tpHits.push_back({hr, o.cls});
+      if(hv)
+        hot = name;
+      }
+    }
+
+  // the list on the right
+  const int pw  = int(340.f*s), pad = int(14.f*s);
+  const int rh  = fnt.pixelSize()+int(12.f*s);
+  const int px  = c.w-pw-int(20.f*s);
+  int       py  = int(70.f*s);
+  const int ph  = pad*2 + head.pixelSize()+int(10.f*s) + rh*int(std::max<size_t>(1, list.size())) + rh;
+  p.setBrush(Brush(Color(0.06f,0.04f,0.03f,0.88f), Painter::Alpha));
+  p.drawRect(px, py, pw, ph);
+  py += pad+head.pixelSize();
+  head.drawText(p, px+pad, py, ArpgMenu::gtxt("Teleportacja"));
+  {
+    char txt[32] = {};
+    std::snprintf(txt, sizeof(txt), "Mana: %d", int(cost));
+    auto& f  = poor ? Resources::font(Resources::FontType::Red, s) : fnt;
+    auto  ts = f.textSize(txt);
+    f.drawText(p, px+pw-pad-ts.w, py, txt);
+  }
+  py += int(10.f*s);
+  if(list.empty()) {
+    dimF.drawText(p, px+pad, py+rh-int(6.f*s), ArpgMenu::gtxt("Brak run teleportacji"));
+    }
+  for(auto& o:list) {
+    const bool here = ArpgTeleport::here(c.world, *o.dest);
+    const Rect row(px+pad/2, py, pw-pad, rh);
+    std::string name = ArpgMenu::gtxt(o.dest->name);
+    if(here) {
+      const bool hv = inside(row);
+      if(hv) {
+        p.setBrush(Brush(Color(0.55f,0.42f,0.22f,0.6f), Painter::Alpha));
+        p.drawRect(row.x, row.y, row.w, row.h);
+        hot = name;
+        }
+      (hv ? hiF : fnt).drawText(p, px+pad, py+rh-int(6.f*s), name);
+      tpHits.push_back({row, o.cls});
+      } else {
+      name += ArpgMenu::gtxt(std::string(" (")+std::string(o.dest->worldName)+")");
+      dimF.drawText(p, px+pad, py+rh-int(6.f*s), name);
+      }
+    py += rh;
+    }
+  dimF.drawText(p, px+pad, py+rh-int(6.f*s), ArpgMenu::gtxt("Nowe miejsca: podnieś runę teleportacji"));
+
+  if(!hot.empty()) {
+    const std::string txt = hot + ArpgMenu::gtxt(poor ? " - za mało many" : " - LPM: teleport");
+    auto ts = fnt.textSize(txt);
+    const int x = std::min(mouse.x+int(14.f*s), c.w-ts.w-int(10.f*s));
+    const int y = mouse.y+int(22.f*s);
+    p.setBrush(Brush(Color(0.f,0.f,0.f,0.75f), Painter::Alpha));
+    p.drawRect(x-int(6.f*s), y-ts.h-int(4.f*s), ts.w+int(12.f*s), ts.h+int(10.f*s));
+    fnt.drawText(p, x, y, txt);
+    }
   }
 
 void ArpgWorldMap::buildWalls(World& w) {
@@ -652,6 +781,24 @@ bool ArpgWorldMap::mouseDown(MouseEvent& e) {
     return false;
   mouse = e.pos();
   auto d = data();
+
+  if(tpMode) {
+    // Diathic: a place of the teleport rune clicked: the map closes, MainWindow casts it (takeTeleportPick)
+    if(e.button==Event::ButtonLeft) {
+      for(auto& h:tpHits)
+        if(mouse.x>=h.r.x && mouse.x<h.r.x+h.r.w && mouse.y>=h.r.y && mouse.y<h.r.y+h.r.h) {
+          const size_t cls  = h.cls;
+          const int    slot = tpSlot;
+          setOpen(false);
+          tpPick = cls;
+          tpSlot = slot;
+          Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
+          return true;
+          }
+      } else {
+      return true; // no pins in the teleport mode
+      }
+    }
 
   for(size_t i=0; i<tabRects.size(); ++i) {
     auto& t = tabRects[i];

@@ -1,5 +1,6 @@
 #include "playercontrol.h"
 #include "game/arpgboss.h"
+#include "game/arpgteleport.h"
 
 #include <algorithm>
 #include <cmath>
@@ -3156,12 +3157,38 @@ void PlayerControl::arpgSpellKey(uint8_t slot, bool pressed) {
       arpgSpellHeld = false;
     return;
     }
-  if(pl->inventory().currentSpell(uint8_t(slot-3))==nullptr)
+  const Item* spl = pl->inventory().currentSpell(uint8_t(slot-3));
+  if(spl==nullptr)
     return; // empty slot (a rune is put there in the inventory: select it and press the key)
   if(arpgSpellCasting)
     return;
+  if(ArpgTeleport::destOf(*w, *spl)!=nullptr) {
+    // Diathic: one "Runa teleportacji": the map with the places of the runes the hero has (MainWindow)
+    arpgTeleportAsk = int(slot);
+    return;
+    }
   arpgSpellSlot = slot;
   arpgSpellHeld = true;
+  arpgSpellWait = 2.f;
+  arpgSpellTurn = 0;
+  }
+
+void PlayerControl::arpgTeleportTo(size_t cls, int slot) {
+  // Diathic: the place chosen on the map: its rune on the key (Gothic's slot), then cast like any spell
+  auto w  = Gothic::inst().world();
+  auto pl = w!=nullptr ? w->player() : nullptr;
+  if(pl==nullptr || slot<3 || slot>10 || pl->itemCount(cls)==0 || arpgSpellCasting)
+    return;
+  const Item* cur = pl->inventory().currentSpell(uint8_t(slot-3));
+  if(cur==nullptr || cur->clsId()!=cls) {
+    if(pl->weaponState()==WeaponState::Mage)
+      pl->closeWeapon(true); // the old rune out of the hand first
+    pl->useItem(cls, uint8_t(slot), false);
+    }
+  if(pl->inventory().currentSpell(uint8_t(slot-3))==nullptr)
+    return;
+  arpgSpellSlot = uint8_t(slot);
+  arpgSpellHeld = false; // a teleport is cast at once
   arpgSpellWait = 2.f;
   arpgSpellTurn = 0;
   }

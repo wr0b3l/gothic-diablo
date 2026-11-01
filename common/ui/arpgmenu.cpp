@@ -1,4 +1,5 @@
 #include "game/arpgkeys.h"
+#include "game/arpgteleport.h"
 #include "arpgmenu.h"
 
 #include <Tempest/Application>
@@ -1083,8 +1084,11 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
   const int ind   = f.small->pixelSize()+int(4*k);
   const int rows  = std::max(1, (cr.y+cr.h-infoMin-int(10*k)-ind-y+gap)/(cs+gap));
 
-  struct Cell { const Item* it; size_t cls; int32_t count; bool eq; };
+  struct Cell { const Item* it; size_t cls; int32_t count; bool eq; bool tp = false; };
   std::vector<Cell> list;
+  int  tpAt   = -1;    // Diathic: the teleport runes are one "Runa teleportacji" (ArpgTeleport)
+  int  tpKnow = 0;
+  bool infoTp = false;
   const size_t goldId = [&]() -> size_t {
     if(wrld!=nullptr)
       if(auto g = wrld->script().goldId())
@@ -1097,6 +1101,23 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
       continue;
     if(cat!=0 && itemCategory(itm)!=cat)
       continue;
+    if(wrld!=nullptr && ArpgTeleport::destOf(*wrld, itm)!=nullptr) {
+      // one cell for all of them: the one on a key stands for the others (LPM / key 3-0 put it on a key)
+      ++tpKnow;
+      if(tpAt<0) {
+        tpAt = int(list.size());
+        list.push_back({&itm, itm.clsId(), 1, it.isEquipped(), true});
+        } else {
+        auto& t = list[size_t(tpAt)];
+        t.count += 1;
+        if(it.isEquipped() && !t.eq) {
+          t.it  = &itm;
+          t.cls = itm.clsId();
+          t.eq  = true;
+          }
+        }
+      continue;
+      }
     list.push_back({&itm, itm.clsId(), int32_t(it.count()), it.isEquipped()});
     }
   const int totalRows = int((list.size()+cols-1)/cols);
@@ -1118,6 +1139,7 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
     if(hv) {
       hoverCls = c.cls;
       info     = c.it;
+      infoTp   = c.tp;
       }
     }
   if(maxScroll>0) {
@@ -1127,11 +1149,18 @@ void ArpgMenu::paintEquip(Painter& p, const Fonts& f, const Rect& cl, const Rect
     }
 
   const int infoY = y+rows*(cs+gap)+ind+int(6*k);
-  paintInfo(p, f, Rect(cr.x-int(14*k), infoY, cr.w+int(28*k), cr.y+cr.h-infoY), items, info);
+  if(infoTp) {
+    char extra[96] = {};
+    std::snprintf(extra, sizeof(extra), "%s%d", gtxt("Znane miejsca (wybór na mapie): ").c_str(), tpKnow);
+    paintInfo(p, f, Rect(cr.x-int(14*k), infoY, cr.w+int(28*k), cr.y+cr.h-infoY), items, info, extra, {},
+              gtxt("Runa teleportacji"));
+    } else {
+    paintInfo(p, f, Rect(cr.x-int(14*k), infoY, cr.w+int(28*k), cr.y+cr.h-infoY), items, info);
+    }
   }
 
 void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRenderer& items, const Item* it,
-                         std::string_view extra, std::string_view help) const {
+                         std::string_view extra, std::string_view help, std::string_view title) const {
   // the description on a sheet of the game's letters
   letter(p, r, 1.f);
   const int pad = int(28*k);  // the burnt edge
@@ -1145,8 +1174,9 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
   const int mw = r.h-2*pad;          // model on the right
   const int tw = r.w-2*pad-mw-int(8*k);
   int y = r.y+pad-int(4*k);
-  auto& fName = f.sub->textSize(it->description()).w<=tw ? *f.sub : *f.body;
-  text(p, fName, r.x+pad, y, it->description());
+  const std::string_view name = title.empty() ? it->description() : title;
+  auto& fName = f.sub->textSize(name).w<=tw ? *f.sub : *f.body;
+  text(p, fName, r.x+pad, y, name);
   y += fName.pixelSize()+int(6*k);
   const int bottom = r.y+r.h-pad+int(6*k) - (extra.empty() ? 0 : f.redS->pixelSize()+int(4*k));
   for(size_t i=0; i<Item::MAX_UI_ROWS; ++i) {

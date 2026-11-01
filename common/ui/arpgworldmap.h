@@ -43,6 +43,11 @@ class ArpgWorldMap final {
 
     bool isOpen() const { return open; }
     void setOpen(bool o);
+    // Diathic: "Runa teleportacji" (ArpgTeleport): the map with the places of the hero's teleport runes; a click on one
+    // closes the map and leaves the pick (the rune of that place and the key it was used from)
+    void openTeleport(int slot);
+    bool isTeleport() const { return open && tpMode; }
+    bool takeTeleportPick(size_t& cls, int& slot);
     void paint(Tempest::Painter& p, const Ctx& c);         // parchment (when open)
     void paintOverlay(Tempest::Painter& p, const Ctx& c);  // the overlay over the game
 
@@ -114,5 +119,12 @@ class ArpgWorldMap final {
     Tempest::Rect                 lastRect;       // where the map was drawn
     std::vector<Tempest::Rect>    tabRects;
     int                           editPin = -1;   // pin whose note is being typed
+    // Diathic: teleport mode
+    struct TpHit { Tempest::Rect r; size_t cls = 0; };
+    bool                          tpMode  = false;
+    int                           tpSlot  = -1;
+    size_t                        tpPick  = size_t(-1);
+    std::vector<TpHit>            tpHits;          // markers and rows of the list that can be clicked
+    void                          paintTeleport(Tempest::Painter& p, const Ctx& c, const Layer* L, const Tempest::Rect& r);
     float                         lastScale = 1.f;
   };

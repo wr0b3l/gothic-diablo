@@ -176,7 +176,7 @@ class ArpgMenu final {
     void   turnTo    (bool open, int tree);
     int    skillEntry(Tempest::Painter& p, const Fonts& f, InventoryRenderer& items, int x, int y, int w, ArpgSkills::Active s);
     void   paintInfo (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& r, InventoryRenderer& items, const Item* it,
-                      std::string_view extra = {}, std::string_view help = {}) const;
+                      std::string_view extra = {}, std::string_view help = {}, std::string_view title = {}) const;
     void   paintTrade(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
     void   paintLog  (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right);
     void   tradeMove (bool fromOther, size_t cls, int32_t count, bool equipped, Npc& pl);

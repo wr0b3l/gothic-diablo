@@ -24,6 +24,7 @@
 #include "resources.h"
 #include "game/arpgkeys.h"
 #include "graphics/arpggfx.h"
+#include "ui/arpgui.h"
 #include "ui/arpgmenu.h"
 #include "build.h"
 
@@ -783,6 +784,24 @@ void GameMenu::modernActivate() {
   update();
   }
 
+// Diathic: the rows of "Grafika Diathic": the graphics agent's (ArpgGfx) and the interface's (ArpgUi, 2026-11-01)
+static std::vector<const ArpgGfx::Option*> gfxPageRows() {
+  std::vector<const ArpgGfx::Option*> ret;
+  for(const auto& o:ArpgGfx::options())
+    ret.push_back(&o);
+  for(const auto& o:ArpgUi::options())
+    ret.push_back(&o);
+  return ret;
+  }
+
+static int gfxRowValue(const ArpgGfx::Option& o) {
+  return ArpgUi::owns(o.ini) ? ArpgUi::value(o.ini) : ArpgGfx::value(o.ini);
+  }
+
+static int gfxRowLevels(const ArpgGfx::Option& o) {
+  return ArpgUi::owns(o.ini) ? int(o.levels.size()) : ArpgGfx::levelsSupported(o);
+  }
+
 // "Grafika Diathic": the table ArpgGfx::options() of the graphics agent (a new row there = a new row here);
 // click / Enter / right = the next value, left = the previous one, saved in [DIATHIC] of Gothic.ini
 void GameMenu::paintModernGfx(Painter& p, GthFont& fSel, GthFont& fInfo,
@@ -806,7 +825,7 @@ void GameMenu::paintModernGfx(Painter& p, GthFont& fSel, GthFont& fInfo,
   fInfo.drawText(p, x0, y+fInfo.pixelSize(), ArpgMenu::gtxt("Kliknij, Enter albo strzałki w lewo / w prawo - zmiana wartości"));
   y += fInfo.pixelSize() + int(22.f*k);
 
-  const auto& opts  = ArpgGfx::options();
+  const auto  opts  = gfxPageRows();
   const int   count = int(opts.size());
   const int   rowH  = int(38.f*k);
   const int   rowW  = int(float(W)*0.46f);
@@ -823,10 +842,10 @@ void GameMenu::paintModernGfx(Painter& p, GthFont& fSel, GthFont& fInfo,
     const int tx = x0 + (hi ? int(8.f*k) : 0);
     const int ty = y + rowH/2 + f.pixelSize()/3;
     if(i<count) {
-      const auto& o = opts[size_t(i)];
+      const auto& o = *opts[size_t(i)];
       f.drawText(p, tx, ty, ArpgMenu::gtxt(o.name));
-      const int   v      = ArpgGfx::value(o.ini);
-      const bool  locked = o.levels.size()>1 && ArpgGfx::levelsSupported(o)<=1;
+      const int   v      = gfxRowValue(o);
+      const bool  locked = o.levels.size()>1 && gfxRowLevels(o)<=1;
       std::string val    = (v>=0 && size_t(v)<o.levels.size()) ? std::string(o.levels[size_t(v)]) : std::to_string(v);
       if(locked)
         val += " (karta nie obsługuje)";
@@ -845,28 +864,28 @@ void GameMenu::paintModernGfx(Painter& p, GthFont& fSel, GthFont& fInfo,
   // what the selected row does, bottom left
   std::string_view info;
   if(gfxSel<count)
-    info = opts[size_t(gfxSel)].info;
+    info = opts[size_t(gfxSel)]->info;
   else if(gfxSel==count)
-    info = "Wszystkie ustawienia grafiki Diathic na wartości domyślne";
+    info = "Wszystkie ustawienia tej strony na wartości domyślne";
   if(!info.empty())
     fInfo.drawText(p, x0, H-int(36.f*k), ArpgMenu::gtxt(info));
   }
 
 void GameMenu::modernGfxActivate(int dir) {
-  const auto& opts  = ArpgGfx::options();
+  const auto  opts  = gfxPageRows();
   const int   count = int(opts.size());
   if(gfxSel<count) {
-    const auto& o = opts[size_t(gfxSel)];
-    const int   n = ArpgGfx::levelsSupported(o);
+    const auto& o = *opts[size_t(gfxSel)];
+    const int   n = gfxRowLevels(o);
     if(n>1) {
       const int step = (dir==0 ? 1 : dir);
-      Gothic::settingsSetI("DIATHIC", o.ini, (ArpgGfx::value(o.ini) + step + n) % n);
+      Gothic::settingsSetI("DIATHIC", o.ini, (gfxRowValue(o) + step + n) % n);
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
       }
     }
   else if(dir==0 && gfxSel==count) {
-    for(const auto& o:opts)
-      Gothic::settingsSetI("DIATHIC", o.ini, o.def);
+    for(const auto* o:opts)
+      Gothic::settingsSetI("DIATHIC", o->ini, o->def);
     Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_SELECT"));
     }
   else if(dir==0) {
@@ -1302,7 +1321,7 @@ void GameMenu::onKeyboard(KeyCodec::Action key) {
     }
   if(modern && modernPage==2) {
     // Diathic: "Grafika Diathic"
-    const int rows = int(ArpgGfx::options().size())+2;
+    const int rows = int(gfxPageRows().size())+2;
     if(key==KeyCodec::Forward || key==KeyCodec::Back) {
       Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
       gfxSel = (gfxSel + (key==KeyCodec::Forward ? rows-1 : 1)) % rows;

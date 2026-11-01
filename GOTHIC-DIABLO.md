@@ -301,6 +301,14 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Rozmowa przed walką: człowiek z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie jest wrogiem, dopóki nie walczy z bohaterem — zwykły kursor, LPM = rozmowa (broń chowana), skrypt po rozmowie zaczyna walkę; Ctrl + LPM dalej atakuje | `PlayerControl::arpgIsHostile`, `GameScript::arpgEnemyOverride` |
 | Przełączniki i dźwignie bez nazwy (świątynia Adanosa, ukryte przełączniki): wskazywalne kursorem z etykietą „Przełącznik”, LPM = użycie; Z ich nie pokazuje (ukryte zostają ukryte) | `PlayerControl::arpgUsableMob`, `arpgVisibleObjects`, `Interactive::arpgIsSwitch`, `arpgLabelName` |
 
+## Poprawki: pasek, runy, teleport (gałąź poprawki-pasek-teleport)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| „Rozmiar interfejsu” 80–160% (domyślnie 130%) na stronie „Grafika Diathic” (własna tabela obok tabeli agenta grafiki): pasek umiejętności, paski życia i many, napisy na pasku; pasek zajmuje najwyżej 70% szerokości ekranu (przy małej rozdzielczości skala się zmniejsza) | `ArpgUi::options`, `ArpgUi::hudScale` (common/ui/arpgui.cpp), `gfxPageRows` (gamemenu.cpp), `MainWindow::arpgHudScale`, `arpgBarSlot` |
+| Runy i zwoje na pasku 3–0: powiększony znak z twarzy runy (część tekstury ITAR* z modelu, najmniejsza), bez znaku — model jak dotąd; po najechaniu na slot: nazwa, mana, klawisz (umiejętność: nazwa, stan, odnowienie; mikstura: nazwa, sztuki); koszt many teleportów na pasku (SPL_COST_TELEPORT) | `ArpgUi::runeFace`, `MainWindow::paintArpgBar` / `paintArpgBarOverlay`, `GameScript::arpgSpellCost` |
+| Jedna „Runa teleportacji”: runy teleportu w plecaku jako jedno pole (na klawiszu albo pierwsza zastępuje resztę, liczba = znane miejsca); jej klawisz 3–0 otwiera dużą mapę w trybie teleportu: znaczniki miejsc w tym świecie (klik = runa tego miejsca na klawisz i rzut), z prawej lista wszystkich znanych miejsc, z innego świata wyszarzone z nazwą świata; nowe miejsce = podniesienie jego runy; Esc zamyka | `ArpgTeleport` (common/game/arpgteleport.cpp), `PlayerControl::arpgSpellKey` (`arpgTeleportAsk`), `arpgTeleportTo`, `ArpgWorldMap::openTeleport` / `paintTeleport`, `MainWindow::tick`, `ArpgMenu` (plecak, `paintInfo` z tytułem) |
+
 ## Faza 12 — grafika (gałąź faza12-grafika, równolegle z rozgrywką)
 
 Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury, światło, obraz, efekty. Komplet zasad, podział plików i stan: [`docs/plan/grafika.md`](docs/plan/grafika.md).
@@ -382,6 +390,8 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Dziennik: B_LogEntry / Log_AddEntry z tematem TOPIC_*TEACHER / *TRADER (bez TOPIC_ADDON_BANDITTRADER) w funkcji dialogu (C_Info.information) → C_Info.npc; 141 wpisów, 131 z postacią; gdy wpis wymienia inne imię (np. Skip o Garecie) — ta postać
 - Klawisze w Gothic.ini: kody DIK (0x2d = X, 0x13 = R, 0x2e = C, 0x39 = Spacja, 0x32 = M…), przyciski myszy 0x0c02 lewy, 0x0d02 prawy, 0x0e02 środkowy; klawisze ARPG w sekcji [DIATHIC]; keyShowMap = M → skrypt playerHotKeyScreenMap (w trybie ARPG M przejmuje nasza mapa); skradanie w Gothicu wymaga talentu (Npc::canSneak = TALENT_SNEAK)
 - Klawisze użytkownika: Gothic II\system\Gothic.ini — Q/E obrót, A/D krok w bok, Spacja + środkowy przycisk broń, Alt / prawy Ctrl skok, End + prawy przycisk parada, lewy Ctrl + lewy przycisk akcja, Tab + Backspace ekwipunek, X skradanie, keyLook = R, keyLookFP = F; gra\dane\Gothic.ini — keySlow = X, keySneak = prawy Shift, keyShowStatus = C, B
+
+- Runy teleportu (Spell_Teleport_Alle.d): Spell_Cast_* robi AI_Teleport na punkt (HAFEN, KLOSTER, BIGFARM, XARDAS, NW_TAVERNE_04, LEVELCHANGE, NW_PAL_SECRETCHAMBER; w Górniczej Dolinie SPAWN_MOLERAT02_SPAWN01, OC_MAGE_CENTER, DT_E3_03), w innym świecie tylko napis; wspólny koszt SPL_COST_TELEPORT (10); ItRu_Teleport_3 nieużywana (bez nazwy)
 
 ### Raporty błędów
 - Build Windows (MinGW, RelWithDebInfo) nie jest strippowany: exe z wydania ma pełne DWARF (~0,5 GB), więc adres = baza w pliku (0x140000000) + przesunięcie → `x86_64-w64-mingw32-addr2line -f -C -e Gothic2Notr.exe`. Skrót: `dev/symbolizuj.sh <kontekst.txt | raport.zip> [tag]` (tag z linii „exe:” raportu, exe pobierane z wydania przez REST)
