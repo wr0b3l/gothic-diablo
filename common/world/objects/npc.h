@@ -212,7 +212,15 @@ class Npc final {
     bool       arpgBlockWorn(const Npc& tg) const; // Diathic: its block is worn out against the hero (AI: no parade)
     int32_t    arpgBlockMax() const;       // Diathic: ArpgStatus::BlockCharges + Twarda garda
     bool       arpgIsBeast() const;        // Diathic: a monster, animal or orc in the ARPG mode (ArpgStatus::MonsterHpMul)
-    void       arpgSyncBeastHp();          // Diathic: its life x MonsterHpMul in the ARPG mode, Gothic's in the classic one
+    void       arpgSyncBeastHp();          // Diathic: its life x arpgHpWantMul in the ARPG mode, Gothic's in the classic one
+    float      arpgHpWantMul() const;      // Diathic: MonsterHpMul x the chapter x an elite leader (1: not raised)
+    float      arpgDmgOutMul() const;      // Diathic: its damage: MonsterDmgMul x the chapter x leader / group
+    // Diathic: groups with an elite leader (ArpgElite): checked once, the group id, the leader; saved
+    bool       arpgEliteRolled() const { return arpgEliteChecked; }
+    void       arpgSetEliteRolled() { arpgEliteChecked = true; }
+    void       arpgSetPack(uint32_t id, bool leader) { arpgPack = id; arpgLeader = leader; }
+    bool       arpgIsEliteLeader() const;
+    bool       arpgRedHit(uint64_t now) const; // Diathic: its attack with a red aura is under way (ArpgElite)
     bool       arpgBlockHeld() const;
     Npc*       arpgTakeRiposte() { auto r = arpgRiposteTg; arpgRiposteTg = nullptr; return r; } // Diathic: Riposta
     // Diathic: a skill of the weapon trees deals damage: x mul; knock: throws down; stagger: ms of a stagger; bleed: part
@@ -636,6 +644,21 @@ class Npc final {
     int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hits the block still holds (below 0: damage leaks); everyone
     uint64_t  arpgBlockRegen  = 0;     // hero: the next charge back
     int32_t   arpgHpBase      = 0;     // Diathic: Gothic's max life before ArpgStatus::MonsterHpMul (0 = not raised); saved
+    float     arpgHpMul       = 1.f;   // Diathic: the multiplier of the life applied now (arpgHpWantMul); saved
+    bool      arpgEliteChecked = false; // Diathic: ArpgElite looked for its group; saved
+    bool      arpgLeader      = false; // Diathic: an elite leader; saved
+    uint32_t  arpgPack        = 0;     // Diathic: its group with a leader (0: none); saved
+    int8_t    arpgRedKind     = -1;    // Diathic: attacks with a red aura by its kind (-1: not checked)
+    mutable int8_t arpgBossInst = -1;       // Diathic: a boss instance (life by the chapter too; -1: not checked)
+    uint64_t  arpgRedNext     = 0;     // Diathic: the next red aura (0: not in a fight with the hero)
+    uint64_t  arpgRedArmed    = 0;     // Diathic: the aura on since (0: off)
+    uint64_t  arpgRedSwingEnd = 0;     // Diathic: the red attack is under way until
+    const VisualFx* arpgRedFx = nullptr;
+    bool      arpgRedCapable();
+    void      arpgTickRed();
+    void      arpgRedOff();
+    void      arpgOnAttackStart();
+    bool      arpgIsBossInst() const;
     float     arpgDmgScale    = 1.f;   // a hit through the block: part of the damage
     bool      arpgBlockLeak   = false; // a hit through the block: no stumble (the block stays)
     uint64_t  arpgBastionUntil = 0;    // hero: Bastion after a parry

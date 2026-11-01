@@ -188,6 +188,9 @@ class GameScript final {
     // although his guild is hostile to the hero; true also when he does not fight the hero right now
     bool             arpgFakeBandit(const Npc& npc, const Npc& hero);
     bool             arpgEnemyOverride(const Npc& npc, const Npc& hero);
+    // Diathic: the chapter (KAPITEL, 1..6) and experience for the hero with Gothic's message (B_GivePlayerXP)
+    int32_t          arpgChapter();
+    void             arpgGivePlayerXp(int32_t xp);
     std::string_view messageFromSvm(std::string_view id,int voice) const;
     std::string_view messageByName (std::string_view id) const;
     uint32_t         messageTime   (std::string_view id) const;
@@ -533,6 +536,7 @@ class GameScript final {
     zenkit::DaedalusSymbol*                                     B_RefreshAtInsert = nullptr;
     float                                                       tradeValMult = 0.3f;
     zenkit::DaedalusSymbol*                                     spellFxInstanceNames = nullptr;
+    zenkit::DaedalusSymbol*                                     arpgKapitel          = nullptr; // Diathic: KAPITEL
     zenkit::DaedalusSymbol*                                     spellFxAniLetters = nullptr;
     std::string                                                 goldTxt;
     float                                                       viewTimePerChar = 0.5;

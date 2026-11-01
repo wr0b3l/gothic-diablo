@@ -1163,6 +1163,8 @@ void MainWindow::paintFocus(Painter& p, const Focus& focus, const Matrix4x4& vp)
 
 static std::string arpgLabelName(const Focus& f) {
   auto name = f.displayName();
+  if(!name.empty() && f.npc!=nullptr && f.npc->arpgIsEliteLeader())
+    return std::string(name)+ArpgMenu::gtxt(" (elita)"); // Diathic: an elite leader (ArpgElite)
   if(!name.empty() || f.interactive==nullptr)
     return std::string(name);
   // unnamed mob with a script action: Greg's treasure spots (dug up with a pickaxe) or another one
