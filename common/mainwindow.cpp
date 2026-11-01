@@ -5,6 +5,9 @@
 
 #include "game/arpgkeys.h"
 #include "game/arpgboss.h"
+#include "game/arpgskills.h"
+#include "game/arpgteleport.h"
+#include "world/objects/item.h"
 #include "game/savegameheader.h"
 
 #include <Tempest/Except>
@@ -17,6 +20,7 @@
 #include <Tempest/Log>
 #include <cctype>
 
+#include "ui/arpgui.h"
 #include "ui/dialogmenu.h"
 #include "ui/menuroot.h"
 #include "ui/stacklayout.h"
@@ -456,6 +460,10 @@ void MainWindow::mouseDownEvent(MouseEvent &event) {
     arpgCursor      = event.pos();
     arpgCursorValid = true;
     arpgWorldMap.mouseDown(event); // Diathic: the big map takes the mouse
+    size_t tpCls  = 0;
+    int    tpSlot = -1;
+    if(arpgWorldMap.takeTeleportPick(tpCls, tpSlot))
+      player.arpgTeleportTo(tpCls, tpSlot); // Diathic: a place of the teleport rune chosen
     return;
     }
   if(arpgMenu.isOpen()) {
@@ -1718,6 +1726,17 @@ uint64_t MainWindow::tick() {
       arpgWorldMap.setOpen(false);
     }
   if(Camera::isArpgEnabled()) {
+    // Diathic: the key of "Runa teleportacji" pressed: the map with its places (ArpgWorldMap::openTeleport)
+    const int tp = player.arpgTakeTeleportAsk();
+    auto      pl = Gothic::inst().player();
+    if(tp>=0 && pl!=nullptr && !pl->isDead() && !arpgWorldMap.isOpen() && !dialogs.isActive() &&
+       !inventory.isActive() && !document.isActive() && !arpgMenu.isOpen()) {
+      arpgWorldMap.openTeleport(tp);
+      player.arpgStop();
+      clearInput();
+      }
+    }
+  if(Camera::isArpgEnabled()) {
     // Diathic: what the hero sees becomes explored (minimap, big map; saved with the game)
     auto wx = Gothic::inst().world();
     auto pl = Gothic::inst().player();
@@ -2845,8 +2864,16 @@ bool MainWindow::arpgBarVisible() const {
   return pl!=nullptr && !pl->isDead() && Gothic::inst().checkLoading()==Gothic::LoadState::Idle;
   }
 
+float MainWindow::arpgHudScale() const {
+  // Diathic: "Rozmiar interfejsu" (2026-11-01); the bar takes at most 70% of the width
+  const float scale = Gothic::interfaceScale(this)*ArpgUi::hudScale();
+  const float wAll  = (46.f*float(ArpgBarSlots) + 4.f*float(ArpgBarSlots-1) + 32.f)*scale;
+  const float wMax  = 0.7f*float(w());
+  return (wAll>wMax && wAll>0.f) ? scale*wMax/wAll : scale;
+  }
+
 Tempest::Rect MainWindow::arpgBarSlot(int i) const {
-  const float scale = Gothic::interfaceScale(this);
+  const float scale = arpgHudScale();
   const int   s     = int(46.f*scale);
   const int   gap   = std::max(2, int(4.f*scale));
   const int   group = int(16.f*scale);
@@ -3036,7 +3063,7 @@ void MainWindow::paintArpgVitals(Painter& p) {
   auto pl = Gothic::inst().player();
   if(pl==nullptr || barBack==nullptr)
     return;
-  const float    scale = Gothic::interfaceScale(this);
+  const float    scale = arpgHudScale();
   const Rect     s0    = arpgBarSlot(0), sN = arpgBarSlot(ArpgBarSlots-1);
   const int      gap   = int(14.f*scale);
   const int      H     = int(float(s0.h)*0.62f);
@@ -3247,7 +3274,19 @@ void MainWindow::paintArpgBar(Painter& p) {
       }
     auto itm = pl->inventory().currentSpell(k);
     drawSlot(r, ws==WeaponState::Mage && itm!=nullptr && pl->inventory().currentSpellSlot()==k+3);
-    model(r, itm);
+    // Diathic: the sign of the rune / scroll big (its face, ArpgUi::runeFace), otherwise the model
+    const auto face = itm!=nullptr ? ArpgUi::runeFace(*itm) : ArpgUi::RuneFace();
+    if(face.tex!=nullptr) {
+      const float tw  = float(face.tex->w()), th = float(face.tex->h());
+      const float cw  = (face.u1-face.u0)*tw, ch = (face.v1-face.v0)*th;
+      const int   pad = r.w/10;
+      const float fit = std::min(float(r.w-2*pad)/std::max(1.f,cw), float(r.h-2*pad)/std::max(1.f,ch));
+      const int   dw  = int(cw*fit), dh = int(ch*fit);
+      p.setBrush(Brush(*face.tex, Painter::Alpha, ClampMode::ClampToEdge));
+      p.drawRect(r.x+(r.w-dw)/2, r.y+(r.h-dh)/2, dw, dh, face.u0*tw, face.v0*th, face.u1*tw, face.v1*th);
+      } else {
+      model(r, itm);
+      }
   }
   }
 
@@ -3255,7 +3294,7 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
   // over the item models: cooldowns, key names, potion counts
   if(!arpgBarVisible())
     return;
-  const float scale = Gothic::interfaceScale(this);
+  const float scale = arpgHudScale();
   const auto  bar   = player.arpgBar();
   auto&       fnt   = Resources::font(Resources::FontType::Normal,   scale*0.7f);
   auto&       fntD  = Resources::font(Resources::FontType::Disabled, scale*0.7f);
@@ -3340,6 +3379,68 @@ void MainWindow::paintArpgBarOverlay(Painter& p) {
       }
     label(r, key, itm==nullptr);
     }
+
+  // Diathic: the slot under the mouse: what is on it (2026-11-01)
+  if(arpgCursorValid && pl!=nullptr && world!=nullptr) {
+    std::vector<std::string> lines; // cp1250
+    Rect at;
+    for(int k=0; k<2 && lines.empty(); ++k) {
+      const Rect r = arpgBarSlot(ArpgBarPotion+k);
+      if(!r.contains(arpgCursor) || bar.potion[k]==nullptr)
+        continue;
+      at = r;
+      lines.push_back(std::string(bar.potion[k]->description()));
+      lines.push_back(ArpgMenu::gtxt("Sztuk: "+std::to_string(int(bar.potions[k]))));
+      }
+    for(uint8_t k=0; k<8 && lines.empty(); ++k) {
+      const Rect r = arpgBarSlot(ArpgBarSpell+k);
+      if(!r.contains(arpgCursor))
+        continue;
+      at = r;
+      const std::string key = ArpgMenu::gtxt("Klawisz: "+std::to_string((k+3)%10));
+      const auto sk = player.arpgSkillSlot(k);
+      if(sk.skill!=PlayerControl::SkNone) {
+        if(auto nd = ArpgSkills::skillNode(ArpgSkills::Active(sk.skill)))
+          lines.push_back(ArpgMenu::gtxt(nd->name));
+        lines.push_back(ArpgMenu::gtxt(!sk.known ? "Umiejętność - jeszcze nie znasz" :
+                                       (!sk.usable ? "Umiejętność - nie ta broń" : "Umiejętność drzewka")));
+        if(sk.total>0.f)
+          lines.push_back(ArpgMenu::gtxt("Odnowienie: "+std::to_string(int(std::lround(sk.total)))+" s"));
+        lines.push_back(key);
+        break;
+        }
+      const Item* itm = pl->inventory().currentSpell(k);
+      if(itm==nullptr) {
+        lines.push_back(ArpgMenu::gtxt("Pusty - runę albo zwój przypisz w ekwipunku"));
+        lines.push_back(key);
+        break;
+        }
+      const bool tp = ArpgTeleport::destOf(*world, *itm)!=nullptr;
+      lines.push_back(tp ? ArpgMenu::gtxt("Runa teleportacji") : std::string(itm->description()));
+      const int32_t cost = world->script().arpgSpellCost(*itm);
+      if(cost>0)
+        lines.push_back(ArpgMenu::gtxt("Mana: "+std::to_string(int(cost))));
+      if(tp)
+        lines.push_back(ArpgMenu::gtxt("Wybór miejsca na mapie"));
+      lines.push_back(key);
+      }
+    if(!lines.empty()) {
+      auto& f   = Resources::font(Resources::FontType::Normal, scale*0.8f);
+      auto& fH  = Resources::font(Resources::FontType::Hi,     scale*0.8f);
+      const int pad = int(8.f*scale), lh = f.pixelSize()+int(3.f*scale);
+      int tw = 0;
+      for(auto& l:lines)
+        tw = std::max(tw, f.textSize(l).w);
+      const int bw = tw+2*pad, bh = int(lines.size())*lh+2*pad;
+      const int bx = std::clamp(at.x+at.w/2-bw/2, 4, std::max(4, w()-bw-4));
+      const int by = std::max(4, at.y-bh-int(26.f*scale)); // over the experience bar
+      p.setBrush(Brush(Color(0.04f,0.03f,0.02f,0.88f), Painter::Alpha));
+      p.drawRect(bx, by, bw, bh);
+      p.setBrush(Color(1.f));
+      for(size_t i=0; i<lines.size(); ++i)
+        (i==0 ? fH : f).drawText(p, bx+pad, by+pad+int(i+1)*lh-int(3.f*scale), lines[i]);
+      }
+  }
 
   // skill points to spend: a gold line over the bar
   if(auto gs = Gothic::inst().gameSession(); gs!=nullptr && pl!=nullptr) {

@@ -83,6 +83,7 @@ class MainWindow : public Tempest::Window {
     void paintArpgBarOverlay(Tempest::Painter& p);
     bool arpgBarVisible () const;
     Tempest::Rect arpgBarSlot(int i) const;
+    float arpgHudScale() const; // Diathic: the interface scale x "Rozmiar interfejsu" (ArpgUi), the bar fits the screen
     bool arpgLabelRect  (const Focus& f, const Tempest::Matrix4x4& vp, Tempest::Rect& out) const;
     void drawArpgLabel  (Tempest::Painter& p, const Tempest::Rect& r, const Focus& f, bool hi);
     Focus arpgLabelAt   (const Tempest::Point& pos) const;

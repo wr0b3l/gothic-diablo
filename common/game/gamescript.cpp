@@ -1329,6 +1329,14 @@ int32_t GameScript::arpgSpellCost(const Item& it) {
   int32_t v = get(string_frm("SPL_COST_",tag));
   if(v<0)
     v = get(string_frm("STEP_",tag));
+  if(v<0) {
+    // Diathic: all teleports share SPL_COST_TELEPORT (Spell_Teleport_Alle.d)
+    std::string up(tag);
+    for(auto& c:up)
+      c = char(std::toupper(uint8_t(c)));
+    if(up.find("TELEPORT")!=std::string::npos)
+      v = get("SPL_COST_TELEPORT");
+    }
   return v;
   }
 

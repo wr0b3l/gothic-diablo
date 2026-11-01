@@ -129,6 +129,10 @@ class PlayerControl final {
     Npc*  arpgLockTarget() const;                // Diathic: the locked target (Ctrl held 0.4 s, like Dark Souls) or null
     bool  arpgCursorOnEnemy() const;             // Diathic: a living enemy under the mouse cursor (red sword cursor)
     bool  arpgAttackQueued() const;              // an attack waits for its moment (combo window)
+    // Diathic: one "Runa teleportacji" (ArpgTeleport): its key asks MainWindow for the map, the place chosen there
+    // (the rune of that place) goes on the key and is cast
+    int   arpgTakeTeleportAsk() { const int s = arpgTeleportAsk; arpgTeleportAsk = -1; return s; }
+    void  arpgTeleportTo(size_t cls, int slot);
 
   private:
     enum WeaponAction : uint8_t {
@@ -379,6 +383,7 @@ class PlayerControl final {
     float          arpgSpellTurn    = 0;  // s spent turning to the cursor before the cast
     bool           arpgSpellCasting = false; // investing a spell while its key is held
     void           arpgSpellKey(uint8_t slot, bool pressed);
+    int            arpgTeleportAsk  = -1; // Diathic: a teleport rune on this slot (3..10) pressed: the map chooses
     bool           arpgCursorAim(const Npc& pl, Tempest::Vec3& out) const;
     Npc*           arpgNextEnemy(Npc& pl, const Npc* except, float range) const;
     void           arpgTickLock(Npc& pl);
