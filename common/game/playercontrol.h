@@ -297,6 +297,12 @@ class PlayerControl final {
     Focus          arpgPickRaw;            // what is under the cursor (arpgHover is the locked target while locked)
     Tempest::Vec3  arpgGround      = {};
     bool           arpgGroundValid = false;
+    // Diathic: lean in a run only in a sharp turn (Gothic leans by the camera's lag behind the hero)
+    static constexpr float ArpgLeanFollow  = 3.f;   // 1/s: the delayed heading catches up with the hero's
+    static constexpr float ArpgLeanMinTurn = 25.f;  // deg between the two: below = no lean
+    static constexpr float ArpgLeanMax     = 14.5f; // deg, as in Gothic
+    float          arpgLeanHeading = 0;
+    uint64_t       arpgLeanTick    = 0;
 
     Focus          arpgPick();
     ArpgStep       arpgClickTick(Npc& pl, float& rot, int& rotation, bool allowRot, uint64_t dt);
@@ -427,6 +433,7 @@ class PlayerControl final {
     void           quitPicklock(Npc& pl);
     void           setPos(std::array<float,3> a, uint64_t dt, float speed);
     void           assignRunAngle(Npc& pl, float rotation, uint64_t dt);
+    float          arpgRunLean(Npc& pl, float heading, float dtF);
     void           setAnimRotate (Npc& pl, float rotation, int anim, bool force, uint64_t dt);
     void           processAutoRotate(Npc& pl, float& rot, uint64_t dt);
 

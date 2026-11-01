@@ -283,6 +283,12 @@ Decyzje 2026-10-19: obrażenia bohatera z ochroną procentowo; umiejętności dr
 | Stwory i orkowie nie zawsze są wrogami: przyzwańcy bohatera i ognik (członkowie drużyny, ATT_FRIENDLY), owce (przyjazne gildii — zabicie to przestępstwo na farmach), przyjazny ork Ur-Shak (GIL_FRIENDLY_ORC, gdy nie jest wrogi) i orkowie dowódcy z rozmową przed walką (AIV_EnemyOverride + dialog) = zwykły kursor, LPM = rozmowa, nie są celem automatycznego ataku, locka ani umiejętności; Ctrl + LPM nadal atakuje; ten, kto walczy z bohaterem, jest wrogiem; chrząszcze (neutralne) i uśpieni kamienni strażnicy / szkielety w krypcie (override bez dialogu) dalej atakowane LPM | `arpgIsHostile`, `GameScript::arpgEnemyOverride` |
 | Ctrl + LPM na ogłuszonym człowieku = podejście i cios dobijający (broń biała); zwykłe LPM = przeszukanie (wcześniej dobić nie dało się wcale) | `PlayerControl::arpgMouseDown` (`finish`), `arpgClickTick` (`Attack`) |
 
+## Poprawki: przechył w biegu (gałąź poprawki-przechyl)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Bohater w biegu przechyla się tylko w ostrym skręcie, w stronę skrętu, i wraca do pionu; bieg w jednym kierunku bez przechyłu (wcześniej stały przechył przy biegu w dół ekranu i na boki) | `PlayerControl::arpgRunLean` (wywołanie w `assignRunAngle`), stałe `ArpgLeanFollow`, `ArpgLeanMinTurn`, `ArpgLeanMax` w playercontrol.h |
+
 ## Poprawki: potwory z rozdziałem, czerwona aura, elity (gałąź poprawki-potwory-elity)
 
 | Co | Gdzie w kodzie |
@@ -353,6 +359,7 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)
 - W trybie ARPG krajobraz jest rysowany bez odrzucania tylnych ścian (czarne przekroje) — kamera w zboczu dawała czarny ekran; teraz w takim wypadku wewnętrzna strona bliżej niż postać nie jest rysowana (arpgPlayer.w = 1 + odległość)
 - DynamicWorld::sweep to kula opuszczana pionowo (CollisionWorld::raySweep liczy trafienie z wysokości) — do testu ciała na polu siatki ArpgNav; poziomo nie używać
+- Przechył w biegu (Npc::runAngle, obrót modelu na bok) Gothic liczy z azymutu kamery (opóźnienie kamery za obrotem bohatera, `Camera::azimuth`). MainWindow::tick zwraca dt = 0, gdy od ostatniego kroku minęło < 5 ms, a tickCamera wpisuje wtedy obrót bohatera do `state.spin` i kończy przed `camera.tick` — w trybie ARPG azymut w kroku ruchu to obrót bohatera − obrót kamery, więc nie używać go w ARPG
 - Rozdział gry: zmienna skryptów KAPITEL (1–6). Doświadczenie za zabicie: ZS_Dead daje poziom ofiary × XP_PER_VICTORY (10) przez B_GivePlayerXP (ta sama funkcja wypisuje „Doświadczenie +”). Czerwona poświata wokół postaci: spellFX_INCOVATION_RED (cząsteczki INVOCATION_RED na kości BIP01, czerwone światło, zapętlony dźwięk SFX_Circle)
 - Faza 0: stałej kamery ARPG nie da się zrobić skryptami (CAMERA.DAT, instancje CCamSys: CamModNormal, CamModMelee…)
 

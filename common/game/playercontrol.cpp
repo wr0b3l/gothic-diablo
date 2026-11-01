@@ -1787,7 +1787,12 @@ void PlayerControl::assignRunAngle(Npc& pl, float rotation, uint64_t dt) {
   auto  camera = Gothic::inst().camera();
 
   float dest = 0;
-  if(camera!=nullptr && pl.walkMode()==WalkBit::WM_Run && pl.bodyState()==BS_RUN) {
+  if(camera!=nullptr && camera->isArpgActive()) {
+    // gothic-diablo: the ARPG camera doesn't follow the hero's heading, its azimuth means nothing here
+    // (and between the logic ticks MainWindow::tickCamera leaves the hero's heading in the camera's spin)
+    dest = arpgRunLean(pl, rotation, dtF);
+    }
+  else if(camera!=nullptr && pl.walkMode()==WalkBit::WM_Run && pl.bodyState()==BS_RUN) {
     const float az   = camera->azimuth();
     const float maxV = 14.5f;
     dest = std::min(std::abs(az), maxV)*(az>=0 ? 1 : -1);
@@ -1795,6 +1800,24 @@ void PlayerControl::assignRunAngle(Npc& pl, float rotation, uint64_t dt) {
 
   float a = std::min(dtF*5.f, 1.f);
   runAngleDest = runAngleDest*(1.f-a)+dest*a;
+  }
+
+float PlayerControl::arpgRunLean(Npc& pl, float heading, float dtF) {
+  // Diathic: like Gothic's camera lag: a heading that follows the hero's with a delay,
+  // the lean = the angle between them; running straight = no lean, a sharp turn = a lean into it
+  const uint64_t now = pl.world().tickCount();
+  if(now>arpgLeanTick+250 || now<arpgLeanTick)
+    arpgLeanHeading = heading; // after a pause (talk, a window) or a load: no lean from the old direction
+  arpgLeanTick     = now;
+  arpgLeanHeading += std::remainder(heading-arpgLeanHeading, 360.f)*std::min(ArpgLeanFollow*dtF, 1.f);
+  arpgLeanHeading  = std::remainder(arpgLeanHeading, 360.f);
+
+  if(pl.walkMode()!=WalkBit::WM_Run || pl.bodyState()!=BS_RUN)
+    return 0.f;
+  const float az = std::remainder(heading-arpgLeanHeading, 360.f);
+  if(std::fabs(az)<ArpgLeanMinTurn)
+    return 0.f;
+  return std::copysign(std::min(std::fabs(az)-ArpgLeanMinTurn, ArpgLeanMax), az);
   }
 
 void PlayerControl::setAnimRotate(Npc& pl, float rotation, int anim, bool force, uint64_t dt) {
