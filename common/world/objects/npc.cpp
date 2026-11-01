@@ -5624,6 +5624,12 @@ SensesBit Npc::canSenseNpc(const Npc &oth, bool freeLos, float extRange) const {
     // Diathic: from above the hero sees far around; creatures notice him at 80% of their range
     return canSenseNpc(mid,freeLos,isNoisy,extRange-ArpgMonsterSenseCut*float(hnpc->senses_range));
     }
+  if(Camera::isArpgEnabled() && oth.isPlayer() && owner.version().game==2 && guild()>GIL_SEPERATOR_ORC) {
+    // Diathic: orcs (25 m in scripts) attacked from outside the screen; at most ArpgOrcSenseRange
+    const float range = float(hnpc->senses_range);
+    if(range>ArpgOrcSenseRange)
+      return canSenseNpc(mid,freeLos,isNoisy,extRange-(range-ArpgOrcSenseRange));
+    }
   return canSenseNpc(mid,freeLos,isNoisy,extRange);
   }
 
