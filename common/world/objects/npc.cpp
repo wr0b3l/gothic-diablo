@@ -3,6 +3,8 @@
 #include <Tempest/Matrix4x4>
 #include <Tempest/Log>
 
+#include <cctype>
+
 #include "graphics/mesh/skeleton.h"
 #include "graphics/visualfx.h"
 #include "game/damagecalculator.h"
@@ -19,6 +21,7 @@
 #include "game/gamesession.h"
 #include "game/arpgskills.h"
 #include "game/arpgelite.h"
+#include "game/arpgboss.h"
 #include "game/definitions/sounddefinitions.h"
 #include "gothic.h"
 #include "resources.h"
@@ -1081,7 +1084,7 @@ void Npc::arpgLookAtHead(const Npc* who, uint64_t dt) {
     visual.setHeadRotation(0, 0);
     return;
     }
-  const Vec3 d = who->mapHeadBone()-visual.mapHeadBone();
+  const Vec3 d = who->arpgHeadPos()-visual.mapHeadBone();
   implLookAt(d.x, d.y, d.z, dt);
   }
 
@@ -1773,7 +1776,11 @@ bool Npc::implAttack(uint64_t dt) {
 
       if(atk || mvAlgo.isSwim() || mvAlgo.isDive()) {
         uint64_t aniTime = visual.pose().atkTotalTime()+1;
-        implFaiWait(aniTime);
+        // Diathic: a boss rests after its own attack; a dragon's attack has a sign on the ground and a roar
+        uint64_t rest = 0;
+        if(atk && arpgBossSt!=nullptr && Camera::isArpgEnabled())
+          rest = arpgBossSt->onOwnAttack(*this, owner, aniTime);
+        implFaiWait(aniTime+rest);
         if(bs==BS_RUN)
           implAniWait(aniTime);
         fghAlgo.consumeAction();
@@ -2247,6 +2254,94 @@ bool Npc::arpgInReach(const Npc& tg, float mul) const {
   return bd <= own + tg.arpgBodyHalf();
   }
 
+bool Npc::arpgIsDragon() const {
+  return Gothic::inst().version().game==2 && guild()==GIL_DRAGON;
+  }
+
+Vec3 Npc::arpgHeadPos() const {
+  // Diathic (2026-11-03): the dialog camera and the look of the hero aim at the head; Gothic's head is "BIP01 HEAD",
+  // without it 1.8 m above the feet — for a dragon its belly. Dragons: a bone with HEAD (KOPF, SKULL) in its name,
+  // else the trunk bone furthest in front of it (the end of the neck)
+  if(!arpgIsDragon())
+    return mapHeadBone();
+  const Skeleton* sk = visual.visualSkeleton();
+  if(sk==nullptr || sk->nodes.empty())
+    return mapHeadBone();
+  if(sk->BIP01_HEAD!=size_t(-1))
+    return visual.mapBone(sk->BIP01_HEAD);
+  auto has = [](const std::string& n, std::string_view w) {
+    if(n.size()<w.size())
+      return false;
+    for(size_t i=0; i+w.size()<=n.size(); ++i) {
+      size_t k = 0;
+      while(k<w.size() && std::toupper(static_cast<unsigned char>(n[i+k]))==w[k])
+        ++k;
+      if(k==w.size())
+        return true;
+      }
+    return false;
+    };
+  for(auto w:{std::string_view("HEAD"), std::string_view("KOPF"), std::string_view("SKULL")})
+    for(size_t i=0; i<sk->nodes.size(); ++i)
+      if(has(sk->nodes[i].name, w) && !has(sk->nodes[i].name, "ZS_") && !has(sk->nodes[i].name, "NUB"))
+        return visual.mapBone(i);
+  const Vec3  org = position();
+  const float a   = rotationRad();
+  const Vec3  fwd = {std::cos(a), 0.f, std::sin(a)};
+  float       best = -1e9f;
+  Vec3        ret  = mapHeadBone();
+  for(size_t i=0; i<sk->nodes.size(); ++i) {
+    const auto& n = sk->nodes[i].name;
+    bool skip = false;
+    for(auto w:{"ARM", "HAND", "FIN", "CLAVICLE", "THIGH", "CALF", "FOOT", "TOE", "LEG", "WING", "CLAW", "TAIL", "ZS_"})
+      skip = skip || has(n, w);
+    if(skip)
+      continue;
+    const Vec3  p = visual.mapBone(i);
+    const float v = Vec3::dotProduct(p-org, fwd) + 0.5f*(p.y-org.y);
+    if(v>best) {
+      best = v;
+      ret  = p;
+      }
+    }
+  return ret;
+  }
+
+float Npc::arpgRayOnBody(const Tempest::Vec3& from, const Tempest::Vec3& dir, float len) const {
+  // Diathic (2026-11-03): a dragon under the cursor — every bone to its parent is a capsule (also the wings)
+  const Skeleton* sk = visual.visualSkeleton();
+  if(sk==nullptr || sk->nodes.empty())
+    return -1.f;
+  const float  R    = std::clamp(arpgBodyHalf()*0.6f, 70.f, 180.f);
+  float        best = -1.f;
+  const size_t n    = sk->nodes.size();
+  for(size_t i=0; i<n; ++i) {
+    const auto& nd = sk->nodes[i];
+    if(nd.name.find("ZS_")!=std::string::npos)
+      continue;
+    const Vec3 a = visual.mapBone(i);
+    const Vec3 b = (nd.parent<n) ? visual.mapBone(nd.parent) : a;
+    // the closest points of the ray (from + dir*t) and the segment (a + (b-a)*u)
+    const Vec3  e   = b-a, w0 = from-a;
+    const float ee  = Vec3::dotProduct(e, e);
+    const float de  = Vec3::dotProduct(dir, e);
+    const float dw  = Vec3::dotProduct(dir, w0);
+    const float ew  = Vec3::dotProduct(e, w0);
+    const float den = ee - de*de; // |dir| = 1
+    float u = 0.f;
+    if(ee>1.f && den>1e-3f)
+      u = std::clamp((ew - de*dw)/den, 0.f, 1.f);
+    else if(ee>1.f)
+      u = std::clamp(ew/ee, 0.f, 1.f);
+    const Vec3  q = a + e*u;
+    const float t = std::clamp(Vec3::dotProduct(q-from, dir), 0.f, len);
+    const float d = (from+dir*t-q).length();
+    if(d<=R && (best<0.f || t<best))
+      best = t;
+    }
+  return best;
+  }
+
 float Npc::arpgBodyHalf() const {
   const Vec3* b = bBoxCol();
   if(b==nullptr)
@@ -2260,12 +2355,19 @@ float Npc::arpgBodyDist(const Tempest::Vec3& p, Tempest::Vec3* at) const {
   if(sk==nullptr || b==nullptr || sk->nodes.empty())
     return -1.f;
 
-  auto trunk = [](std::string_view n) {
-    for(auto skip:{"ARM", "HAND", "FIN", "CLAVICLE", "THIGH", "CALF", "FOOT", "TOE", "LEG", "WING", "CLAW", "ZS_"})
+  // Diathic (2026-11-03): a dragon — the whole body on the ground counts (legs and claws too, not the wings), up to
+  // its neck and head: the hit box is the model, not Gothic's collision box
+  const bool dragon = arpgIsDragon();
+  auto trunk = [dragon](std::string_view n) {
+    for(auto skip:{"ARM", "HAND", "FIN", "CLAVICLE", "THIGH", "CALF", "FOOT", "TOE", "LEG", "WING", "CLAW", "ZS_"}) {
+      if(dragon && std::string_view(skip)!="WING" && std::string_view(skip)!="ZS_")
+        continue;
       if(n.find(skip)!=std::string_view::npos)
         return false;
+      }
     return true;
     };
+  const float up = dragon ? 750.f : 250.f;
 
   const Vec3  org   = position();
   const float collR = 0.5f*std::max(std::abs(b[1].x-b[0].x), std::abs(b[1].z-b[0].z));
@@ -2278,7 +2380,7 @@ float Npc::arpgBodyDist(const Tempest::Vec3& p, Tempest::Vec3* at) const {
     if(!trunk(nd.name))
       continue;
     const Vec3 a = visual.mapBone(i);
-    if(a.y<p.y-100.f || a.y>p.y+250.f)
+    if(a.y<p.y-100.f || a.y>p.y+up)
       continue; // over the hero's head (a flyer) or deep below
     const float ox = a.x-org.x, oz = a.z-org.z;
     far2 = std::max(far2, ox*ox+oz*oz);
@@ -2970,6 +3072,15 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
   // gothic-diablo: hero's arrows in the ARPG view (normal shot x0.5, charged shot x1.5)
   if(b!=nullptr && !isSpell && hitResult.value>0 && b->arpgDamageMul()!=1.f)
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*b->arpgDamageMul())));
+  // Diathic (decision 2026-11-03): one hit of a boss never takes the whole life of the hero — a dragon's breath
+  // (DAM_FIRE|DAM_FLY: the strength counts twice) with the chapter multiplier was more than his maximum life
+  if(hitResult.value>0 && isPlayer() && Camera::isArpgEnabled() && other.arpgBoss()!=nullptr) {
+    const int32_t cap = std::max<int32_t>(1, int32_t(float(attribute(ATR_HITPOINTSMAX))*ArpgBossCfg::MaxHit));
+    hitResult.value = std::min(hitResult.value, cap);
+    }
+  // Diathic (decision 2026-11-03): the golems summoned by a boss do not throw the hero (DAM_FLY: only the stumble)
+  if(isPlayer() && Camera::isArpgEnabled() && other.arpgIsMinion() && !isSpell)
+    damageType &= ~(1<<zenkit::DamageType::FLY);
   if(!isSpell && !isDown() && hitResult.hasHit)
     owner.addWeaponHitEffect(other,b,*this).play();
 

@@ -270,6 +270,10 @@ class Npc final {
     // point in `at`; -1 = the body fits in the collision ellipsoid (most creatures) or no skeleton
     float      arpgBodyDist(const Tempest::Vec3& p, Tempest::Vec3* at) const;
     float      arpgBodyHalf() const;        // Diathic: half of the body width (collision box)
+    bool       arpgIsDragon() const;        // Diathic: a dragon (GIL_DRAGON): bigger hit box, shots and signs
+    Tempest::Vec3 arpgHeadPos() const;      // Diathic: the head for the ARPG dialog camera (dragons: the real head)
+    // Diathic: the cursor ray on the model (bones with a thickness): the distance along the ray, -1 = missed
+    float      arpgRayOnBody(const Tempest::Vec3& from, const Tempest::Vec3& dir, float len) const;
     void       arpgSetShotMul(float mul) { arpgShotMul = mul; } // gothic-diablo: the next arrow: damage x mul, always hits
     bool       arpgKnockBack(Npc& from, float speed);  // gothic-diablo: push away without damage
     bool       arpgUseItem(size_t cls);                // gothic-diablo: use an item like in the inventory

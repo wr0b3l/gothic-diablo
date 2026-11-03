@@ -1988,6 +1988,26 @@ Focus PlayerControl::arpgPick() {
       }
   }
 
+  // 1b. Diathic (2026-11-03): a dragon — its model is under the cursor, not only Gothic's collision box (in front of the
+  //     ground and the walls the cursor hits)
+  {
+    Npc*  drag = nullptr;
+    float bt   = 1e9f;
+    const float landT = land.hasCol ? (land.v-from).length()+50.f : len;
+    for(uint32_t i=0; i<w->npcCount(); ++i) {
+      auto npc = w->npcById(i);
+      if(npc==nullptr || npc==pl || npc->isDead() || !npc->arpgIsDragon() || !inFog(npc->position()))
+        continue;
+      const float t = npc->arpgRayOnBody(from, dir, len);
+      if(t>=0.f && t<=landT && t<bt) {
+        bt   = t;
+        drag = npc;
+        }
+      }
+    if(drag!=nullptr)
+      return Focus(*drag);
+  }
+
   // 2. items and usable objects near the cursor, only what the hero can see (same rules as the Z labels)
   struct Cand {
     Item*        item = nullptr;

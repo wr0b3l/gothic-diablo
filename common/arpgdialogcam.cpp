@@ -34,8 +34,16 @@ static float offLine(const Vec3& pt, const Vec3& from, const Vec3& to) {
   }
 
 static Vec3 face(const Npc& n) {
-  // the head bone is the base of the head: eyes a bit above
-  return n.mapHeadBone()+Vec3(0, 8.f, 0);
+  // the head bone is the base of the head: eyes a bit above (Npc::arpgHeadPos: a dragon's real head)
+  return n.arpgHeadPos()+Vec3(0, 8.f, 0);
+  }
+
+// Diathic (2026-11-03): how big the one in the shot is against a man (face 1.65 m above the feet): the shots of a dragon
+// are this much further away (else the camera is in its snout)
+static float sizeOf(const Npc* n) {
+  if(n==nullptr || !n->arpgIsDragon())
+    return 1.f;
+  return std::clamp((face(*n).y-n->position().y)/165.f, 1.5f, 4.f);
   }
 
 static Vec3 rotY(const Vec3& v, float deg) {
@@ -102,23 +110,25 @@ ArpgDialogCam::Shot ArpgDialogCam::base(Kind k, const Npc* who, const Input& in)
   else {
     Vec3 x, y, nn;
     pair(who, in, x, y, nn);                 // the subject, the other one, the side
-    const Vec3 n = nn;
-    const Vec3 u = norm2(y-x, who==in.pl ? fwdPl : fwdPl*-1.f); // from the subject towards the other
+    const Vec3  n  = nn;
+    const Vec3  u  = norm2(y-x, who==in.pl ? fwdPl : fwdPl*-1.f); // from the subject towards the other
+    const Npc*  ot = (who==in.pl) ? in.other : in.pl;
+    const float sx = sizeOf(who), sy = sizeOf(ot);                // a dragon: further away
     switch(k) {
       case K_OverShoulder:
-        s.origin = y + u*95.f + n*70.f + up*12.f;
-        s.target = x - up*4.f;
+        s.origin = y + u*(95.f*sy) + n*(70.f*sy) + up*(12.f*sy);
+        s.target = x - up*(4.f*sx);
         break;
       case K_Medium: {
-        const float d = std::clamp(sep*0.9f, 110.f, 160.f);
-        s.origin = x + u*d + n*(d*0.5f) - up*8.f;
-        s.target = x - up*18.f;
+        const float d = std::clamp(sep*0.9f, 110.f, 160.f)*sx;
+        s.origin = x + u*d + n*(d*0.5f) - up*(8.f*sx);
+        s.target = x - up*(18.f*sx);
         break;
         }
       case K_Close:
       default:
-        s.origin = x + u*80.f + n*42.f;
-        s.target = x - up*2.f;
+        s.origin = x + u*(80.f*sx) + n*(42.f*sx);
+        s.target = x - up*(2.f*sx);
         break;
       }
     }

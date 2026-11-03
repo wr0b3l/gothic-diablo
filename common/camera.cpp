@@ -1232,7 +1232,7 @@ void Camera::tickArpgDialog(float dtF) {
     tickArpg(dtF);
     const float s    = std::clamp(arpgDlg.t/ZoomTime, 0.f, 1.f);
     const float k    = s*s*(3.f-2.f*s);
-    const Vec3  mid  = (in.pl->mapHeadBone()+in.other->mapHeadBone())*0.5f;
+    const Vec3  mid  = (in.pl->arpgHeadPos()+in.other->arpgHeadPos())*0.5f;
     const Vec3  look = inter.target + (mid-inter.target)*k;
     origin      = origin + (mid-origin)*(0.55f*k);
     angles      = calcLookAtAngles(origin, look, Vec3(0), state.spin);
@@ -1343,7 +1343,9 @@ void Camera::arpgPlaceHero(const ArpgDialogCam::Input& in) {
   if(l<1.f)
     return;
   const Vec3  dir  = d/l;
-  const float want = std::clamp(l, 130.f, 170.f);
+  // Diathic (2026-11-03): a dragon — further, in front of its head, not under it
+  const bool  big  = in.other->arpgIsDragon();
+  const float want = big ? std::clamp(l, 550.f, 800.f) : std::clamp(l, 130.f, 170.f);
   if(std::abs(l-want)>5.f) {
     const Vec3 dp = dir*(l-want);
     if(!hero->tryMove(dp))
@@ -1539,6 +1541,24 @@ void Camera::updateArpgView(float dtF) {
       arpg.los.fill(maxR);
       }
     arpgV.los = arpg.los;
+  }
+
+  // Diathic (2026-11-03): the nearest dragon is drawn whole (main.frag: no ceiling cut, no see-through circle on it)
+  {
+    float best = 0.f;
+    world->detectNpc(feet, 4000.f, [&](Npc& n) {
+      if(!n.arpgIsDragon())
+        return;
+      const auto  b  = n.bounds();
+      const auto  sz = b.bbox[1]-b.bbox[0];
+      const float r  = std::clamp(0.75f*std::max(sz.x, std::max(sz.y, sz.z))+200.f, 500.f, 2500.f);
+      const auto  c  = n.centerPosition();
+      const float d  = (c-feet).quadLength();
+      if(arpgV.keep.w<=0.f || d<best) {
+        arpgV.keep = Tempest::Vec4(c.x, c.y, c.z, r);
+        best       = d;
+        }
+      });
   }
 
   // fog of war: radius from the game's "sight range" option (Video menu, 20%..300%, 100% = 15 m)

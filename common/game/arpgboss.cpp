@@ -11,6 +11,7 @@
 #include "graphics/effect.h"
 #include "physics/dynamicworld.h"
 #include "world/objects/npc.h"
+#include "world/objects/sound.h"
 #include "world/world.h"
 #include "gothic.h"
 
@@ -187,8 +188,48 @@ void ArpgBoss::spawn(Npc& boss, World& w, std::string_view inst, int count, std:
     }
   }
 
+void ArpgBoss::announce(Npc& boss, World& w, std::string_view name, std::string_view sound, uint64_t until) {
+  abilityName  = name;
+  abilityUntil = until;
+  if(!sound.empty())
+    ArpgBosses::sound(w, sound, boss.position()+Vec3(0.f, 200.f, 0.f));
+  }
+
+uint64_t ArpgBoss::onOwnAttack(Npc& boss, World& w, uint64_t aniMs) {
+  // Diathic (decisions 2026-11-03): Gothic's own attack of a boss — a dragon's bite or breath, Raven's swing:
+  // a pause after it (the bosses attacked too often), a dragon's attack has a sign on the ground and a roar
+  const uint64_t now = w.tickCount();
+  if(k==Raven)
+    return RavenRestMs;
+  auto&       gs    = w.script();
+  auto*       hero  = w.player();
+  // Gothic's reach (FightAlgo::prefferedAttackDistance): the bases of both guilds + the fist (dragons have no weapon)
+  float       reach = 600.f;
+  if(hero!=nullptr) {
+    const auto& gv = gs.guildVal();
+    reach = float(gv.fight_range_base[boss.guild()] + gv.fight_range_base[hero->guild()] + gv.fight_range_fist[boss.guild()]);
+    }
+  const float a     = boss.rotationRad();
+  Zone z;
+  z.shape = Cone;
+  z.look  = (k==Ice) ? Frost : ((k==Swamp) ? Poison : ((k==Undead) ? Dark : Flame));
+  z.sign  = true;
+  z.pos   = boss.position();
+  if(hero!=nullptr)
+    z.pos.y = hero->position().y;
+  z.dirX  = std::cos(a);
+  z.dirZ  = std::sin(a);
+  z.r     = reach;
+  z.w     = MeleeHalfDeg;
+  z.start = now;
+  z.fire  = now + std::max<uint64_t>(300, uint64_t(float(aniMs)*MeleeSignPart));
+  z.end   = z.fire;
+  zn.push_back(z);
+  ArpgBosses::sound(w, "DRG_Attack", boss.position()+Vec3(0.f, 200.f, 0.f));
+  return RestMs;
+  }
+
 void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
-  (void)w;
   const Vec3 hp = hero.position();
   const Vec3 bp = boss.position();
   float dx = hp.x-bp.x, dz = hp.z-bp.z;
@@ -217,6 +258,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
   switch(k) {
     case Swamp: {
       // poison puddles: on the hero and (phases 2, 3) next to him; they stay
+      announce(boss, w, "Trujące kałuże", "MFX_Geyser_Rumble", z.fire);
       const int n = (ph==1) ? 1 : 3;
       for(int i=0; i<n; ++i) {
         Zone c = z;
@@ -232,6 +274,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
       }
     case Rock: {
       // boulders falling from above
+      announce(boss, w, "Spadające głazy", "DRG_Rock_Attack", z.fire);
       const int n = (ph==1) ? 2 : 4;
       for(int i=0; i<n; ++i) {
         Zone c = z;
@@ -246,6 +289,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
       }
     case Fire: {
       // the breath: a cone towards the hero; phase 3: fire patches stay in it
+      announce(boss, w, "Zionięcie ogniem", "DRG_Attack", z.fire);
       Zone c = z;
       c.shape = Cone;
       c.look  = Flame;
@@ -274,6 +318,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
       }
     case Ice: {
       // the ice breath: a line towards the hero; phases 2, 3: a fan of three
+      announce(boss, w, "Lodowy podmuch", "DRG_Attack", z.fire);
       const int n = (ph==1) ? 1 : 3;
       for(int i=0; i<n; ++i) {
         const float a = base + degToRad(i==0 ? 0.f : (i==1 ? -IceFanDeg : IceFanDeg));
@@ -292,6 +337,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
       }
     case Undead: {
       // a wave of darkness running out from the dragon: roll through it
+      announce(boss, w, "Fala ciemności", "MFX_BreathOfDeath_Invest", z.fire);
       Zone c = z;
       c.shape = Ring;
       c.look  = Dark;
@@ -309,6 +355,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
         return; // the swordsman with Beliar's weapon, as in Gothic
       if(ph==3 && attacks%2==1) {
         // Gniew Beliara: a wave from Raven
+        announce(boss, w, "Gniew Beliara", "MFX_BreathOfDeath_Invest", z.fire);
         Zone c = z;
         c.shape = Ring;
         c.look  = Dark;
@@ -321,6 +368,7 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
         zn.push_back(c);
         } else {
         // Beliar's lightning: a line towards the hero
+        announce(boss, w, "Piorun Beliara", "MFX_Thunderball_Invest4", now+BoltWarnMs);
         Zone c = z;
         c.shape = Line;
         c.look  = Bolt;
@@ -362,6 +410,10 @@ void ArpgBoss::strike(Npc& boss, Npc& hero, World& w, const Zone& z) {
 void ArpgBoss::resolve(Npc& boss, Npc& hero, World& w, uint64_t now) {
   const Vec3 hp = hero.position();
   for(auto& z:zn) {
+    if(!z.fired && now>=z.fire && z.sign) {
+      z.fired = true; // a dragon's own attack: Gothic hits, the shape was only the sign
+      continue;
+      }
     if(!z.fired && now>=z.fire) {
       z.fired = true;
       z.next  = now+1000;
@@ -372,6 +424,20 @@ void ArpgBoss::resolve(Npc& boss, Npc& hero, World& w, uint64_t now) {
         for(float t=step*0.5f; t<z.r; t+=step)
           ArpgBosses::effect(w, fx, z.pos+Vec3(z.dirX*t, 40.f, z.dirZ*t));
         };
+      // and how it sounds (one per attack: the first shape of it)
+      if(z.start!=lastSoundAt) {
+        lastSoundAt = z.start;
+        std::string_view snd;
+        switch(z.look) {
+          case Poison: snd = "MFX_Geyser_Fountain"; break;
+          case Flame:  snd = "MFX_Firestorm_Cast";  break;
+          case Frost:  snd = "MFX_Icewave_Cast";    break;
+          case Dark:   snd = "MFX_Massdeath_Cast";  break;
+          case Bolt:   snd = "MFX_BeliarWeap_A4";   break;
+          case Plain:  snd = "GOL_StepBoom";        break;
+          }
+        ArpgBosses::sound(w, snd, z.pos);
+        }
       switch(z.shape) {
         case Circle:
           ArpgBosses::effect(w, z.look==Poison ? "spellFX_Waterfist_COLLIDEFX" :
@@ -451,6 +517,11 @@ Npc* ArpgBosses::shown(World& w, Npc& hero) {
       }
     });
   return best;
+  }
+
+void ArpgBosses::sound(World& w, std::string_view name, const Tempest::Vec3& at) {
+  auto s = ::Sound(w, ::Sound::T_Regular, name, at, SoundRange, false);
+  s.play();
   }
 
 void ArpgBosses::effect(World& w, std::string_view name, const Tempest::Vec3& at) {
