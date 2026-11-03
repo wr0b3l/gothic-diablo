@@ -133,6 +133,21 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Bossowie — poprawki (2026-11-03, gałąź bossowie-poprawki)
+- Użytkownik: bossowie atakują za szybko; lepsze znaki mocnych umiejętności; dźwięk przy mocnych umiejętnościach (zionięcie zabijało bohatera jednym ciosem — nie powinno); przyzwane golemy bez odepchnięcia; rozmowy ze smokami — kamera na głowę, nie na brzuch; smoki ucięte — poprawić widoczność; hitbox większy i zgodny z modelem; dotyczy wszystkich smoków
+- Przyczyny: zionięcie = zwykły atak smoka w Gothicu, obrażenia DAM_FIRE|DAM_FLY (siła 200 liczona dla każdego rodzaju) × mnożnik rozdziału — więcej niż życie bohatera; golemy kamienne i bagienne mają DAM_FLY (odrzut); smok bez kości „BIP01 HEAD” — głowa 1,8 m nad stopami; we wnętrzach cięcie sufitu i prześwit cięły też smoka; zasięg ciosu liczył tylko kości do 2,5 m w górę (ogon)
+- Zmiany: ataki z ostrzeżeniem co 13 s / 10 s (było 10 / 7), ostrzeżenie 1,6 s (było 1,3); po własnym ataku smok stoi 1,5 s, Kruk 0,6 s; jeden cios bossa najwyżej 35% maksymalnego życia; wyraźniejsze znaki na ziemi + nazwa ataku pod paskiem + dźwięki; własny atak smoka ma słabszy znak (stożek) i ryk; przyzwańcy bez odrzutu; kamera i ustawienie w rozmowie ze smokiem; smok bez cięcia; hitbox i kursor na modelu
+- Wartości do balansu: `ArpgBossCfg` — `AttackMs1`, `AttackMs2`, `WarnMs`, `RestMs`, `RavenRestMs`, `MaxHit`, `MeleeHalfDeg`, `MeleeSignPart`, `SoundRange`
+- Do testu (konsola Marvina w trybie ARPG: `insert Dragon_Fire` / `Dragon_Swamp` / `Dragon_Rock` / `Dragon_Ice` / `Dragon_Undead`, `insert BDT_1090_Addon_Raven`):
+  - czy ataki nie za częste / za rzadkie; czy smok nie stoi za długo po ciosie
+  - znaki: widać je na lawie (Feomathar) i śniegu (Finkregh); czy błysk i strzałki pomagają; nazwa ataku pod paskiem; znak własnego ataku smoka (stożek) — czy pokrywa się z zionięciem
+  - dźwięki: ryk na początku, dźwięk przy trafieniu — czy słychać, czy nie za głośno; czy nazwy dźwięków istnieją w polskiej wersji (cisza = brak)
+  - zionięcie / ugryzienie smoka: najwyżej 35% życia
+  - golemy (Pedrakhan, Pandrodor faza 3): cios bez odrzutu, tylko potknięcie
+  - rozmowa ze smokiem (z Okiem Innosa): ujęcia na głowę, nie za blisko i nie w środku pyska; Bezimienny 5,5–8 m od smoka; patrzy w górę na głowę
+  - smok w całości, także w jaskini (smok ożywieniec w Irdorath) i gdy zasłania bohatera
+  - kursor na szyi, głowie, skrzydle i ogonie = smok; cios w nogę i bok trafia; bohater nie wchodzi pod głowę / w nogi
+
 ## Interakcje z postaciami (2026-11-01, gałąź poprawki-interakcje)
 - Użytkownik: sprawdzić ukryte dźwignie i zły rodzaj interakcji bohatera z przedmiotami, wrogami i NPC
 - Znalezione w kodzie: każdy potwór i ork był wrogiem pod kursorem (LPM = atak, automatyczny cel, lock, umiejętności) — także przyzwańcy bohatera, ognik, owce (Liesel, owca Akila), przyjazny ork Ur-Shak i orkowie dowódcy, którzy w grze najpierw mówią; ogłuszonego człowieka nie dało się dobić (LPM zawsze = przeszukanie)

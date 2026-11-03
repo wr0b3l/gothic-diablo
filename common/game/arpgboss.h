@@ -22,10 +22,18 @@ namespace ArpgBossCfg {
   constexpr uint64_t ActiveMs      = 5000;   // still "in the fight" this long after Gothic's attack state ends
 
   // attacks with a warning (damage = part of the hero's maximum life, the armour does not count: dodge them)
-  constexpr uint64_t WarnMs        = 1300;   // the red shape on the ground before the hit
-  constexpr uint64_t AttackMs1     = 10000;  // one attack every ... in phase 1
-  constexpr uint64_t AttackMs2     = 7000;   // ... in phases 2 and 3
+  constexpr uint64_t WarnMs        = 1600;   // the red shape on the ground before the hit (decision 2026-11-03: was 1.3 s)
+  constexpr uint64_t AttackMs1     = 13000;  // one attack every ... in phase 1 (2026-11-03: was 10 s)
+  constexpr uint64_t AttackMs2     = 10000;  // ... in phases 2 and 3 (2026-11-03: was 7 s)
   constexpr float    HeroR         = 30.f;   // the hero's body for the hit test, cm
+  constexpr float    SoundRange    = 6000.f; // cm: the warning and hit sounds
+
+  // Gothic's own attacks of the bosses (decisions 2026-11-03)
+  constexpr uint64_t RestMs        = 1500;   // a dragon stands this long after its swing / breath before the next one
+  constexpr uint64_t RavenRestMs   = 600;    // Raven: after a swing
+  constexpr float    MaxHit        = 0.35f;  // one hit of a boss takes at most this part of the hero's maximum life
+  constexpr float    MeleeHalfDeg  = 35.f;   // the sign of a dragon's own attack: a cone in front of it
+  constexpr float    MeleeSignPart = 0.55f;  // ... shown for this part of the attack animation (before the hit)
 
   // Pandrodor: poison puddles
   constexpr float    PuddleR       = 250.f;
@@ -92,6 +100,7 @@ class ArpgBoss final {
       bool          fired  = false;
       bool          struck = false;       // ring: the hero was hit already
       uint64_t      next   = 0;           // puddles, patches: the next touch
+      bool          sign   = false;       // only the picture (a dragon's own attack): no hit, no effects
       };
 
     explicit ArpgBoss(Kind k, const Npc& npc);
@@ -103,11 +112,16 @@ class ArpgBoss final {
     bool                     shielded(uint64_t now) const { return now<shieldUntil; }
     bool                     active(uint64_t now) const { return now<activeUntil; }
     const std::vector<Zone>& zones() const { return zn; }
+    // the name of the strong attack being prepared (for the line under the boss bar), empty when none
+    std::string_view         ability(uint64_t now) const { return now<abilityUntil ? abilityName : std::string_view(); }
+    uint64_t                 abilityEnd() const { return abilityUntil; }
     // the zone progress for the picture: 0..1 of the warning, then of the hit / the stay
     static float             progress(const Zone& z, uint64_t now);
     static float             ringRadius(const Zone& z, uint64_t now);
 
     void tick(Npc& boss, Npc& hero, World& w);
+    // Gothic's own attack of the boss starts (Npc::implAiTick, MV_ATTACK): the pause after it, the sign and the sound
+    uint64_t onOwnAttack(Npc& boss, World& w, uint64_t aniMs);
 
   private:
     Kind              k;
@@ -117,6 +131,9 @@ class ArpgBoss final {
     uint64_t          nextAttack  = 0;
     uint32_t          attacks     = 0;
     std::vector<Zone> zn;
+    std::string_view  abilityName;
+    uint64_t          abilityUntil = 0;
+    uint64_t          lastSoundAt  = 0;
 
     static int  phaseOf(const Npc& npc);
     void        onPhase(Npc& boss, Npc& hero, World& w);
@@ -124,10 +141,12 @@ class ArpgBoss final {
     void        resolve(Npc& boss, Npc& hero, World& w, uint64_t now);
     void        strike (Npc& boss, Npc& hero, World& w, const Zone& z);
     void        spawn  (Npc& boss, World& w, std::string_view inst, int count, std::string_view fx);
+    void        announce(Npc& boss, World& w, std::string_view name, std::string_view sound, uint64_t until);
   };
 
 namespace ArpgBosses {
   void tick(World& w, Npc& hero);               // every frame in the ARPG view
   Npc* shown(World& w, Npc& hero);              // the boss for the bar at the top (the nearest one in a fight)
   void effect(World& w, std::string_view name, const Tempest::Vec3& at); // Gothic's visual effect at a point
+  void sound (World& w, std::string_view name, const Tempest::Vec3& at); // Gothic's sound (SFX instance) at a point
   }

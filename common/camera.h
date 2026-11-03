@@ -70,6 +70,7 @@ class Camera final {
       // direction i = angle 2*pi*i/LosRays in the xz plane, same convention as atan2(z,x)
       static constexpr size_t LosRays = 128;
       std::array<float,LosRays> los = {};
+      Tempest::Vec4             keep = {}; // Diathic: the nearest dragon: never cut (xyz = center, w = radius)
       };
 
     void reset();

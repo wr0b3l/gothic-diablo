@@ -2932,6 +2932,17 @@ void MainWindow::paintArpgBossZones(Painter& p, const Matrix4x4& vp) {
     p.setBrush(Brush(Color(r, g, b, a), Painter::Alpha));
     };
 
+  // Diathic (2026-11-03): clearer signs — a dark base (seen on lava and snow), a dark and a bright rim, the inner
+  // part grows to the rim exactly at the hit, the rim blinks faster and faster, white flash in the last 0.25 s;
+  // cones and lines have arrows running away from the boss. A dragon's own attack: the same, fainter (sign only)
+  auto rims = [&](auto&& shape, float r0, float r1, float k, float bright) {
+    brush(0.f, 0.f, 0.f, 0.55f);
+    shape(r1, r1+10.f);
+    const float blink = 0.6f + 0.4f*std::sin(float(now%100000)*(0.012f+0.05f*k*k));
+    brush(1.f, 0.85f*bright+0.1f, 0.35f*bright, 0.85f*blink);
+    shape(r1-12.f, r1);
+    (void)r0;
+    };
   world->detectNpc(pl->position(), ArpgBossCfg::Range, [&](Npc& n) {
     const auto* boss = n.arpgBoss();
     if(boss==nullptr)
@@ -2941,24 +2952,62 @@ void MainWindow::paintArpgBossZones(Painter& p, const Matrix4x4& vp) {
       const Vec3  d     = {z.dirX, 0.f, z.dirZ};
       const float k     = ArpgBoss::progress(z, now);
       const bool  warn  = now<z.fire;
+      const bool  last  = warn && z.fire-now<250;
       const float pulse = 0.85f + 0.15f*std::sin(float(now%100000)*0.012f);
       const float full  = 2.f*float(M_PI);
+      const float fa    = z.sign ? 0.6f : 1.f; // a dragon's own attack: fainter
+      // the colour of the attack (the growing inner part)
+      float cr = 1.f, cg = 0.3f, cb = 0.05f;
+      switch(z.look) {
+        case ArpgBoss::Poison: cr = 0.45f; cg = 0.95f; cb = 0.15f; break;
+        case ArpgBoss::Frost:  cr = 0.55f; cg = 0.8f;  cb = 1.f;   break;
+        case ArpgBoss::Dark:   cr = 0.75f; cg = 0.25f; cb = 1.f;   break;
+        case ArpgBoss::Bolt:   cr = 0.8f;  cg = 0.4f;  cb = 1.f;   break;
+        case ArpgBoss::Flame:
+        case ArpgBoss::Plain:  break;
+        }
+      // arrows along d, running out from the boss
+      auto arrows = [&](float len, float hw) {
+        const Vec3  sd   = {-d.z, 0.f, d.x};
+        const float step = 220.f, aw = std::min(hw*0.6f, 90.f);
+        const float off  = std::fmod(float(now%100000)*0.25f, step);
+        auto bar = [&](const Vec3& a, const Vec3& b) { // a thick line on the ground
+          Vec3 e = b-a;
+          e.y = 0.f;
+          const float l = e.length();
+          if(l<1.f)
+            return;
+          const Vec3 o = Vec3(-e.z, 0.f, e.x)*(9.f/l);
+          quad(a+o, b+o, b-o, a-o);
+          };
+        for(float t=off+80.f; t+60.f<len; t+=step) {
+          const Vec3 tip = c + d*(t+60.f), l = c + d*t + sd*aw, r = c + d*t - sd*aw;
+          bar(l, tip);
+          bar(r, tip);
+          }
+        };
       switch(z.shape) {
         case ArpgBoss::Circle: {
           if(warn) {
-            brush(0.8f, 0.05f, 0.03f, 0.22f);
-            sector(c, 0.f, full, 0.f, z.r, 32);
-            brush(1.f, 0.25f, 0.08f, 0.35f);
-            sector(c, 0.f, full, 0.f, z.r*k, 32);
-            brush(1.f, 0.2f, 0.1f, 0.7f);
-            sector(c, 0.f, full, z.r-14.f, z.r, 32);
+            auto ring = [&](float a, float b) { sector(c, 0.f, full, a, b, 40); };
+            brush(0.08f, 0.f, 0.f, 0.45f*fa);
+            sector(c, 0.f, full, 0.f, z.r, 40);
+            brush(cr, cg, cb, 0.45f*fa);
+            sector(c, 0.f, full, 0.f, z.r*k, 40);
+            rims(ring, 0.f, z.r, k, 1.f);
+            if(last) {
+              brush(1.f, 1.f, 0.9f, 0.35f*fa);
+              sector(c, 0.f, full, 0.f, z.r, 40);
+              }
             }
           else if(z.end>z.fire) {
-            const float a = (1.f-std::max(0.f, k-0.8f)/0.2f)*0.32f*pulse; // fades out at the end
+            const float a = (1.f-std::max(0.f, k-0.8f)/0.2f)*0.38f*pulse; // fades out at the end
             if(z.look==ArpgBoss::Poison)
               brush(0.25f, 0.75f, 0.12f, a); else
               brush(1.f, 0.45f, 0.08f, a);
-            sector(c, 0.f, full, 0.f, z.r, 32);
+            sector(c, 0.f, full, 0.f, z.r, 40);
+            brush(0.f, 0.f, 0.f, a*0.8f);
+            sector(c, 0.f, full, z.r, z.r+8.f, 40);
             }
           break;
           }
@@ -2966,45 +3015,70 @@ void MainWindow::paintArpgBossZones(Painter& p, const Matrix4x4& vp) {
           if(!warn)
             break;
           const float base = std::atan2(z.dirZ, z.dirX), hw = z.w*float(M_PI)/180.f;
-          brush(0.8f, 0.05f, 0.03f, 0.22f);
-          sector(c, base-hw, base+hw, 0.f, z.r, 16);
-          brush(1.f, 0.3f, 0.05f, 0.35f);
-          sector(c, base-hw, base+hw, 0.f, z.r*k, 16);
-          brush(1.f, 0.2f, 0.1f, 0.7f);
-          sector(c, base-hw, base+hw, z.r-16.f, z.r, 16);
+          auto arc = [&](float a, float b) { sector(c, base-hw, base+hw, a, b, 20); };
+          brush(0.08f, 0.f, 0.f, 0.45f*fa);
+          sector(c, base-hw, base+hw, 0.f, z.r, 20);
+          brush(cr, cg, cb, 0.45f*fa);
+          sector(c, base-hw, base+hw, 0.f, z.r*k, 20);
+          rims(arc, 0.f, z.r, k, 1.f);
+          // the side edges
+          brush(1.f, 0.85f, 0.4f, 0.7f*fa);
+          for(float s:{-1.f, 1.f}) {
+            const Vec3 e = {std::cos(base+s*hw), 0.f, std::sin(base+s*hw)};
+            const Vec3 o = Vec3(-e.z, 0.f, e.x)*(s*6.f);
+            quad(c+o, c+e*z.r+o, c+e*z.r-o, c-o);
+            }
+          brush(1.f, 0.9f, 0.6f, 0.55f*fa);
+          arrows(z.r, z.r*std::tan(hw)*0.5f);
+          if(last) {
+            brush(1.f, 1.f, 0.9f, 0.35f*fa);
+            sector(c, base-hw, base+hw, 0.f, z.r, 20);
+            }
           break;
           }
         case ArpgBoss::Line: {
           if(!warn)
             break;
-          if(z.look==ArpgBoss::Bolt)
-            brush(0.5f, 0.1f, 0.7f, 0.25f); else
-            brush(0.8f, 0.05f, 0.03f, 0.22f);
+          brush(0.08f, 0.f, 0.f, 0.45f*fa);
           strip(c, d, 0.f, z.r, -z.w, z.w);
-          if(z.look==ArpgBoss::Bolt)
-            brush(0.75f, 0.3f, 1.f, 0.38f); else
-            brush(0.55f, 0.75f, 1.f, 0.35f);
+          brush(cr, cg, cb, 0.45f*fa);
           strip(c, d, 0.f, z.r*k, -z.w, z.w);
-          brush(1.f, 0.2f, 0.1f, 0.65f);
+          brush(0.f, 0.f, 0.f, 0.55f);
+          strip(c, d, 0.f, z.r, z.w, z.w+10.f);
+          strip(c, d, 0.f, z.r, -z.w-10.f, -z.w);
+          const float blink = 0.6f + 0.4f*std::sin(float(now%100000)*(0.012f+0.05f*k*k));
+          brush(1.f, 0.95f, 0.45f, 0.85f*blink);
           strip(c, d, 0.f, z.r, z.w-12.f, z.w);
           strip(c, d, 0.f, z.r, -z.w, -z.w+12.f);
+          strip(c, d, z.r-12.f, z.r, -z.w, z.w);
+          brush(1.f, 0.9f, 0.6f, 0.55f*fa);
+          arrows(z.r, z.w);
+          if(last) {
+            brush(1.f, 1.f, 0.9f, 0.35f*fa);
+            strip(c, d, 0.f, z.r, -z.w, z.w);
+            }
           break;
           }
         case ArpgBoss::Ring: {
           if(warn) {
-            // where it starts, and (faint) how far it runs
-            brush(0.5f, 0.05f, 0.5f, 0.25f);
-            sector(c, 0.f, full, 0.f, z.r*k, 32);
-            brush(0.8f, 0.2f, 0.9f, 0.6f);
-            sector(c, 0.f, full, z.r-14.f, z.r, 32);
-            brush(0.8f, 0.2f, 0.9f, 0.2f);
-            sector(c, 0.f, full, z.r2-10.f, z.r2, 48);
+            // where it starts, and how far it runs (a dashed outer ring)
+            brush(0.08f, 0.f, 0.08f, 0.45f);
+            sector(c, 0.f, full, 0.f, z.r, 40);
+            brush(cr, cg, cb, 0.45f);
+            sector(c, 0.f, full, 0.f, z.r*k, 40);
+            auto ring = [&](float a, float b) { sector(c, 0.f, full, a, b, 40); };
+            rims(ring, 0.f, z.r, k, 0.6f);
+            brush(0.85f, 0.4f, 1.f, 0.35f+0.3f*k);
+            for(int i=0; i<36; i+=2)
+              sector(c, full*float(i)/36.f, full*float(i+1)/36.f, z.r2-14.f, z.r2, 2);
             } else {
             const float R = ArpgBoss::ringRadius(z, now);
-            brush(0.35f, 0.05f, 0.45f, 0.55f*pulse);
-            sector(c, 0.f, full, std::max(0.f, R-z.w*0.5f), R+z.w*0.5f, 48);
-            brush(0.85f, 0.4f, 1.f, 0.6f);
-            sector(c, 0.f, full, R+z.w*0.5f-10.f, R+z.w*0.5f, 48);
+            brush(0.f, 0.f, 0.f, 0.45f);
+            sector(c, 0.f, full, std::max(0.f, R-z.w*0.5f-10.f), R+z.w*0.5f+10.f, 56);
+            brush(0.45f, 0.08f, 0.6f, 0.65f*pulse);
+            sector(c, 0.f, full, std::max(0.f, R-z.w*0.5f), R+z.w*0.5f, 56);
+            brush(0.95f, 0.6f, 1.f, 0.8f);
+            sector(c, 0.f, full, R+z.w*0.5f-12.f, R+z.w*0.5f, 56);
             }
           break;
           }
@@ -3057,6 +3131,21 @@ void MainWindow::paintArpgBossBar(Painter& p) {
   const std::string pt = ArpgMenu::gtxt(ph);
   auto& small = Resources::font(scale*0.75f);
   small.drawText(p, x+W+int(8.f*scale), y+H, pt);
+
+  // Diathic (2026-11-03): the strong attack being prepared, under the bar: its name, blinking faster to the hit
+  const auto ab = st->ability(now);
+  if(!ab.empty()) {
+    const uint64_t left  = st->abilityEnd()-now;
+    const float    blink = 0.65f + 0.35f*std::sin(float(now%100000)*(left<500 ? 0.05f : 0.02f));
+    GthFont        big   = Resources::font(scale*1.1f);
+    big.setColor(Color(1.f, 0.45f+0.3f*blink, 0.2f, 1.f));
+    const std::string at = ArpgMenu::gtxt(ab);
+    const auto        as = big.textSize(at);
+    const int         ay = y+H+int(30.f*scale);
+    p.setBrush(Brush(Color(0.f, 0.f, 0.f, 0.55f), Painter::Alpha));
+    p.drawRect((w()-as.w)/2-int(10.f*scale), ay-as.h-int(2.f*scale), as.w+int(20.f*scale), as.h+int(8.f*scale));
+    big.drawText(p, (w()-as.w)/2, ay, at);
+    }
   }
 
 void MainWindow::paintArpgVitals(Painter& p) {

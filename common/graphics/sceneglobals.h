@@ -39,7 +39,8 @@ class SceneGlobals final {
                      float cutHeight, float cutRadius, float fadeRadius,
                      float fowRadius, float fowFade,
                      float seeThrough, float indoor, float lowerStart, float lowerEnd, float nearCut,
-                     const float* los128, const Tempest::Vec4* highlight2 = nullptr);
+                     const float* los128, const Tempest::Vec4* highlight2 = nullptr,
+                     const Tempest::Vec4& keep = Tempest::Vec4());
 
     void setTime(uint64_t time);
     void commitUbo(uint8_t fId);
@@ -134,6 +135,7 @@ class SceneGlobals final {
       Tempest::Vec4                   arpgParams3 = {};
       Tempest::Vec4                   arpgLos[32] = {};
       Tempest::Vec4                   arpgHi[2]   = {};
+      Tempest::Vec4                   arpgKeep    = {};
       };
 
     Tempest::UniformBuffer<UboGlobal> uboGlobalPf[Resources::MaxFramesInFlight][V_Count];

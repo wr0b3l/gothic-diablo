@@ -80,6 +80,12 @@ bool arpgHidden() {
   const vec2 ndc  = (gl_FragCoord.xy*scene.screenResInv)*2.0-vec2(1.0);
   const vec3 wpos = arpgWorldPos(ndc, gl_FragCoord.z);
 
+#if (MESH_TYPE==T_SKINING)
+  // Diathic: a dragon is never cut (the ceiling cut and the see-through circle took its head, neck and back)
+  if(scene.arpgKeep.w>0.0 && distance(wpos, scene.arpgKeep.xyz) < scene.arpgKeep.w)
+    return false;
+#endif
+
   // 1. indoors: cut away everything above the hero's head (ceilings, roofs, upper floors, their torches)
   const float cutHeight = scene.arpgCenter.w;
   if(cutHeight>0.0 && wpos.y > scene.arpgPlayer.y+cutHeight) {
