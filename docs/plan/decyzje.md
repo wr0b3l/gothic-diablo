@@ -133,6 +133,12 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Smoki — dwie fazy z lotem, więcej życia (2026-11-04, gałąź smoki-fazy)
+- Użytkownik: smoki +30% życia; 2 etapy z addami na 66% i 33% z fazami lotu; obrażenia od parowania zmniejszone o 30%
+- Zmiany: progi faz smoków 66% / 33% (Kruk bez zmian: 70% / 35%), w obu golemy żywiołu (ożywieniec: szkielety) i lot; życie smoków ×1,3; trafienie smoka po parowaniu ×2,8 zamiast ×4
+- Wartości do balansu: `ArpgBossCfg::DragonPhase2`, `DragonPhase3`, `DragonHpMul`, `DragonStagger`
+- Do testu: smok przy 66% — ryk, golemy, lot, lądowanie po ich śmierci; przy 33% to samo; znaczniki na pasku w 66% i 33%; spadek pod 33% w czasie lotu (łuk) — lot trwa dalej z nowymi golemami; życie smoka; cios po parowaniu na smoku słabszy
+
 ## Leczenie, łup elit, życie w rozdziałach (2026-11-04, gałąź smoki-lot)
 - Użytkownik: pasywna regeneracja % zdrowia po zjedzeniu — 5% życia, mikstury 20%, 25% i 35%; więcej złota i losowe tabliczki z elitarnych potworów; mniejszy przyrost życia na akt
 - Odpowiedzi (2026-11-04): leczenie przez czas oprócz natychmiastowego leczenia Gothica; łup 30–60 złota × rozdział, tablica w 25% (losowa, najczęściej poziom 1); życie ×1,05 na rozdział (jak obrażenia)

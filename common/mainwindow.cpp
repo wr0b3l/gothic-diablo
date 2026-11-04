@@ -3124,7 +3124,7 @@ void MainWindow::paintArpgBossBar(Painter& p) {
     }
   // the phase marks
   p.setBrush(Brush(Color(1.f, 0.88f, 0.55f, 0.9f), Painter::Alpha));
-  for(float m:{ArpgBossCfg::Phase2, ArpgBossCfg::Phase3})
+  for(float m:{st->phase2(), st->phase3()})
     p.drawRect(x+int(float(W)*m)-1, y-3, 2, H+6);
 
   auto& fnt = Resources::font(scale*0.95f);
