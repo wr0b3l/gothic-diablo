@@ -2939,6 +2939,8 @@ float Npc::arpgHpWantMul() const {
     m *= ArpgStatus::MonsterHpMul;
   if(arpgIsEliteLeader())
     m *= ArpgElite::LeaderHp;
+  if(arpgIsDragon())
+    m *= ArpgBossCfg::DragonHpMul; // Diathic (decision 2026-11-04): the dragons +30%
   return m;
   }
 
@@ -3195,7 +3197,9 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*arpgDmgScale)));
   // Diathic: staggered (after a parry): this hit x4, and the stagger is over (damage over time does not end it)
   if(hitResult.value>0 && arpgHasStatus(ArpgStatus::Stagger)) {
-    hitResult.value = int32_t(std::lround(float(hitResult.value)*ArpgStatus::StaggerDmgMul));
+    // (a dragon: 30% less, decision 2026-11-04)
+    const float k = (arpgIsDragon() && Camera::isArpgEnabled()) ? ArpgBossCfg::DragonStagger : 1.f;
+    hitResult.value = int32_t(std::lround(float(hitResult.value)*ArpgStatus::StaggerDmgMul*k));
     arpgSt[ArpgStatus::Stagger].until = owner.tickCount();
     }
   // gothic-diablo: hero's arrows in the ARPG view (normal shot x0.5, charged shot x1.5)

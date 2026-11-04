@@ -15,8 +15,12 @@ class World;
 // minions. Only in the ARPG view (ArpgBosses::tick is called from PlayerControl::tickMove there).
 namespace ArpgBossCfg {
   // phases: life below this part of the maximum
-  constexpr float    Phase2        = 0.70f;
+  constexpr float    Phase2        = 0.70f;  // Raven
   constexpr float    Phase3        = 0.35f;
+  constexpr float    DragonPhase2  = 0.66f;  // the dragons (decision 2026-11-04): minions and a flight at both
+  constexpr float    DragonPhase3  = 0.33f;
+  constexpr float    DragonHpMul   = 1.3f;   // the dragons' life (decision 2026-11-04)
+  constexpr float    DragonStagger = 0.7f;   // a dragon's hit after a parry: x4 of Zachwianie x this (2026-11-04)
   constexpr uint64_t PhaseShieldMs = 1500;   // the roar of a new phase: no damage taken
   constexpr float    Range         = 4000.f; // cm: bosses further from the hero do nothing extra
   constexpr uint64_t ActiveMs      = 5000;   // still "in the fight" this long after Gothic's attack state ends
@@ -133,6 +137,9 @@ class ArpgBoss final {
     static bool  detect(World& w, const Npc& npc, Kind& out);
 
     Kind                     kind() const { return k; }
+    // the life marks of the phases on the bar (the dragons 66 / 33%, Raven 70 / 35%)
+    float                    phase2() const { return k==Raven ? ArpgBossCfg::Phase2 : ArpgBossCfg::DragonPhase2; }
+    float                    phase3() const { return k==Raven ? ArpgBossCfg::Phase3 : ArpgBossCfg::DragonPhase3; }
     int                      phase() const { return ph; }
     bool                     shielded(uint64_t now) const { return now<shieldUntil; }
     bool                     active(uint64_t now) const { return now<activeUntil; }
@@ -182,12 +189,13 @@ class ArpgBoss final {
     float             flyH         = 0, flyR = 0, flyAng = 0, flyDir = 1;
     float             pitch        = 0, roll = 0;
     mutable uint64_t  hintAt       = 0;
+    bool              flyPending   = false;   // new minions came while it was landing: up again after it
 
     void        startFlight(Npc& boss, World& w, uint64_t at);
     void        land       (Npc& boss, World& w);
     int         minionsAlive(World& w) const;
 
-    static int  phaseOf(const Npc& npc);
+    static int  phaseOf(Kind k, const Npc& npc);
     void        onPhase(Npc& boss, Npc& hero, World& w);
     void        attack (Npc& boss, Npc& hero, World& w, uint64_t now);
     void        resolve(Npc& boss, Npc& hero, World& w, uint64_t now);

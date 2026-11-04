@@ -64,7 +64,7 @@ bool inside(const ArpgBoss::Zone& z, const Vec3& p) {
 }
 
 ArpgBoss::ArpgBoss(Kind k, const Npc& npc)
-  :k(k), ph(phaseOf(npc)) {
+  :k(k), ph(phaseOf(k, npc)) {
   // a game loaded during the fight: the phase from the life, without the roar and new minions
   }
 
@@ -91,12 +91,14 @@ bool ArpgBoss::detect(World& w, const Npc& npc, Kind& out) {
   return false;
   }
 
-int ArpgBoss::phaseOf(const Npc& npc) {
+int ArpgBoss::phaseOf(Kind k, const Npc& npc) {
+  const float p2 = (k==Raven) ? Phase2 : DragonPhase2;
+  const float p3 = (k==Raven) ? Phase3 : DragonPhase3;
   const int32_t mx = std::max(1, npc.attribute(ATR_HITPOINTSMAX));
   const float   v  = float(npc.attribute(ATR_HITPOINTS))/float(mx);
-  if(v<Phase3)
+  if(v<p3)
     return 3;
-  if(v<Phase2)
+  if(v<p2)
     return 2;
   return 1;
   }
@@ -140,7 +142,7 @@ void ArpgBoss::tick(Npc& boss, Npc& hero, World& w) {
     fly = Ground;
 
   // a new phase (the life only goes down here: the dragons' regeneration does not take a phase back)
-  const int p = phaseOf(boss);
+  const int p = phaseOf(k, boss);
   while(ph<p) {
     ph++;
     onPhase(boss, hero, w);
@@ -178,9 +180,9 @@ void ArpgBoss::onPhase(Npc& boss, Npc& hero, World& w) {
 
   if(k==Raven && ph==2)
     spawn(boss, w, "STONEGUARDIAN", Minions, "spellFX_BELIARSRAGE_COLLIDE");
-  if(ph!=3)
+  if(k==Raven || (ph!=2 && ph!=3))
     return;
-  // the golems of the dragon's element (decision 2026-11-04; the undead dragon: skeletons)
+  // the golems of the dragon's element (decision 2026-11-04; the undead dragon: skeletons), at 66% and at 33%
   int n = 0;
   switch(k) {
     case Swamp:  n = spawn(boss, w, "SWAMPGOLEM",      Minions,   "spellFX_Waterfist_COLLIDEFX");    break;
@@ -238,7 +240,14 @@ void ArpgBoss::hintAir(World& w) const {
 
 void ArpgBoss::startFlight(Npc& boss, World& w, uint64_t at) {
   (void)boss;
-  (void)w;
+  if(fly==Landing) {
+    flyPending = true; // up again when it is down
+    return;
+    }
+  if(fly!=Ground) {
+    flyStart = w.tickCount(); // already up: the new minions keep it there, 5 minutes from now
+    return;
+    }
   fly   = Wait; // the roar first (Gothic's AI goes on), then the take-off
   flyT0 = at;
   }
@@ -354,6 +363,11 @@ bool ArpgBoss::tickFlight(Npc& boss, World& w) {
         ArpgBosses::effect(w, "spellFX_Concussionbolt_COLLIDE", flyCenter);
         nextAttack = std::max(nextAttack, now+3000);
         busyUntil  = std::max(busyUntil,  now+2000);
+        if(flyPending) {
+          flyPending = false;
+          if(minionsAlive(w)>0)
+            startFlight(boss, w, now+PhaseShieldMs); // after the roar, up again
+          }
         return true;
         }
       break;
