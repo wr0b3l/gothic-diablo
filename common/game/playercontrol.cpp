@@ -2,6 +2,7 @@
 #include "game/arpgboss.h"
 #include "game/arpgelite.h"
 #include "game/arpgteleport.h"
+#include "game/arpgweapon.h"
 
 #include <algorithm>
 #include <cmath>
@@ -530,6 +531,12 @@ bool PlayerControl::interact(Interactive &it) {
     return false;
   if(it.isContainer()){
     inv.open(*pl,it);
+    return true;
+    }
+  // Diathic (2026-11-04): the small workshop at every smith station: a grindstone, an anvil without hot steel
+  // (with it: Gothic's forging as before)
+  if(auto c = Gothic::inst().camera(); c!=nullptr && c->isArpgActive() && ArpgWeapon::workshopNow(it, *pl)) {
+    ArpgWeapon::requestWorkshop();
     return true;
     }
   if(pl->setInteraction(&it)){
@@ -1898,7 +1905,9 @@ bool PlayerControl::arpgUsableMob(const Interactive& m) {
   // named mobs, and unnamed ones with a script action (Greg's treasure spots: no focus name,
   // dug up with a pickaxe — in Gothic you stand on the cross and press the action key),
   // and unnamed switches and levers (Adanos' temple: they trigger doors and traps)
-  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty() || m.arpgIsSwitch();
+  // (Diathic: the smith stations - the workshop)
+  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty() || m.arpgIsSwitch() ||
+         ArpgWeapon::stationOf(m)!=ArpgWeapon::NoStation;
   }
 
 Focus PlayerControl::arpgPick() {

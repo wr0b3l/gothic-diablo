@@ -1,5 +1,6 @@
 #include "game/arpgkeys.h"
 #include "game/arpgteleport.h"
+#include "game/arpgweapon.h"
 #include "arpgmenu.h"
 
 #include <Tempest/Application>
@@ -274,6 +275,11 @@ void ArpgMenu::open(Page p) {
     scrollL = 0;
     cat     = 0;
     }
+  if(p==P_Smith) {
+    smithCls = 0;
+    smithMod = -1;
+    smithMsg.clear();
+    }
   }
 
 void ArpgMenu::close() {
@@ -436,6 +442,24 @@ bool ArpgMenu::mouseDown(const Point& pos, bool right, bool shift, Npc& pl) {
         Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
         }
       return true;
+    case H_SmithWpn:
+      smithCls = h->cls;
+      smithMsg.clear();
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      return true;
+    case H_SmithMod:
+      smithMod = h->id;
+      smithMsg.clear();
+      Gothic::inst().emitGlobalSound(Gothic::inst().loadSoundFx("MENU_BROWSE"));
+      return true;
+    case H_SmithDo: {
+      Item*       it = smithCls!=0 ? pl.getItem(smithCls) : nullptr;
+      std::string msg;
+      if(it!=nullptr && smithMod>=0)
+        ArpgWeapon::modApply(pl, *it, size_t(smithMod), msg);
+      smithMsg = gtxt(msg);
+      return true;
+      }
     case H_TakeAll: {
       // everything from the chest / the body
       if(invMenu==nullptr)
@@ -839,6 +863,7 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
     return;
   hits.clear();
   hoverCls = 0;
+  cardItem = nullptr;
 
   // the window follows the height of the screen (designed for 1080 lines)
   k = std::max(0.5f, float(h)/1080.f);
@@ -864,7 +889,7 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
   // trade, chest, looting: the other's page is a red book (not ours), ours the brown one
   const Rect cl = drawPage(p, left,  true, page==P_Trade ? "BOOK_RED_L.TGA" : nullptr);
   const Rect cr = drawPage(p, right, false);
-  if(page!=P_Trade)
+  if(page!=P_Trade && page!=P_Smith)
     drawTabs(p, w, f);
 
   switch(page) {
@@ -874,10 +899,13 @@ void ArpgMenu::paint(Painter& p, int w, int h, float /*scale*/, InventoryRendere
     case P_Skills:    paintTrees(p, f, cl, cr, items, pl); break;
     case P_Trade:     paintTrade(p, f, cl, cr, items, pl); break;
     case P_Log:       paintLog  (p, f, cl, cr);            break;
+    case P_Smith:     paintSmith(p, f, cl, cr, items, pl); break;
     }
 
   if(page!=P_Skills && page!=P_Log)
     drawHint(p, w, h, f);
+  if((page==P_Equip || page==P_Trade || page==P_Smith) && cardItem!=nullptr && !drag.on)
+    paintWeaponCard(p, f, w, h, *cardItem, pl);
   if(page==P_Equip || page==P_Trade)
     paintDrag(p, f, items, pl);
   }
@@ -1171,6 +1199,8 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
     f.small->drawText(p, r.x+pad, r.y+(r.h-lines*f.small->pixelSize())/2+f.small->pixelSize(), r.w-2*pad, 0, s, AlignHCenter);
     return;
     }
+  if((ItmFlags(it->mainFlag()) & (ITM_CAT_NF|ITM_CAT_FF))!=0)
+    cardItem = it;                   // Diathic: a weapon - its exact stats on a card too
   const int mw = r.h-2*pad;          // model on the right
   const int tw = r.w-2*pad-mw-int(8*k);
   int y = r.y+pad-int(4*k);
@@ -1197,6 +1227,389 @@ void ArpgMenu::paintInfo(Painter& p, const Fonts& f, const Rect& r, InventoryRen
   if(!extra.empty())
     text(p, *f.redS, r.x+pad, std::min(y+int(2*k), bottom+int(2*k)), extra);
   items.drawItem(r.x+r.w-pad-mw, r.y+pad, mw, mw, *it);
+  }
+
+// Diathic (2026-11-04): the exact stats of a weapon (the backpack, worn, trade): a sheet between the pages, over the
+// hero (no item models there): damage by kind, reach, what it needs, the hero's hit with it, the chance of the full
+// hit, its properties and modification, against the weapon worn in its place
+void ArpgMenu::paintWeaponCard(Painter& p, const Fonts& f, int w, int h, const Item& it, Npc& pl) {
+  static const Color GoodC(0.10f, 0.38f, 0.08f, 1.f);
+  using FT = Resources::FontType;
+  const GthFont& good = tinted(Resources::font("font_old_10_white.tga", FT::Normal, 1.05f*k), 2, GoodC);
+  auto*          wrld = Gothic::inst().world();
+  if(wrld==nullptr)
+    return;
+  auto&       h0     = it.handle();
+  const bool  ranged = (ItmFlags(it.mainFlag()) & ITM_CAT_FF)!=0;
+  const bool  xbow   = ranged && it.isCrossbow();
+  const auto* pk     = pl.arpgPerks();
+
+  // the hero's hit with this weapon (no protection): like DamageCalculator (strength / dexterity + the weapon for
+  // each kind of its damage); a swing without the full damage: ArpgStatus::NormalHit, a shot: ArpgStatus::BowDamage
+  auto hitOf = [&](const Item& wp, int32_t& full, int32_t& normal) {
+    const bool    rg   = (ItmFlags(wp.mainFlag()) & ITM_CAT_FF)!=0;
+    const int32_t base = pl.attribute(rg ? ATR_DEXTERITY : ATR_STRENGTH);
+    uint32_t      mask = uint32_t(wp.handle().damage_type);
+    if(mask==0)
+      for(size_t i=0; i<zenkit::DamageType::NUM; ++i)
+        if(wp.handle().damage[i]>0)
+          mask |= 1u<<i;
+    full = 0; normal = 0;
+    for(size_t i=0; i<zenkit::DamageType::NUM; ++i) {
+      if((mask & (1u<<i))==0)
+        continue;
+      const int32_t v = base+ArpgWeapon::damageOf(wp, i);
+      full   += v;
+      normal += int32_t(std::lround(float(v)*(rg ? ArpgStatus::BowDamage : ArpgStatus::NormalHit)));
+      }
+    };
+
+  struct Line {
+    std::string    label, value;
+    const GthFont* lf = nullptr;
+    const GthFont* vf = nullptr;
+    bool           wrapped = false;
+    bool           rule    = false;
+    };
+  std::vector<Line> lines;
+  auto row = [&](std::string_view l, std::string_view v, const GthFont* vf = nullptr) {
+    Line ln;
+    ln.label = gtxt(l);
+    ln.value = gtxt(v);
+    ln.lf    = f.small;
+    ln.vf    = vf!=nullptr ? vf : f.redS;
+    lines.push_back(std::move(ln));
+    };
+  auto note = [&](std::string_view t, const GthFont* fn = nullptr) {
+    Line ln;
+    ln.label   = gtxt(t);
+    ln.lf      = fn!=nullptr ? fn : f.small;
+    ln.wrapped = true;
+    lines.push_back(std::move(ln));
+    };
+  auto rule = [&]() {
+    Line ln;
+    ln.rule = true;
+    lines.push_back(std::move(ln));
+    };
+  char buf[192] = {};
+
+  // kind
+  if(ranged)
+    row("Rodzaj", xbow ? "Kusza" : "Łuk"); else
+    row("Rodzaj", it.is2H() ? "Broń dwuręczna" : "Broń jednoręczna");
+
+  // damage by kind
+  int32_t total = 0;
+  for(size_t i=0; i<zenkit::DamageType::NUM; ++i) {
+    const int32_t v = ArpgWeapon::damageOf(it, i);
+    if(v<=0)
+      continue;
+    total += v;
+    std::snprintf(buf, sizeof(buf), "Obrażenia %s", ArpgWeapon::damageName(i));
+    row(buf, std::to_string(v));
+    }
+  if(total==0)
+    row("Obrażenia", "0");
+  if(!ranged && h0.range>0) {
+    std::snprintf(buf, sizeof(buf), "%d cm", int(h0.range));
+    row("Zasięg", buf);
+    }
+
+  // what it needs
+  for(size_t i=0; i<zenkit::IItem::condition_count; ++i) {
+    const int32_t a = h0.cond_atr[i], v = h0.cond_value[i];
+    if(v<=0)
+      continue;
+    const char* nm = a==ATR_STRENGTH ? "Wymagana siła" : a==ATR_DEXTERITY ? "Wymagana zręczność" :
+                     a==ATR_MANAMAX ? "Wymagana mana" : nullptr;
+    if(nm==nullptr)
+      continue;
+    const bool ok = pl.attribute(Attribute(a))>=v;
+    row(nm, std::to_string(v));
+    if(!ok)
+      lines.back().value += gtxt(" (masz ")+std::to_string(pl.attribute(Attribute(a)))+")";
+    }
+
+  // the hero's hit
+  rule();
+  int32_t full = 0, normal = 0;
+  hitOf(it, full, normal);
+  if(ranged) {
+    row("Twój strzał (bez ochrony)", std::to_string(normal));
+    note("(zręczność + broń) x 0,5; strzał naładowany mocniej");
+    const int32_t ch = pl.handle().hitchance[xbow ? TALENT_CROSSBOW : TALENT_BOW];
+    std::snprintf(buf, sizeof(buf), "%d%%", int(ch));
+    row("Celność", buf);
+    } else {
+    std::snprintf(buf, sizeof(buf), "%d / %d", int(full), int(normal));
+    row("Twój cios: pełny / zwykły", buf);
+    int32_t ch = pl.handle().hitchance[it.is2H() ? TALENT_2H : TALENT_1H];
+    if(pk!=nullptr)
+      ch += pk->critAdd + (it.is2H() ? 0 : pk->crit1H);
+    std::snprintf(buf, sizeof(buf), "%d%%", int(std::clamp(ch, 0, 100)));
+    row("Szansa na pełny cios", buf);
+    }
+
+  // against the weapon worn in its place
+  const Item* worn = nullptr;
+  for(auto i = pl.inventory().iterator(Inventory::T_Inventory); i.isValid(); ++i) {
+    if(!i.isEquipped())
+      continue;
+    const Item& e = *i;
+    if((ItmFlags(e.mainFlag()) & (ranged ? ITM_CAT_FF : ITM_CAT_NF))!=0) {
+      worn = &e;
+      break;
+      }
+    }
+  if(worn!=nullptr && worn!=&it) {
+    int32_t wf = 0, wn = 0;
+    hitOf(*worn, wf, wn);
+    const int32_t d = ranged ? (normal-wn) : (full-wf);
+    std::snprintf(buf, sizeof(buf), "%+d", int(d));
+    row(ranged ? "Względem założonej (strzał)" : "Względem założonej (pełny cios)", buf, d>=0 ? &good : f.redS);
+    }
+
+  // properties, the modification
+  const auto ef = ArpgWeapon::effectsOf(*wrld, it);
+  const int  mi = ArpgWeapon::modOf(it);
+  if(ef.n>0 || mi>=0)
+    rule();
+  for(int i=0; i<ef.n; ++i)
+    note(ArpgWeapon::describe(ef.e[i]), &good);
+  if(mi>=0) {
+    std::snprintf(buf, sizeof(buf), "%s%s", ArpgWeapon::ModPrefix, ArpgWeapon::mod(size_t(mi)).name);
+    note(buf, f.redS);
+    }
+
+  // Gothic's other lines (bonuses of the scripts: +1H talent, mana...): not the damage, needs, value, kind
+  {
+    std::string hand[2];
+    if(auto s1 = wrld->script().findSymbol("NAME_ONEHANDED"))
+      hand[0] = s1->get_string();
+    if(auto s2 = wrld->script().findSymbol("NAME_TWOHANDED"))
+      hand[1] = s2->get_string();
+    bool first = true;
+    for(size_t i=0; i<zenkit::IItem::text_count; ++i) {
+      const auto&   t = h0.text[i];
+      const int32_t c = h0.count[i];
+      if(t.empty() || (i==1 && mi>=0) || t==hand[0] || t==hand[1])
+        continue;
+      bool known = (c!=0 && (c==h0.damage_total || c==h0.value));
+      for(size_t j=0; j<zenkit::IItem::condition_count; ++j)
+        known = known || (c!=0 && c==h0.cond_value[j]);
+      if(known)
+        continue;
+      if(first)
+        rule();
+      first = false;
+      Line ln;
+      ln.label = t;
+      ln.value = c!=0 ? std::to_string(c) : std::string();
+      ln.lf    = f.small;
+      ln.vf    = f.redS;
+      ln.wrapped = (c==0);
+      lines.push_back(std::move(ln));
+      }
+  }
+  rule();
+  row("Wartość", std::to_string(it.cost()));
+
+  // the sheet: between the pages, at the height of the cursor
+  const int pad  = int(30*k);
+  const int gapL = pageL.x+pageL.w, gapR = pageR.x;
+  const int cw   = std::clamp(gapR-gapL-int(24*k), int(300*k), int(440*k));
+  const int iw   = cw-2*pad;
+  int ch = pad*2 + f.sub->pixelSize()+int(8*k);
+  for(auto& ln:lines) {
+    if(ln.rule)
+      ch += int(10*k);
+    else if(ln.wrapped)
+      ch += std::max(1, int(ln.lf->lineCount(iw, ln.label)))*ln.lf->pixelSize()+int(3*k);
+    else
+      ch += ln.lf->pixelSize()+int(3*k);
+    }
+  int cx = (gapL+gapR)/2-cw/2;
+  if(gapR-gapL<cw)
+    cx = std::clamp(mouse.x+int(24*k), 0, std::max(0, w-cw));
+  const int cy = std::clamp(mouse.y-ch/3, int(70*k), std::max(int(70*k), h-ch-int(40*k)));
+  letter(p, Rect(cx, cy, cw, ch), 1.f);
+
+  int y = cy+pad-int(4*k);
+  const std::string_view name = it.description();
+  auto& fName = f.sub->textSize(name).w<=iw ? *f.sub : *f.body;
+  text(p, fName, cx+pad, y, name);
+  y += f.sub->pixelSize()+int(8*k);
+  for(auto& ln:lines) {
+    if(ln.rule) {
+      drawRule(p, cx+pad, y+int(4*k), iw);
+      y += int(10*k);
+      continue;
+      }
+    if(ln.wrapped) {
+      y += wrap(p, *ln.lf, cx+pad, y, iw, ln.label)+int(3*k);
+      continue;
+      }
+    text(p, *ln.lf, cx+pad, y, ln.label);
+    if(!ln.value.empty())
+      textRight(p, *ln.vf, cx+pad+iw, y, ln.value);
+    y += ln.lf->pixelSize()+int(3*k);
+    }
+  }
+
+// Diathic (2026-11-04): the small workshop at every smith station (an anvil without hot steel, a grindstone):
+// left the hero's weapons (white weapons: the workshop changes only those), right the recipes with Gothic's
+// materials; a recipe chosen + "Wykuj ulepszenie" = the materials taken, the weapon changed (ArpgWeapon::modApply)
+void ArpgMenu::paintSmith(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, InventoryRenderer& items, Npc& pl) {
+  auto& inv = pl.inventory();
+  int   y   = cl.y;
+  text(p, *f.title, cl.x, y, gtxt("Warsztat"));
+  y += f.title->pixelSize()+int(6*k);
+  drawRule(p, cl.x, y, cl.w);
+  y += int(8*k);
+  y += wrap(p, *f.small, cl.x, y, cl.w,
+            gtxt("Ulepsz broń białą materiałami. Jedno ulepszenie na broń - nowe zastępuje poprzednie. "
+                 "Wybierz broń, potem ulepszenie po prawej.")) + int(10*k);
+  y = drawSection(p, f, cl, y, gtxt("Twoja broń"));
+
+  // the weapons: worn first, then the backpack
+  struct Cell { const Item* it; bool eq; };
+  std::vector<Cell> list;
+  for(auto i = inv.iterator(Inventory::T_Inventory); i.isValid(); ++i) {
+    const Item& it = *i;
+    if((ItmFlags(it.mainFlag()) & ITM_CAT_NF)==0)
+      continue;
+    bool dup = false;
+    for(auto& c:list)
+      dup = dup || c.it==&it;
+    if(dup)
+      continue;
+    list.push_back({&it, i.isEquipped()});
+    }
+  std::stable_sort(list.begin(), list.end(), [](const Cell& a, const Cell& b) { return a.eq && !b.eq; });
+  if(smithCls==0 && !list.empty())
+    smithCls = list.front().it->clsId();
+
+  const int cols = 5;
+  const int gap  = int(5*k);
+  const int cs   = (cl.w-(cols-1)*gap)/cols;
+  const Item* chosen = nullptr;
+  for(size_t i=0; i<list.size(); ++i) {
+    const Rect r(cl.x+int(i%cols)*(cs+gap), y+int(i/cols)*(cs+gap), cs, cs);
+    if(r.y+r.h>cl.y+cl.h-int(120*k))
+      break;
+    const bool hv = r.contains(mouse);
+    drawSlot(p, r, list[i].eq, hv);
+    if(list[i].it->clsId()==smithCls) {
+      chosen = list[i].it;
+      const int lw = std::max(2, int(3*k));
+      frame(p, Rect(r.x-lw, r.y-lw, r.w+2*lw, r.h+2*lw), LineRedC, lw);
+      }
+    items.drawItem(r.x+cs/8, r.y+cs/8, cs-cs/4, cs-cs/4, *list[i].it);
+    Hit h; h.r = r; h.kind = H_SmithWpn; h.cls = list[i].it->clsId(); h.equipped = list[i].eq;
+    hits.push_back(h);
+    if(hv) {
+      hoverCls = h.cls;
+      cardItem = list[i].it;
+      }
+    }
+  if(list.empty())
+    y += wrap(p, *f.small, cl.x, y, cl.w, gtxt("Nie masz broni białej."));
+  else
+    y += int((list.size()+cols-1)/cols)*(cs+gap);
+  y += int(10*k);
+  if(chosen!=nullptr) {
+    drawRule(p, cl.x, y, cl.w);
+    y += int(8*k);
+    text(p, *f.sub, cl.x, y, chosen->description());
+    y += f.sub->pixelSize()+int(4*k);
+    const int mi = ArpgWeapon::modOf(*chosen);
+    std::string cur = mi>=0 ? std::string(ArpgWeapon::ModPrefix)+ArpgWeapon::mod(size_t(mi)).name : "Bez ulepszenia";
+    text(p, *f.redS, cl.x, y, gtxt(cur));
+    y += f.redS->pixelSize()+int(4*k);
+    if(cardItem==nullptr)
+      cardItem = chosen; // its card while nothing else is under the cursor
+    }
+
+  // ---- right: the recipes ----
+  y = cr.y;
+  text(p, *f.title, cr.x, y, gtxt("Ulepszenia"));
+  y += f.title->pixelSize()+int(6*k);
+  drawRule(p, cr.x, y, cr.w);
+  y += int(8*k);
+  auto& sc  = pl.world().script();
+  const int ic = int(34*k);
+  for(size_t m=0; m<ArpgWeapon::modCount(); ++m) {
+    const auto& md   = ArpgWeapon::mod(m);
+    const bool  fits = chosen==nullptr || ArpgWeapon::modFits(md, *chosen);
+    const int   top  = y;
+    const bool  sel  = (smithMod==int(m));
+    const GthFont& nf = sel ? *f.red : (fits ? *f.ink : *f.body);
+    text(p, nf, cr.x, y, gtxt(md.name));
+    std::string what = md.what;
+    if(md.status!=ArpgStatus::Count) {
+      char b[48] = {};
+      std::snprintf(b, sizeof(b), " (%d%% ciosów)", int(md.chance));
+      what += b;
+      }
+    if(md.fits==ArpgWeapon::Edge)  what += ", broń sieczna";
+    if(md.fits==ArpgWeapon::Blunt) what += ", broń obuchowa";
+    textRight(p, *f.small, cr.x+cr.w, y+(nf.pixelSize()-f.small->pixelSize()), gtxt(what));
+    y += nf.pixelSize()+int(4*k);
+    // the materials: the game's model, what it is, have / need
+    int x = cr.x;
+    for(auto& n:md.need) {
+      if(n.item==nullptr)
+        continue;
+      const size_t id   = sc.findSymbolIndex(n.item);
+      const size_t have = id==size_t(-1) ? 0 : pl.itemCount(id);
+      const Item*  icon = iconItem(n.item);
+      if(icon!=nullptr)
+        items.drawItem(x, y, ic, ic, *icon);
+      char b[96] = {};
+      std::snprintf(b, sizeof(b), "%d/%d", int(have), int(n.count));
+      const GthFont& cf = have>=size_t(n.count) ? *f.ink : *f.redS;
+      text(p, cf, x+ic+int(2*k), y+(ic-cf.pixelSize())/2, b);
+      const int step = ic+int(2*k)+cf.textSize(b).w+int(14*k);
+      // the name under the cursor
+      if(icon!=nullptr && Rect(x, y, step, ic).contains(mouse))
+        textRight(p, *f.small, cr.x+cr.w, y+ic, icon->description());
+      x += step;
+      }
+    y += ic+int(8*k);
+    const Rect area(cr.x-int(6*k), top-int(3*k), cr.w+int(12*k), y-top);
+    if(area.contains(mouse) || sel)
+      fill(p, area.x, area.y, area.w, area.h, Color(0.55f, 0.09f, 0.05f, sel ? 0.10f : 0.05f));
+    Hit h; h.r = area; h.kind = H_SmithMod; h.id = int(m);
+    hits.push_back(h);
+    drawRule(p, cr.x, y-int(4*k), cr.w);
+    y += int(4*k);
+    }
+
+  // the button and what stops it
+  y += int(6*k);
+  if(chosen!=nullptr && smithMod>=0) {
+    Item* it = pl.getItem(chosen->clsId());
+    const std::string why = it!=nullptr ? ArpgWeapon::modBlocker(pl, *it, size_t(smithMod)) : std::string("Brak broni");
+    if(!why.empty()) {
+      y += wrap(p, *f.redS, cr.x, y, cr.w, gtxt(why)) + int(6*k);
+      } else {
+      const std::string lbl = gtxt("Wykuj ulepszenie");
+      const int bw = f.red->textSize(lbl).w+int(40*k), bh = f.red->pixelSize()+int(16*k);
+      const Rect br(cr.x+(cr.w-bw)/2, y, bw, bh);
+      const bool hv = br.contains(mouse);
+      fill(p, br.x, br.y, br.w, br.h, Color(0.55f, 0.09f, 0.05f, hv ? 0.22f : 0.10f));
+      frame(p, br, LineRedC, std::max(1, int(2*k)));
+      textCenter(p, *f.red, br.x+br.w/2, br.y+(bh-f.red->pixelSize())/2, lbl);
+      Hit h; h.r = br; h.kind = H_SmithDo;
+      hits.push_back(h);
+      y += bh+int(8*k);
+      }
+    } else {
+    y += wrap(p, *f.small, cr.x, y, cr.w, gtxt(chosen==nullptr ? "Wybierz broń po lewej." : "Wybierz ulepszenie.")) + int(6*k);
+    }
+  if(!smithMsg.empty())
+    wrap(p, *f.red, cr.x, y, cr.w, smithMsg);
   }
 
 void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect& cr, Npc& pl) {

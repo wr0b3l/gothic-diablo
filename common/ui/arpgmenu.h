@@ -35,6 +35,7 @@ class ArpgMenu final {
       P_Skills,
       P_Trade,     // trade, a chest, looting: opened and closed with Gothic's menu (InventoryMenu keeps the state)
       P_Log,       // Diathic: the diary (quests and notes of Gothic's quest log) as a book
+      P_Smith,     // Diathic: the workshop at a smith station (ArpgWeapon): modifications of weapons
       };
 
     bool   isOpen()  const { return page!=P_Closed; }
@@ -87,6 +88,9 @@ class ArpgMenu final {
       H_Quest,    // the diary: a quest (id = index in the quest log)
       H_Back,     // Diathic: the skill book: back to the contents
       H_Skill,    // Diathic: the skill book's contents: a skill (id = ArpgSkills::Active); a click opens its tree
+      H_SmithWpn, // Diathic: the workshop: a weapon (cls)
+      H_SmithMod, // Diathic: the workshop: a modification (id)
+      H_SmithDo,  // Diathic: the workshop: make it
       };
     struct Hit {
       Tempest::Rect r;
@@ -127,6 +131,10 @@ class ArpgMenu final {
     Tempest::Point       mouse;
     std::vector<Hit>     hits;
     size_t               hoverCls = 0;
+    mutable const Item*  cardItem = nullptr; // Diathic: the weapon described now (paintInfo): its card
+    size_t               smithCls = 0;       // Diathic: the workshop: the weapon chosen
+    int                  smithMod = -1;      // ... the modification chosen
+    std::string          smithMsg;           // ... what happened (game's code page)
     Tempest::Rect        pageL, pageR;   // the pages (outside them: the ground)
 
     // drag and drop
@@ -178,6 +186,9 @@ class ArpgMenu final {
     void   paintInfo (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& r, InventoryRenderer& items, const Item* it,
                       std::string_view extra = {}, std::string_view help = {}, std::string_view title = {}) const;
     void   paintTrade(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
+    // Diathic (2026-11-04): the exact stats of the weapon under the cursor, between the pages (ArpgWeapon)
+    void   paintWeaponCard(Tempest::Painter& p, const Fonts& f, int w, int h, const Item& it, Npc& pl);
+    void   paintSmith(Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right, InventoryRenderer& items, Npc& pl);
     void   paintLog  (Tempest::Painter& p, const Fonts& f, const Tempest::Rect& left, const Tempest::Rect& right);
     void   tradeMove (bool fromOther, size_t cls, int32_t count, bool equipped, Npc& pl);
     void   tradeDrop (const Tempest::Point& pos, Npc& pl);

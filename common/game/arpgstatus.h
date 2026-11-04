@@ -11,24 +11,37 @@ namespace ArpgStatus {
     Bleed,    // Krwawienie: damage every second (Głębokie rany)
     Poison,   // Zatrucie: damage every second (Pandrodor's puddles)
     Chill,    // Zmrożenie: the hero only walks (Finkregh's breath)
+    Freeze,   // Zamrożenie (weapons, 2026-11-04): people and creatures stand still, no attack (not the bosses)
+    Weaken,   // Osłabienie (weapons, 2026-11-04): its hits deal less (WeakenCut)
     Count
     };
 
+  // the look on the model: Gothic's effects only (a visual effect of VisualFxInst.d, else a particle effect of
+  // PfxInst.d on a bone); fx = nullptr: nothing (Zachwianie has its stars in MainWindow::paintArpgCombat)
   struct Info {
     const char* name;  // UTF-8 (ArpgMenu::gtxt for Gothic's fonts)
     bool        dot;   // damage every second (value = damage per second)
+    const char* vfx;   // a visual effect (looped while the status lasts)
+    const char* pfx;   // ... or a particle effect
+    const char* node;  // its bone
     };
 
   inline const Info& info(Id id) {
     static const Info infos[Count] = {
-      {"Zachwianie",  false},
-      {"Podpalenie",  true },
-      {"Krwawienie",  true },
-      {"Zatrucie",    true },
-      {"Zmrożenie",   false},
+      {"Zachwianie",  false, nullptr,                            nullptr,            nullptr},
+      {"Podpalenie",  true,  "VOB_MAGICBURN",                    nullptr,            nullptr},
+      {"Krwawienie",  true,  nullptr,                            "PFX_BLOOD",        "BIP01 SPINE2"},
+      {"Zatrucie",    true,  nullptr,                            "SWAMPSHARKSLIME",  "BIP01"},
+      {"Zmrożenie",   false, nullptr,                            "ICEGOLEM_GLITTER", "BIP01"},
+      {"Zamrożenie",  false, "spellFX_IceSpell_SENDPERCEPTION",  nullptr,            nullptr},
+      {"Osłabienie",  false, "spellFX_INCOVATION_VIOLET",        nullptr,            nullptr},
       };
     return infos[id<Count ? id : 0];
     }
+
+  constexpr int32_t  FxSlot        = 0x7A5000; // MdlVisual effect slots of the statuses: FxSlot + Id
+  constexpr uint64_t FreezeImmuneMs= 6000;     // Zamrożenie: no new one this long after the last one ended
+  constexpr float    WeakenCut     = 0.25f;    // Osłabienie: its hits -25%
 
   // Diathic (decision 2026-11-04): the hero heals over time after eating and drinking, on top of Gothic's healing:
   // a part of his maximum life spread over a time; a new dose adds to the running ones
@@ -56,6 +69,7 @@ namespace ArpgStatus {
   // (chance = the weapon percent) gives NormalHit of it, not 10%. Spells and the hits of others stay Gothic's
   constexpr float    ArmorK        = 100.f;
   constexpr float    NormalHit     = 0.5f;
+  constexpr float    BowDamage     = 0.5f;  // the hero's shot (a charged one: x its multiplier)
 
   // Diathic: monsters, animals and orcs (all but people, 2026-10-29): more life and harder hits
   constexpr float    MonsterHpMul  = 1.2f;

@@ -51,6 +51,7 @@ class Interactive : public Vob {
     // Diathic: script action of the mob (unnamed ones, e.g. Greg's treasure spots, are still usable in ARPG)
     std::string_view    arpgUseItem()   const { return useWithItem; }
     std::string_view    arpgStateFunc() const { return onStateFunc; }
+    std::string_view    arpgVisual()    const { return mdlVisual; }   // Diathic: the model's file name
     // Diathic: a switch or lever (often unnamed: the switches of Adanos' temple), usable in Gothic all the same
     bool                arpgIsSwitch()  const;
 
