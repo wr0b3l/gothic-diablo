@@ -22,6 +22,7 @@
 #include "game/arpgskills.h"
 #include "game/arpgelite.h"
 #include "game/arpgboss.h"
+#include "game/arpgweapon.h"
 #include "game/definitions/sounddefinitions.h"
 #include "gothic.h"
 #include "resources.h"
@@ -31,7 +32,7 @@ using namespace Tempest;
 static std::string_view humansTorchOverlay = "_TORCH.MDS";
 
 // gothic-diablo: hero's bow / crossbow in the ARPG view: damage after armour (Gothic: x1)
-static constexpr float ArpgBowDamage    = 0.5f;
+static constexpr float ArpgBowDamage    = ArpgStatus::BowDamage;
 
 std::string_view Npc::Routine::wayPointName() const {
   return point!=nullptr ? point->name : fallbackName;
@@ -2609,6 +2610,17 @@ void Npc::arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from
     return;
   const uint64_t now = owner.tickCount();
   auto&          st  = arpgSt[id];
+  if(id==ArpgStatus::Freeze) {
+    // Diathic: Zamrożenie (weapons): not the bosses (dragons, the Raven), not the hero; then a while without it
+    if(isPlayer() || arpgBossSt!=nullptr || arpgIsDragon() || arpgIsBossInst() || now<arpgFreezeFree)
+      return;
+    if(st.until<=now) {
+      visual.interrupt();
+      setAnim(AnimationSolver::Idle);
+      }
+    arpgFreezeFree = std::max(st.until, now+ms)+ArpgStatus::FreezeImmuneMs;
+    implFaiWait(ms);
+    }
   if(ArpgStatus::info(id).dot) {
     if(st.until<=now)
       st.next = now+1000;
@@ -2635,14 +2647,36 @@ void Npc::arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from
     if(!isPlayer())
       implFaiWait(ms);
     }
-  if(id==ArpgStatus::Burn && arpgBurnFx==nullptr) {
-    if(auto vfx = Gothic::inst().loadVisualFx("VOB_MAGICBURN")) {
-      Effect e(*vfx, owner, *this, SpellFxKey::Count);
-      e.setActive(true);
-      visual.startEffect(owner, std::move(e), 0, true);
-      arpgBurnFx = vfx;
-      }
+  arpgStatusFx(id, true);
+  }
+
+void Npc::arpgStatusFx(ArpgStatus::Id id, bool on) {
+  // Diathic: the status seen on the model, with Gothic's own effects (ArpgStatus::info: a visual effect or a particle
+  // effect on a bone), in a slot of its own (ArpgStatus::FxSlot + id): one effect per status, gone when it ends
+  const uint32_t bit = 1u<<uint32_t(id);
+  const auto&    in  = ArpgStatus::info(id);
+  if(!on) {
+    if((arpgStFx&bit)!=0)
+      visual.stopEffect(ArpgStatus::FxSlot+int32_t(id));
+    arpgStFx &= ~bit;
+    return;
     }
+  if((arpgStFx&bit)!=0 || (in.vfx==nullptr && in.pfx==nullptr))
+    return;
+  if(in.vfx!=nullptr) {
+    auto vfx = Gothic::inst().loadVisualFx(in.vfx);
+    if(vfx==nullptr)
+      return;
+    Effect e(*vfx, owner, *this, SpellFxKey::Count);
+    e.setActive(true);
+    e.setLooped(true);
+    visual.startEffect(owner, std::move(e), ArpgStatus::FxSlot+int32_t(id), false);
+    } else {
+    Effect e(PfxEmitter(owner, in.pfx), in.node!=nullptr ? in.node : "BIP01");
+    e.setActive(true);
+    visual.startEffect(owner, std::move(e), ArpgStatus::FxSlot+int32_t(id), false);
+    }
+  arpgStFx |= bit;
   }
 
 void Npc::arpgParrySound() {
@@ -2722,10 +2756,7 @@ void Npc::arpgTickStatus() {
       }
     if(st.until<=now) {
       st = ArpgStatusState();
-      if(i==ArpgStatus::Burn && arpgBurnFx!=nullptr) {
-        visual.stopEffect(*arpgBurnFx);
-        arpgBurnFx = nullptr;
-        }
+      arpgStatusFx(ArpgStatus::Id(i), false);
       }
     }
   }
@@ -3168,7 +3199,9 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
   // Diathic: monsters and orcs hit harder (ArpgStatus::MonsterDmgMul), the chapter, elite leaders and their groups
   // (Npc::arpgDmgOutMul): swings, shots, spells
   if(hitResult.value>0) {
-    const float m = other.arpgDmgOutMul();
+    float m = other.arpgDmgOutMul();
+    if(other.arpgHasStatus(ArpgStatus::Weaken))
+      m *= 1.f-ArpgStatus::WeakenCut; // Diathic: Osłabienie (a weapon)
     if(m!=1.f)
       hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*m)));
     }
@@ -3300,6 +3333,14 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
           other.changeAttribute(ATR_HITPOINTS, std::max<int32_t>(1, int32_t(std::lround(float(lost)*ArpgStatus::RageLeech))), false);
         if(isDown() && hk->butcher>0.f && ows==WeaponState::W2H)
           other.arpgButcherUntil = now+ArpgStatus::ButcherMs;                                   // Rzeźnik
+        // Diathic (2026-11-04): the properties of the weapon (Podpalenie, Zamrożenie, Krwawienie, Zatrucie, Osłabienie)
+        if(!isSpell) {
+          const Item* wpn = other.inventory().activeWeapon();
+          const bool  fit = wpn!=nullptr && (b!=nullptr ? (ows==WeaponState::Bow || ows==WeaponState::CBow)
+                                                         : (ows==WeaponState::W1H || ows==WeaponState::W2H));
+          if(fit)
+            ArpgWeapon::onHit(other, *this, *wpn, lost);
+          }
         }
       }
 
@@ -3620,6 +3661,12 @@ void Npc::tick(uint64_t dt) {
   if(arpgBossSt!=nullptr && arpgBossSt->flying() && Camera::isArpgEnabled() && !isDead()) {
     if(arpgBossSt->tickFlight(*this, owner))
       return;
+    }
+
+  // Diathic: Zamrożenie (a weapon): it stands still, no AI until it is over
+  if(!isPlayer() && !isDead() && arpgHasStatus(ArpgStatus::Freeze)) {
+    mvAlgo.tick(dt,MoveAlgo::WaitMove);
+    return;
     }
 
   if(isDive()) {
@@ -5082,8 +5129,8 @@ bool Npc::doAttack(Anim anim, BodyState bs) {
   auto weaponSt = weaponState();
   if(weaponSt==WeaponState::NoWeapon || weaponSt==WeaponState::Mage)
     return false;
-  if(arpgHasStatus(ArpgStatus::Stagger))
-    return false; // Diathic: staggered - no attack, no block
+  if(arpgHasStatus(ArpgStatus::Stagger) || arpgHasStatus(ArpgStatus::Freeze))
+    return false; // Diathic: staggered (frozen) - no attack, no block
 
   if(mvAlgo.isSwim())
     return false;

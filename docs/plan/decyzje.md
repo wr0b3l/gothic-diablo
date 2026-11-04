@@ -133,6 +133,14 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Broń: właściwości, statystyki, warsztat (2026-11-04, gałąź bronie-kowal)
+- Użytkownik: dokładne statystyki broni; specjalne właściwości niektórych broni (podpalenie, zamrożenie, krwawienie, osłabienie itp.); efekt statusu widoczny na modelu, tylko efekty z Gothica; modyfikacja broni u kowala, na początek kilka receptur
+- Odpowiedź (2026-11-04): modyfikacja w „małym warsztacie przy każdym stanowisku kowalskim”
+- Zmiany: karta broni w księdze; właściwości ~40 broni z gry (tabela po instancji) — Podpalenie, Zamrożenie, Krwawienie, Zatrucie, Osłabienie; statusy na modelu efektami Gothica; warsztat (kowadło bez rozgrzanej stali, kamień szlifierski) z 6 recepturami
+- Przyjęte bez pytania (do zmiany po teście): tylko broń bohatera; Zamrożenie = wróg stoi 1,5 s, potem 6 s odporności, nie bossowie; Osłabienie = ciosy celu −25% przez 6 s; warsztat bez nauki kowalstwa; ulepszenia tylko broni białej; jedno ulepszenie na broń; tylko jedna sztuka broni w plecaku (dokupiona taka sama dołącza do ulepszonej — ograniczenie ekwipunku OpenGothic)
+- Wartości do balansu: `ArpgWeapon::BurnMs` … `WeakenMs`, `BurnPerSec`, `BleedPerSec`, `PoisonPerSec`, `DotMin`, szanse w tabelach `bases` i `mods`; `ArpgStatus::FreezeImmuneMs`, `WeakenCut`
+- Do testu: konsola Marvina `insert ItMw_1H_Blessed_02` / `ItMw_1H_Special_01` / `ItMw_Folteraxt` / `ItMw_Rabenschnabel` / `ItMw_2H_OrcSword_01` — najechać w plecaku: karta między stronami (obrażenia, cios, szansa, różnica z założoną, właściwość); bić wilki / orków — napis statusu i efekt na modelu (ogień, krew, zielony dym, lód, fioletowa aura), zamrożony stoi i nie atakuje, osłabiony bije słabiej; smok nie zamarza; kowadło w kuźni Harada bez rozgrzanej stali i kamień szlifierski — strona „Warsztat”; z rozgrzaną stalą kowadło jak dawniej; materiały: `insert ItMiSwordraw`, `ItMi_Coal`, `ItAt_Teeth`, `ItMi_Sulfur`, `ItMi_Pitch`, `ItMi_Aquamarine`, `ItMi_Nugget`, `ItAt_Sting`, `ItMi_Rockcrystal`; ulepszenie broni w ręku (obrażenia na karcie postaci), zapis i wczytanie (ulepszenie zostaje), opis w ekwipunku Gothica (Backspace)
+
 ## Smoki — dwie fazy z lotem, więcej życia (2026-11-04, gałąź smoki-fazy)
 - Użytkownik: smoki +30% życia; 2 etapy z addami na 66% i 33% z fazami lotu; obrażenia od parowania zmniejszone o 30%
 - Zmiany: progi faz smoków 66% / 33% (Kruk bez zmian: 70% / 35%), w obu golemy żywiołu (ożywieniec: szkielety) i lot; życie smoków ×1,3; trafienie smoka po parowaniu ×2,8 zamiast ×4

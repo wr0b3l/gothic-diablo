@@ -103,6 +103,8 @@ class Inventory final {
     void   switchActiveSpell (int32_t spell, Npc &owner);
 
     Item*  currentArmor()          { return armor;      }
+    // Diathic: the weapon in hand changed in the workshop (ArpgWeapon::modApply): its damage off the owner (-1), on (+1)
+    void   arpgActiveStats(Npc& owner, const Item& weap, int sgn) { if(activeWeapon()==&weap) applyWeaponStats(owner,weap,sgn); }
     Item*  currentMeleeWeapon()    { return melee;      }
     Item*  currentRangedWeapon()   { return range;      }
     Item*  currentShield()         { return shield;     }

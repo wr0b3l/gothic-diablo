@@ -442,6 +442,7 @@ class Npc final {
     size_t    itemCount  (size_t id) const;
     Item*     activeWeapon();
     Item*     getItem    (size_t id);
+    void      arpgWeaponStats(const Item& it, int sgn) { invent.arpgActiveStats(*this, it, sgn); } // Diathic: the workshop
     Item*     addItem    (size_t id, size_t amount);
     Item*     addItem    (std::unique_ptr<Item>&& i);
     Item*     takeItem   (Item& i);
@@ -644,6 +645,9 @@ class Npc final {
       Npc*     from  = nullptr;
       };
     ArpgStatusState arpgSt[ArpgStatus::Count];
+    uint32_t  arpgStFx        = 0;     // Diathic: statuses with their effect on the model now (bits of ArpgStatus::Id)
+    uint64_t  arpgFreezeFree  = 0;     // Diathic: no new Zamrożenie before (ArpgStatus::FreezeImmuneMs)
+    void      arpgStatusFx(ArpgStatus::Id id, bool on);
     // Diathic: healing over time after food and potions (ArpgStatus::FoodRegen ...)
     struct ArpgRegen {
       float left  = 0;         // life still to come
@@ -657,7 +661,6 @@ class Npc final {
     std::unique_ptr<ArpgBoss> arpgBossSt;  // Diathic: a boss (null: not one, or not checked yet)
     bool      arpgBossSeen    = false;     // the instance was checked for a boss
     bool      arpgMinion      = false;     // called by a boss: friendly to the bosses (not saved)
-    const VisualFx* arpgBurnFx = nullptr;
     uint64_t  arpgParadeLast  = 0;     // hero: the last frame the block was held
     uint64_t  arpgParadeStart = 0;     // hero: when the block held now started (parry)
     int32_t   arpgBlockCh     = ArpgStatus::BlockCharges; // hits the block still holds (below 0: damage leaks); everyone

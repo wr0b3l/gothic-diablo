@@ -7,6 +7,7 @@
 #include "game/arpgboss.h"
 #include "game/arpgskills.h"
 #include "game/arpgteleport.h"
+#include "game/arpgweapon.h"
 #include "world/objects/item.h"
 #include "game/savegameheader.h"
 
@@ -1165,6 +1166,12 @@ static std::string arpgLabelName(const Focus& f) {
   auto name = f.displayName();
   if(!name.empty() && f.npc!=nullptr && f.npc->arpgIsEliteLeader())
     return std::string(name)+ArpgMenu::gtxt(" (elita)"); // Diathic: an elite leader (ArpgElite)
+  if(f.interactive!=nullptr) {
+    // Diathic: the workshop at the smith stations (an anvil: Gothic's forging while the hero carries hot steel)
+    auto pl = Gothic::inst().player();
+    if(pl!=nullptr && ArpgWeapon::workshopNow(*f.interactive, *pl))
+      return (name.empty() ? std::string() : std::string(name)+" - ")+ArpgMenu::gtxt("warsztat");
+    }
   if(!name.empty() || f.interactive==nullptr)
     return std::string(name);
   // unnamed mob with a script action: Greg's treasure spots (dug up with a pickaxe) or another one
@@ -1855,6 +1862,10 @@ void MainWindow::tickCamera(uint64_t dt) {
   else if(arpgMenu.current()==ArpgMenu::P_Trade) {
     arpgMenu.close();
     }
+  // Diathic: the workshop at a smith station (PlayerControl::interact)
+  if(ArpgWeapon::takeWorkshopRequest() && pl!=nullptr && !dialogs.isActive() && !inventory.isActive() &&
+     pcamera->isArpgActive())
+    arpgMenu.open(ArpgMenu::P_Smith);
   if(arpgMenu.isOpen() && arpgMenu.current()!=ArpgMenu::P_Trade &&
      (pl==nullptr || pl->isDead() || dialogs.isActive() || inventory.isActive() ||
       document.isActive() || rootMenu.isActive() || video.isActive() || !pcamera->isArpgActive()))
@@ -2659,6 +2670,11 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
       else if(e.kind==6) {
         type = Resources::FontType::Disabled;
         std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt("Nietykalny").c_str());
+        }
+      else if(e.kind==8) {
+        // Diathic: a status put on by the hero's weapon (value = ArpgStatus::Id)
+        type = Resources::FontType::Yellow;
+        std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt(ArpgStatus::info(ArpgStatus::Id(e.value)).name).c_str());
         }
       else if(e.kind==7) {
         // Diathic: healing over time after food / a potion
