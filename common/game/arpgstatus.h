@@ -30,6 +30,15 @@ namespace ArpgStatus {
     return infos[id<Count ? id : 0];
     }
 
+  // Diathic (decision 2026-11-04): the hero heals over time after eating and drinking, on top of Gothic's healing:
+  // a part of his maximum life spread over a time; a new dose adds to the running ones
+  constexpr float    FoodRegen     = 0.05f; // food (and plants): 5% ...
+  constexpr uint64_t FoodRegenMs   = 10000; // ... in 10 s
+  constexpr float    PotionRegen1  = 0.20f; // Esencja lecznicza (ItPo_Health_01)
+  constexpr float    PotionRegen2  = 0.25f; // Ekstrakt leczniczy (ItPo_Health_02)
+  constexpr float    PotionRegen3  = 0.35f; // Eliksir leczniczy (ItPo_Health_03)
+  constexpr uint64_t PotionRegenMs = 5000;
+
   constexpr uint64_t StaggerMs     = 1000;  // how long a parried enemy is staggered (ends at the first hit taken)
   constexpr float    StaggerDmgMul = 4.f;   // damage of that hit
   constexpr uint64_t ParryWindowMs = 250;   // the block has to start at most this long before the enemy's hit

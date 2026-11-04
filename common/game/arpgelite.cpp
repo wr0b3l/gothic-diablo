@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,27 @@ bool ArpgElite::redAttacker(World& w, const Npc& npc) {
     default:
       return false;
     }
+  }
+
+void ArpgElite::giveLoot(World& w, Npc& leader) {
+  auto& gs = w.script();
+  const int ch = std::max(1, gs.arpgChapter());
+  if(auto* gold = gs.goldId()) {
+    const int32_t g = (LootGoldMin + int32_t(gs.rand(uint32_t(LootGoldMax-LootGoldMin+1))))*ch;
+    leader.addItem(gold->index(), size_t(g));
+    }
+  if(gs.rand(100)>=LootTabletPct)
+    return;
+  // a stone tablet of the builders (Gothic II, the addon): strength, dexterity, life, mana, the weapons
+  static const char* kinds[] = {"STR", "DEX", "HITPOINT", "MANA", "ONEH", "TWOH", "BOW", "CRSBOW"};
+  const uint32_t r     = gs.rand(100);
+  const int      level = (r<60) ? 1 : (r<90 ? 2 : 3);
+  const char*    kind  = kinds[gs.rand(uint32_t(std::size(kinds)))];
+  char name[64] = {};
+  std::snprintf(name, sizeof(name), "ITWR_%sSTONEPLATE%d_ADDON", kind, level);
+  const size_t id = gs.findSymbolIndex(name);
+  if(id!=size_t(-1))
+    leader.addItem(id, 1);
   }
 
 static int32_t pendingXp = 0;

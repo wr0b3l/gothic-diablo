@@ -133,6 +133,13 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Leczenie, łup elit, życie w rozdziałach (2026-11-04, gałąź smoki-lot)
+- Użytkownik: pasywna regeneracja % zdrowia po zjedzeniu — 5% życia, mikstury 20%, 25% i 35%; więcej złota i losowe tabliczki z elitarnych potworów; mniejszy przyrost życia na akt
+- Odpowiedzi (2026-11-04): leczenie przez czas oprócz natychmiastowego leczenia Gothica; łup 30–60 złota × rozdział, tablica w 25% (losowa, najczęściej poziom 1); życie ×1,05 na rozdział (jak obrażenia)
+- Zmiany: jedzenie i rośliny 5% przez 10 s, esencja / ekstrakt / eliksir leczniczy 20 / 25 / 35% przez 5 s, dawki się sumują, „+N” nad bohaterem; dowódca elity ma przy sobie złoto i czasem kamienną tablicę budowniczych; życie potworów i bossów ×1,05 za rozdział (było ×1,15)
+- Wartości do balansu: `ArpgStatus::FoodRegen`, `FoodRegenMs`, `PotionRegen1..3`, `PotionRegenMs`; `ArpgElite::LootGoldMin`, `LootGoldMax`, `LootTabletPct`, `ChapterMul`
+- Do testu: zjeść jabłko / chleb / roślinę i wypić esencję w walce — „+N” co sekundę przez 10 s / 5 s, kilka dawek naraz; klawisze mikstur też; zabity dowódca „(elita)” — złoto, czasem tablica (konsola Marvina: `insert OrcElite_Roam` nie jest dowódcą — dowódców szukać w grupach w świecie); życie potworów w późnych rozdziałach
+
 ## Smoki — lot, golemy, odporności (2026-11-04, gałąź smoki-lot)
 - Użytkownik: gdy są addy, smok lata nad areną, dopóki addy nie zginą albo 5 min; w locie bez melee, tylko broń dystansowa; dopracować animację lotu; addy zawsze golemami żywiołu smoka; addy zadają za dużo obrażeń; smok nadal ucięty — pokazać cały model; smoki atakują za szybko, potrafią dwa ataki naraz albo bardzo szybko ten sam; smoki: −25% obrażeń dystansowych, −15% wręcz, −50% z czarów; obrażenia rosnące w rozdziałach najwyżej 5% na rozdział
 - Odpowiedzi (2026-11-04): w locie czary też trafiają (łuk, kusza, czary); smok ożywieniec zostaje przy szkieletach

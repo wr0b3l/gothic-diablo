@@ -907,6 +907,7 @@ bool Inventory::use(size_t cls, Npc &owner, uint8_t slotHint, bool force) {
 
   // owner.stopDlgAnim();
   setCurrentItem(it->clsId());
+  owner.arpgOnConsume(cls); // Diathic: the hero ate / drank it: healing over time
   if(itData.on_state[0]!=0){
     auto& vm = owner.world().script();
     vm.invokeItem(&owner,uint32_t(itData.on_state[0]));

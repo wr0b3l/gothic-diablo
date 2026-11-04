@@ -669,6 +669,9 @@ void Npc::onNoHealth(bool death, HitSound sndMask) {
   // Diathic: an elite leader killed by the hero: the rest of its experience (Gothic gives level x 10 in ZS_Dead)
   if(death && arpgIsEliteLeader() && lastHit!=nullptr && lastHit->isPlayer())
     ArpgElite::leaderKilled(int32_t(std::lround(float(hnpc->level*ArpgElite::XpPerLevel)*(ArpgElite::LeaderXp-1.f))));
+  // Diathic (decision 2026-11-04): an elite leader has gold and sometimes a stone tablet on it (to loot)
+  if(death && arpgIsEliteLeader() && Camera::isArpgEnabled())
+    ArpgElite::giveLoot(owner, *this);
   if(death)
     arpgRedOff();
 
@@ -2108,6 +2111,7 @@ bool Npc::arpgDrinkNow(size_t cls) {
   if(it==nullptr)
     return false;
   const auto onState = it->handle().on_state[0];
+  arpgOnConsume(cls); // Diathic: healing over time
   if(onState!=0)
     owner.script().invokeItem(this,uint32_t(onState));
   invent.delItem(cls,1,*this);
@@ -2290,6 +2294,81 @@ std::string Npc::arpgBoneNames() const {
       ret += n.name;
       }
   return ret;
+  }
+
+void Npc::arpgOnConsume(size_t cls) {
+  // Diathic (decision 2026-11-04): food 5% of the maximum life in 10 s, healing potions 20 / 25 / 35% in 5 s,
+  // on top of Gothic's healing; a new dose adds to the running ones
+  if(!isPlayer() || !Camera::isArpgEnabled() || isDead())
+    return;
+  auto it = invent.getItem(cls);
+  if(it==nullptr)
+    return;
+  float    part = 0.f;
+  uint64_t ms   = 0;
+  if(auto* sym = owner.script().findSymbol(cls)) {
+    std::string n = sym->name();
+    for(auto& c:n)
+      c = char(std::toupper(static_cast<unsigned char>(c)));
+    const bool potion = (n.find("ITPO_")!=std::string::npos || n.find("ITFO_POTION")!=std::string::npos) &&
+                        n.find("PERM")==std::string::npos;
+    if(potion && n.find("HEALTH_01")!=std::string::npos)
+      part = ArpgStatus::PotionRegen1;
+    else if(potion && n.find("HEALTH_02")!=std::string::npos)
+      part = ArpgStatus::PotionRegen2;
+    else if(potion && n.find("HEALTH_03")!=std::string::npos)
+      part = ArpgStatus::PotionRegen3;
+    if(part>0.f)
+      ms = ArpgStatus::PotionRegenMs;
+    }
+  if(part<=0.f && (it->mainFlag() & ItmFlags::ITM_CAT_FOOD)!=0) {
+    part = ArpgStatus::FoodRegen;
+    ms   = ArpgStatus::FoodRegenMs;
+    }
+  if(part<=0.f || ms==0)
+    return;
+  ArpgRegen r;
+  r.left  = float(attribute(ATR_HITPOINTSMAX))*part;
+  r.perMs = r.left/float(ms);
+  if(arpgRegen.size()<16)
+    arpgRegen.push_back(r);
+  }
+
+void Npc::arpgTickRegen(uint64_t dt) {
+  if(arpgRegen.empty())
+    return;
+  if(isDead() || isDown()) {
+    arpgRegen.clear();
+    arpgRegenAcc = 0;
+    return;
+    }
+  float add = 0.f;
+  for(auto& r:arpgRegen) {
+    const float v = std::min(r.left, r.perMs*float(dt));
+    r.left -= v;
+    add    += v;
+    }
+  arpgRegen.erase(std::remove_if(arpgRegen.begin(), arpgRegen.end(), [](const ArpgRegen& r) {
+    return r.left<=0.001f;
+    }), arpgRegen.end());
+  arpgRegenAcc += add;
+  const int32_t whole = int32_t(arpgRegenAcc);
+  if(whole>0) {
+    arpgRegenAcc -= float(whole);
+    const int32_t hp0 = attribute(ATR_HITPOINTS);
+    changeAttribute(ATR_HITPOINTS, whole, false);
+    arpgRegenShown += attribute(ATR_HITPOINTS)-hp0;
+    }
+  // the healing over the hero once a second: green "+N"
+  const uint64_t now = owner.tickCount();
+  if(now>=arpgRegenShowAt) {
+    if(arpgRegenShown>0)
+      owner.arpgPopup(position()+Tempest::Vec3(0,200.f,0), arpgRegenShown, 7);
+    arpgRegenShown  = 0;
+    arpgRegenShowAt = now+1000;
+    }
+  if(arpgRegen.empty())
+    arpgRegenAcc = 0;
   }
 
 void Npc::arpgSetFlap(float deg) {
@@ -3511,6 +3590,7 @@ void Npc::tick(uint64_t dt) {
     arpgTickRed();
     }
   arpgTickStatus();
+  arpgTickRegen(dt);
   if(arpgSpinUntil!=0) {
     // Wir: one turn in 0.3 s
     if(arpgSpinUntil>owner.tickCount())
