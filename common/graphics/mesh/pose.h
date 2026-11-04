@@ -108,6 +108,8 @@ class Pose final {
     size_t             findNode(std::string_view b) const;
 
     void               setHeadRotation(float dx, float dz);
+    // Diathic: a flying dragon: the bones with WING in the name turn up / down (deg) around `fwd` (world, the body axis)
+    void               setArpgFlap(float deg, const Tempest::Vec3& fwd);
     Tempest::Vec2      headRotation() const;
     void               setAnimRotate(const AnimationSolver &solver, Npc &npc, WeaponState fightMode, AnimationSolver::TurnType turn, int dir);
     auto               setAnimItem(const AnimationSolver &solver, Npc &npc, std::string_view scheme, int state) -> const Animation::Sequence*;
@@ -177,6 +179,10 @@ class Pose final {
     uint8_t                         hasTransitions = 0;
 
     float                           headRotX = 0, headRotY = 0;
+    float                           arpgFlap = 0;
+    Tempest::Vec3                   arpgFlapFwd = {};
+    bool                            arpgFlapDirty = false;
+    void                            arpgApplyFlap(size_t i);
 
     size_t                          numBones = 0;
     SampleStatus                    hasSamples[Resources::MAX_NUM_SKELETAL_NODES] = {};

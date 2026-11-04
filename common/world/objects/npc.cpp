@@ -1748,10 +1748,21 @@ bool Npc::implAttack(uint64_t dt) {
         }
       }
 
+    // Diathic (decision 2026-11-04): a boss uses one attack at a time — its own swing, breath or spell waits for
+    // the attack with a warning on the ground and the rest after the last one
+    if(arpgBossSt!=nullptr && Camera::isArpgEnabled() && !arpgBossSt->canOwnAttack(owner.tickCount())) {
+      implTurnToFai(*currentTarget,dt);
+      implFaiWait(250);
+      fghAlgo.consumeAction();
+      return true;
+      }
+
     if(ws==WeaponState::Mage) {
       const auto cast = beginCastSpell();
       if(cast==BeginCastResult::BC_No)
         return false;
+      if(arpgBossSt!=nullptr && Camera::isArpgEnabled())
+        arpgBossSt->onOwnSpell(*this, owner);
       fghAlgo.consumeAction();
       }
     else if(ws==WeaponState::Bow || ws==WeaponState::CBow) {
@@ -2254,6 +2265,38 @@ bool Npc::arpgInReach(const Npc& tg, float mul) const {
   return bd <= own + tg.arpgBodyHalf();
   }
 
+bool Npc::arpgBodySphere(Vec3& c, float& r) const {
+  // Diathic (2026-11-04): the whole model as it stands now (the animated bones, the neck up, the wings out)
+  const Skeleton* sk = visual.visualSkeleton();
+  if(sk==nullptr || sk->nodes.empty())
+    return false;
+  Vec3 lo = visual.mapBone(0), hi = lo;
+  for(size_t i=1; i<sk->nodes.size(); ++i) {
+    const Vec3 p = visual.mapBone(i);
+    lo = Vec3(std::min(lo.x,p.x), std::min(lo.y,p.y), std::min(lo.z,p.z));
+    hi = Vec3(std::max(hi.x,p.x), std::max(hi.y,p.y), std::max(hi.z,p.z));
+    }
+  c = (lo+hi)*0.5f;
+  r = (hi-lo).length()*0.5f + 450.f; // the skin and the tips of the wings and the tail beyond the last bones
+  return true;
+  }
+
+std::string Npc::arpgBoneNames() const {
+  std::string ret;
+  if(const Skeleton* sk = visual.visualSkeleton())
+    for(auto& n:sk->nodes) {
+      if(!ret.empty())
+        ret += ", ";
+      ret += n.name;
+      }
+  return ret;
+  }
+
+void Npc::arpgSetFlap(float deg) {
+  const float a = rotationRad();
+  visual.setArpgFlap(deg, Vec3(std::cos(a), 0.f, std::sin(a)));
+  }
+
 bool Npc::arpgIsDragon() const {
   return Gothic::inst().version().game==2 && guild()==GIL_DRAGON;
   }
@@ -2628,6 +2671,13 @@ void Npc::takeDamage(Npc &other, const Bullet* b) {
     owner.arpgPopup(position()+Tempest::Vec3(0,260.f,0), 0, 6);
     return;
     }
+  if(b==nullptr && arpgBossSt!=nullptr && Camera::isArpgEnabled() && arpgBossSt->flying()) {
+    // Diathic (decision 2026-11-04): a dragon in the air: no melee, only bows, crossbows and spells
+    owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 3);
+    if(other.isPlayer())
+      arpgBossSt->hintAir(owner);
+    return;
+    }
   if(arpgIsInvulnerable()) {
     // gothic-diablo: dodge roll (i-frames like in Dark Souls)
     owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), 0, 4);
@@ -2821,7 +2871,7 @@ float Npc::arpgDmgOutMul() const {
   const bool beast = arpgIsBeast();
   if(!beast && !arpgIsBossInst())
     return 1.f;
-  float m = ArpgElite::chapterMul(owner);
+  float m = ArpgElite::chapterDmgMul(owner);
   if(beast)
     m *= ArpgStatus::MonsterDmgMul;
   if(arpgIsEliteLeader()) {
@@ -3072,6 +3122,14 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
   // gothic-diablo: hero's arrows in the ARPG view (normal shot x0.5, charged shot x1.5)
   if(b!=nullptr && !isSpell && hitResult.value>0 && b->arpgDamageMul()!=1.f)
     hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*b->arpgDamageMul())));
+  // Diathic (decision 2026-11-04): a dragon takes less: shots -25%, melee -15%, spells -50%
+  if(hitResult.value>0 && arpgIsDragon() && Camera::isArpgEnabled()) {
+    const float k = isSpell ? ArpgBossCfg::ResistSpell : (b!=nullptr ? ArpgBossCfg::ResistRanged : ArpgBossCfg::ResistMelee);
+    hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*(1.f-k))));
+    }
+  // Diathic (decision 2026-11-04): the minions of a boss (golems) hit softer
+  if(hitResult.value>0 && isPlayer() && Camera::isArpgEnabled() && other.arpgIsMinion())
+    hitResult.value = std::max<int32_t>(1, int32_t(std::lround(float(hitResult.value)*ArpgBossCfg::MinionDmg)));
   // Diathic (decision 2026-11-03): one hit of a boss never takes the whole life of the hero — a dragon's breath
   // (DAM_FIRE|DAM_FLY: the strength counts twice) with the chapter multiplier was more than his maximum life
   if(hitResult.value>0 && isPlayer() && Camera::isArpgEnabled() && other.arpgBoss()!=nullptr) {
@@ -3473,6 +3531,12 @@ void Npc::tick(uint64_t dt) {
 
   if(!visual.pose().hasAnim())
     setAnim(AnimationSolver::Idle);
+
+  // Diathic (decision 2026-11-04): a dragon flying over its arena: ArpgBoss moves it, no AI, no gravity
+  if(arpgBossSt!=nullptr && arpgBossSt->flying() && Camera::isArpgEnabled() && !isDead()) {
+    if(arpgBossSt->tickFlight(*this, owner))
+      return;
+    }
 
   if(isDive()) {
     uint32_t gl = guild();
@@ -6017,6 +6081,13 @@ Matrix4x4 Npc::mkPositionMatrix() const {
     mt.rotateOX(-angY);
   if(isPlayer() && !align) {
     mt.rotateOZ(runAng);
+    }
+  // Diathic: a flying dragon: the nose up at the take-off, leaning into the circle (ArpgBoss::tickFlight)
+  if(arpgBossSt!=nullptr && arpgBossSt->flying()) {
+    if(arpgBossSt->flyPitch()!=0.f)
+      mt.rotateOX(-arpgBossSt->flyPitch());
+    if(arpgBossSt->flyRoll()!=0.f)
+      mt.rotateOZ(arpgBossSt->flyRoll());
     }
   // Diathic: an elite leader is a bit bigger (ArpgElite::LeaderScale)
   const float ek = arpgIsEliteLeader() ? ArpgElite::LeaderScale : 1.f;

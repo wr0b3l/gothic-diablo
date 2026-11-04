@@ -43,6 +43,9 @@ float arpgOutOfSight(vec3 wpos) {
 float arpgFogOfWar(vec3 wpos, bool isSky) {
   if(scene.arpgPlayer.w<=0.0)
     return 0.0;
+  // Diathic (2026-11-04): a dragon is never in the dark (out of sight indoors, below the feet, far): it stays whole
+  if(!isSky && scene.arpgKeep.w>0.0 && distance(wpos, scene.arpgKeep.xyz) < scene.arpgKeep.w)
+    return 0.0;
   const float radius = scene.arpgParams2.z;
   float ret = 0.0;
   if(radius>0.0) {

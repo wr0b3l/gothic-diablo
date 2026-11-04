@@ -436,6 +436,10 @@ void MdlVisual::setObjMatrix(const Tempest::Matrix4x4 &m, bool syncAttach) {
     syncAttaches();
   }
 
+void MdlVisual::setArpgFlap(float deg, const Tempest::Vec3& fwd) {
+  skInst->setArpgFlap(deg, fwd);
+  }
+
 void MdlVisual::setHeadRotation(float dx, float dz) {
   skInst->setHeadRotation(dx,dz);
   syncAttaches(head);

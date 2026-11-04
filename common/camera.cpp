@@ -15,6 +15,7 @@
 #include "utils/dbgpainter.h"
 #include "gothic.h"
 #include "commandline.h"
+#include "game/arpgboss.h"
 
 #include "utils/string_frm.h"
 
@@ -1167,7 +1168,21 @@ void Camera::tickArpg(float dtF) {
   }
   const float pk    = arpg.portrait*arpg.portrait*(3.f-2.f*arpg.portrait); // smoothstep
   const float elev  = arpg.elevation + (8.f-arpg.elevation)*pk;
-  const float range = arpg.range     + (290.f-arpg.range)*pk;
+  // Diathic (decision 2026-11-04): a fight with a dragon: the camera further away, the whole dragon in the picture
+  // (in the air even further)
+  {
+    float want = 1.f;
+    auto* w  = Gothic::inst().world();
+    auto* pl = Gothic::inst().player();
+    if(w!=nullptr && pl!=nullptr) {
+      if(auto* b = ArpgBosses::shown(*w, *pl); b!=nullptr && b->arpgIsDragon() && b->arpgBoss()!=nullptr)
+        want = b->arpgBoss()->flying() ? ArpgBossCfg::CamFlyZoom : ArpgBossCfg::CamZoom;
+      }
+    if(dtF<0.f)
+      arpg.bossZoom = want; else
+      arpg.bossZoom += (want-arpg.bossZoom)*std::min(1.f, 1.5f*dtF);
+  }
+  const float range = arpg.range*arpg.bossZoom + (290.f-arpg.range*arpg.bossZoom)*pk;
 
   const Vec3 spin = Vec3(elev, arpg.yaw, 0);
   state.spin      = spin;
@@ -1549,11 +1564,13 @@ void Camera::updateArpgView(float dtF) {
     world->detectNpc(feet, 4000.f, [&](Npc& n) {
       if(!n.arpgIsDragon())
         return;
-      const auto  b  = n.bounds();
-      const auto  sz = b.bbox[1]-b.bbox[0];
-      const float r  = std::clamp(0.75f*std::max(sz.x, std::max(sz.y, sz.z))+200.f, 500.f, 2500.f);
-      const auto  c  = n.centerPosition();
-      const float d  = (c-feet).quadLength();
+      // 2026-11-04: the sphere from the bones (was from Gothic's box: too small, the neck and the head were cut)
+      Vec3  c;
+      float r = 0.f;
+      if(!n.arpgBodySphere(c, r))
+        return;
+      r = std::clamp(r, 600.f, 3500.f);
+      const float d = (c-feet).quadLength();
       if(arpgV.keep.w<=0.f || d<best) {
         arpgV.keep = Tempest::Vec4(c.x, c.y, c.z, r);
         best       = d;

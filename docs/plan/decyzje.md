@@ -133,6 +133,27 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Smoki — lot, golemy, odporności (2026-11-04, gałąź smoki-lot)
+- Użytkownik: gdy są addy, smok lata nad areną, dopóki addy nie zginą albo 5 min; w locie bez melee, tylko broń dystansowa; dopracować animację lotu; addy zawsze golemami żywiołu smoka; addy zadają za dużo obrażeń; smok nadal ucięty — pokazać cały model; smoki atakują za szybko, potrafią dwa ataki naraz albo bardzo szybko ten sam; smoki: −25% obrażeń dystansowych, −15% wręcz, −50% z czarów; obrażenia rosnące w rozdziałach najwyżej 5% na rozdział
+- Odpowiedzi (2026-11-04): w locie czary też trafiają (łuk, kusza, czary); smok ożywieniec zostaje przy szkieletach
+- Zmiany:
+  - lot w fazie 3 (wtedy przyzwańcy): start po ryku, krążenie nad areną, lądowanie w miejscu startu, gdy przyzwańcy zginą, po 5 min albo gdy bohater odejdzie; w locie ataki z ostrzeżeniem dalej, bez ciosów i czarów Gothica
+  - animacja lotu: model smoka może nie mieć animacji lotu (plików gry nie ma w piaskownicy) — najpierw S_FLY, bez niej stojąca + ruch z kodu: wznoszenie z nosem w górę, kołysanie z każdym uderzeniem skrzydeł, przechył w skręcie, skrzydła (kości z WING w nazwie) w górę i w dół
+  - golemy: bagienne, kamienne, ogniste (zamiast jaszczurek), lodowe; ożywieniec — szkielety; ich ciosy ×0,5
+  - jeden atak naraz: wspólna przerwa dla ataku z ostrzeżeniem i własnego (cios, zionięcie, czar): 3 s po trafieniu ataku z ostrzeżeniem, 2,5 s po ciosie, 5 s po czarze; ataki z ostrzeżeniem co 16 s / 13 s (było 13 / 10)
+  - smok cały: kula bez cięcia liczona z kości (wcześniej z pudełka Gothica — za mała), bez mgły wojny na smoku, kamera dalej w walce ze smokiem (×1,35, w locie ×1,6)
+  - obrażenia potworów i bossów ×1,05 za rozdział (było ×1,15); życie bez zmian (×1,15)
+- Wartości do balansu: `ArpgBossCfg` — `AttackMs1`, `AttackMs2`, `GapMs`, `RestMs`, `SpellRestMs`, `MinionDmg`, `Resist*`, `FlyMaxMs`, `FlyHeight`, `FlyRadius`, `FlySpeed`, `FlapMs`, `FlapDeg`, `FlyBob`, `BankDeg`, `CamZoom`, `CamFlyZoom`; `ArpgElite::ChapterDmgMul`
+- Do testu (konsola Marvina w trybie ARPG: `insert Dragon_Fire` / `Dragon_Swamp` / `Dragon_Rock` / `Dragon_Ice` / `Dragon_Undead`; do fazy 3 = 35% życia):
+  - lot: start po ryku, wysokość i okrąg (nie w skale), w jaskini smoka ożywieńca niżej / mniejszy okrąg; czy ruch skrzydeł wygląda dobrze (gdy skrzydła stoją albo kręcą się źle — kości skrzydeł nazywają się inaczej, potrzebna lista kości z modelu); w log.txt linia „Diathic: smok startuje” — czy jest S_FLY i lista kości modelu (do poprawki skrzydeł)
+  - lądowanie po zabiciu golemów, ryk, potem znowu walka wręcz
+  - w locie: miecz nie trafia, napis z podpowiedzią, klik nie wysyła pod smoka; łuk, kusza i czary trafiają
+  - golemy żywiołu, ich ciosy słabsze
+  - smok nie robi dwóch ataków naraz, ten sam atak nie powtarza się szybko; czy teraz za wolno
+  - smok cały na ekranie: z bliska, gdy zasłania bohatera, w jaskini; kamera dalej w walce i w locie — czy nie za daleko
+  - odporności: liczby obrażeń na smoku (strzała, miecz, czar)
+  - potwory w późnych rozdziałach: obrażenia ×1,05 za rozdział
+
 ## Bossowie — poprawki (2026-11-03, gałąź bossowie-poprawki)
 - Użytkownik: bossowie atakują za szybko; lepsze znaki mocnych umiejętności; dźwięk przy mocnych umiejętnościach (zionięcie zabijało bohatera jednym ciosem — nie powinno); przyzwane golemy bez odepchnięcia; rozmowy ze smokami — kamera na głowę, nie na brzuch; smoki ucięte — poprawić widoczność; hitbox większy i zgodny z modelem; dotyczy wszystkich smoków
 - Przyczyny: zionięcie = zwykły atak smoka w Gothicu, obrażenia DAM_FIRE|DAM_FLY (siła 200 liczona dla każdego rodzaju) × mnożnik rozdziału — więcej niż życie bohatera; golemy kamienne i bagienne mają DAM_FLY (odrzut); smok bez kości „BIP01 HEAD” — głowa 1,8 m nad stopami; we wnętrzach cięcie sufitu i prześwit cięły też smoka; zasięg ciosu liczył tylko kości do 2,5 m w górę (ogon)

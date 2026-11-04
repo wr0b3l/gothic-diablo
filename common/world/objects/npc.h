@@ -206,6 +206,9 @@ class Npc final {
     void       arpgSetBoss(std::unique_ptr<ArpgBoss>&& b) { arpgBossSt = std::move(b); arpgBossSeen = true; }
     bool       arpgIsMinion() const { return arpgMinion; }
     void       arpgSetMinion(bool m) { arpgMinion = m; }
+    void       arpgSetFlap(float deg);      // Diathic: a flying dragon: its wings up / down (Pose::setArpgFlap)
+    bool       arpgBodySphere(Tempest::Vec3& c, float& r) const; // Diathic: a sphere around all bones (+ the skin)
+    std::string arpgBoneNames() const;      // Diathic: all bones of the model in one line (log.txt)
     bool       arpgDirectHit(Npc& from, int32_t dmg); // Diathic: a boss attack with a warning hits the hero (false: rolled)
     // Diathic: the hero's block: charges (ArpgStatus::BlockCharges .. -BlockDebt), the block held now
     int32_t    arpgBlockCharges() const { return arpgBlockCh; }

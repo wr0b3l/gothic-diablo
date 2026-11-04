@@ -18,6 +18,11 @@ float ArpgElite::chapterMul(World& w) {
   return std::pow(ChapterMul, float(ch-1));
   }
 
+float ArpgElite::chapterDmgMul(World& w) {
+  const int ch = w.script().arpgChapter();
+  return std::pow(ChapterDmgMul, float(ch-1));
+  }
+
 bool ArpgElite::redAttacker(World& w, const Npc& npc) {
   if(w.version().game!=2)
     return false;
