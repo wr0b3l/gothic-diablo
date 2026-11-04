@@ -206,6 +206,11 @@ class Npc final {
     void       arpgSetBoss(std::unique_ptr<ArpgBoss>&& b) { arpgBossSt = std::move(b); arpgBossSeen = true; }
     bool       arpgIsMinion() const { return arpgMinion; }
     void       arpgSetMinion(bool m) { arpgMinion = m; }
+    void       arpgSetFlap(float deg);      // Diathic: a flying dragon: its wings up / down (Pose::setArpgFlap)
+    bool       arpgBodySphere(Tempest::Vec3& c, float& r) const; // Diathic: a sphere around all bones (+ the skin)
+    void       arpgOnConsume(size_t cls);   // Diathic: the hero ate / drank it: healing over time (ArpgStatus::FoodRegen)
+    bool       arpgRegenerating() const { return !arpgRegen.empty(); }
+    std::string arpgBoneNames() const;      // Diathic: all bones of the model in one line (log.txt)
     bool       arpgDirectHit(Npc& from, int32_t dmg); // Diathic: a boss attack with a warning hits the hero (false: rolled)
     // Diathic: the hero's block: charges (ArpgStatus::BlockCharges .. -BlockDebt), the block held now
     int32_t    arpgBlockCharges() const { return arpgBlockCh; }
@@ -639,6 +644,16 @@ class Npc final {
       Npc*     from  = nullptr;
       };
     ArpgStatusState arpgSt[ArpgStatus::Count];
+    // Diathic: healing over time after food and potions (ArpgStatus::FoodRegen ...)
+    struct ArpgRegen {
+      float left  = 0;         // life still to come
+      float perMs = 0;
+      };
+    std::vector<ArpgRegen> arpgRegen;
+    float     arpgRegenAcc    = 0;
+    int32_t   arpgRegenShown  = 0;
+    uint64_t  arpgRegenShowAt = 0;
+    void      arpgTickRegen(uint64_t dt);
     std::unique_ptr<ArpgBoss> arpgBossSt;  // Diathic: a boss (null: not one, or not checked yet)
     bool      arpgBossSeen    = false;     // the instance was checked for a boss
     bool      arpgMinion      = false;     // called by a boss: friendly to the bosses (not saved)

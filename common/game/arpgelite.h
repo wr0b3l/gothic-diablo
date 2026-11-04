@@ -8,8 +8,9 @@ class Npc;
 // Diathic (2026-11-01): monsters stronger chapter by chapter, attacks with a red aura (no parry, a block costs
 // 3 charges) and groups with an elite leader. Only in the ARPG view.
 namespace ArpgElite {
-  // life and damage of monsters (and the bosses) x ChapterMul for each chapter after the first, compounded
-  constexpr float    ChapterMul     = 1.15f;
+  // life and damage of monsters (and the bosses) x ... for each chapter after the first, compounded
+  constexpr float    ChapterMul     = 1.05f;  // life (decision 2026-11-04: was 1.15)
+  constexpr float    ChapterDmgMul  = 1.05f;  // damage (decision 2026-11-04: at most 5% a chapter, was 15%)
 
   // groups with an elite leader: monsters of one guild this close to each other (a chain) = one group
   constexpr float    PackRadius     = 1500.f; // cm
@@ -23,6 +24,10 @@ namespace ArpgElite {
   constexpr float    PackDmg        = 1.25f;  // damage of the others while their leader lives ...
   constexpr float    PackLeaderRange= 4000.f; // ... and is this close (cm)
   constexpr int32_t  XpPerLevel     = 10;     // Gothic's XP_PER_VICTORY: experience for a kill = level x this
+  // the loot of a leader (decision 2026-11-04): gold x the chapter, sometimes a stone tablet of the builders
+  constexpr int32_t  LootGoldMin    = 30;
+  constexpr int32_t  LootGoldMax    = 60;
+  constexpr uint32_t LootTabletPct  = 25;     // % of the leaders with a tablet; its level: 1 (60%), 2 (30%), 3 (10%)
   constexpr float    RollRange      = 6000.f; // cm around the hero: monsters get their group when he comes this close
 
   // attacks with a red aura: the aura first, the next attack after RedWarnMs is the red one
@@ -34,9 +39,11 @@ namespace ArpgElite {
   constexpr uint64_t RedHoldMs      = 4000;   // no attack this long with the aura on: it goes out
   constexpr int32_t  RedBlockCost   = 3;      // block charges a blocked red attack takes
 
-  float chapterMul(World& w);                 // ChapterMul ^ (chapter-1)
+  float chapterMul(World& w);                 // ChapterMul ^ (chapter-1): life
+  float chapterDmgMul(World& w);              // ChapterDmgMul ^ (chapter-1): damage
   bool  redAttacker(World& w, const Npc& npc); // by kind: orc elite, lizard men, trolls, shadowbeasts, golems, demons
                                                // (elite leaders too: Npc::arpgRedCapable)
   void  tick(World& w, Npc& hero);            // every frame in the ARPG view: groups near the hero, leader's experience
+  void  giveLoot(World& w, Npc& leader);      // a leader died: gold and maybe a tablet into its inventory
   void  leaderKilled(int32_t xp);             // experience for the hero, given in the next tick
   }

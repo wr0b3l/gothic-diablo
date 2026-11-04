@@ -2660,6 +2660,11 @@ void MainWindow::paintArpgCombat(Painter& p, const Matrix4x4& vp) {
         type = Resources::FontType::Disabled;
         std::snprintf(txt, sizeof(txt), "%s", ArpgMenu::gtxt("Nietykalny").c_str());
         }
+      else if(e.kind==7) {
+        // Diathic: healing over time after food / a potion
+        type = Resources::FontType::Hi;
+        std::snprintf(txt, sizeof(txt), "+%d", int(e.value));
+        }
       else if(e.kind==5) {
         // a skill of the trees went off
         type = Resources::FontType::Yellow;

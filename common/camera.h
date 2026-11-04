@@ -181,6 +181,7 @@ class Camera final {
       static constexpr float DefaultRange = 1100.f; // cm; the wheel: +-10%
       float range       = DefaultRange;
       float rangeDest   = DefaultRange;
+      float bossZoom    = 1.f;          // Diathic: a dragon fight: the camera further away (ArpgBossCfg::CamZoom)
       bool  indoor      = false;
       float indoorHold  = 0;      // seconds left before 'indoor' may switch off
       float indoorBlend = 0;      // 0..1, smooth version of 'indoor'

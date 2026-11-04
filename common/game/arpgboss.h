@@ -23,13 +23,15 @@ namespace ArpgBossCfg {
 
   // attacks with a warning (damage = part of the hero's maximum life, the armour does not count: dodge them)
   constexpr uint64_t WarnMs        = 1600;   // the red shape on the ground before the hit (decision 2026-11-03: was 1.3 s)
-  constexpr uint64_t AttackMs1     = 13000;  // one attack every ... in phase 1 (2026-11-03: was 10 s)
-  constexpr uint64_t AttackMs2     = 10000;  // ... in phases 2 and 3 (2026-11-03: was 7 s)
+  constexpr uint64_t AttackMs1     = 16000;  // one attack every ... in phase 1 (2026-11-04: was 13 s, before 10 s)
+  constexpr uint64_t AttackMs2     = 13000;  // ... in phases 2 and 3 (2026-11-04: was 10 s, before 7 s)
+  constexpr uint64_t GapMs         = 3000;   // one attack at a time: after a warning attack hits, nothing else this long
   constexpr float    HeroR         = 30.f;   // the hero's body for the hit test, cm
   constexpr float    SoundRange    = 6000.f; // cm: the warning and hit sounds
 
   // Gothic's own attacks of the bosses (decisions 2026-11-03)
-  constexpr uint64_t RestMs        = 1500;   // a dragon stands this long after its swing / breath before the next one
+  constexpr uint64_t RestMs        = 2500;   // a dragon stands this long after its swing / breath (2026-11-04: was 1.5 s)
+  constexpr uint64_t SpellRestMs   = 5000;   // ... after its spell (the fireball, the ball of death)
   constexpr uint64_t RavenRestMs   = 600;    // Raven: after a swing
   constexpr float    MaxHit        = 0.35f;  // one hit of a boss takes at most this part of the hero's maximum life
   constexpr float    MeleeHalfDeg  = 35.f;   // the sign of a dragon's own attack: a cone in front of it
@@ -75,6 +77,29 @@ namespace ArpgBossCfg {
   constexpr int      Minions       = 2;
   constexpr int      Skeletons     = 3;
   constexpr float    MinionDist    = 500.f;
+  constexpr float    MinionDmg     = 0.5f;   // their hits on the hero x this (decision 2026-11-04)
+
+  // a dragon takes less (decision 2026-11-04): a part of the damage taken away
+  constexpr float    ResistRanged  = 0.25f;
+  constexpr float    ResistMelee   = 0.15f;
+  constexpr float    ResistSpell   = 0.50f;
+
+  // a dragon flies over its arena while its minions live, at most FlyMaxMs (decision 2026-11-04);
+  // in the air only bows, crossbows and spells reach it
+  constexpr uint64_t FlyMaxMs      = 5*60*1000;
+  constexpr uint64_t TakeOffMs     = 2500;
+  constexpr uint64_t LandMs        = 3000;
+  constexpr float    FlyHeight     = 750.f;  // cm above the ground (less under a low ceiling: 500 cm free above)
+  constexpr float    FlyMinHeight  = 350.f;
+  constexpr float    FlyRadius     = 800.f;  // a circle over the arena (smaller between walls: 600 cm free around)
+  constexpr float    FlySpeed      = 300.f;  // cm/s along the circle
+  constexpr uint64_t FlapMs        = 1100;   // one beat of the wings
+  constexpr float    FlapDeg       = 32.f;   // wings up / down in the air (take-off and landing: x1.4)
+  constexpr float    FlyBob        = 45.f;   // cm: the body rises with each beat
+  constexpr float    BankDeg       = 12.f;   // leaning into the circle
+  // the camera in a fight with a dragon: further away, the whole dragon in the picture (2026-11-04)
+  constexpr float    CamZoom       = 1.35f;
+  constexpr float    CamFlyZoom    = 1.6f;
   }
 
 class ArpgBoss final {
@@ -122,8 +147,20 @@ class ArpgBoss final {
     void tick(Npc& boss, Npc& hero, World& w);
     // Gothic's own attack of the boss starts (Npc::implAiTick, MV_ATTACK): the pause after it, the sign and the sound
     uint64_t onOwnAttack(Npc& boss, World& w, uint64_t aniMs);
+    void     onOwnSpell (Npc& boss, World& w);
+    // one attack at a time: Gothic's own attack waits for the warning attack (and the rest after the last one)
+    bool     canOwnAttack(uint64_t now) const { return fly==Ground && now>=busyUntil; }
+
+    // the flight (decision 2026-11-04): Npc::tick hands the dragon over while it flies (no AI, no gravity)
+    bool     flying() const { return fly!=Ground; }
+    bool     tickFlight(Npc& boss, World& w);
+    float    flyPitch() const { return pitch; } // degrees: the nose up
+    float    flyRoll()  const { return roll;  } // degrees: leaning into the circle
+    void     hintAir(World& w) const;           // the line "in the air: bows, crossbows, spells" (not too often)
 
   private:
+    enum Fly : uint8_t { Ground, Wait, TakeOff, Air, Landing };
+
     Kind              k;
     int               ph          = 1;
     uint64_t          shieldUntil = 0;
@@ -134,13 +171,28 @@ class ArpgBoss final {
     std::string_view  abilityName;
     uint64_t          abilityUntil = 0;
     uint64_t          lastSoundAt  = 0;
+    uint64_t          busyUntil    = 0;
+
+    Fly               fly          = Ground;
+    uint64_t          flyT0        = 0;       // the current part of the flight started
+    uint64_t          flyStart     = 0;       // the take-off: FlyMaxMs from it
+    uint64_t          flyLast      = 0;       // the last tickFlight
+    Tempest::Vec3     flyCenter    = {};      // the arena: where it took off (on the ground)
+    Tempest::Vec3     flyFrom      = {};      // where the take-off / the landing started
+    float             flyH         = 0, flyR = 0, flyAng = 0, flyDir = 1;
+    float             pitch        = 0, roll = 0;
+    mutable uint64_t  hintAt       = 0;
+
+    void        startFlight(Npc& boss, World& w, uint64_t at);
+    void        land       (Npc& boss, World& w);
+    int         minionsAlive(World& w) const;
 
     static int  phaseOf(const Npc& npc);
     void        onPhase(Npc& boss, Npc& hero, World& w);
     void        attack (Npc& boss, Npc& hero, World& w, uint64_t now);
     void        resolve(Npc& boss, Npc& hero, World& w, uint64_t now);
     void        strike (Npc& boss, Npc& hero, World& w, const Zone& z);
-    void        spawn  (Npc& boss, World& w, std::string_view inst, int count, std::string_view fx);
+    int         spawn  (Npc& boss, World& w, std::string_view inst, int count, std::string_view fx);
     void        announce(Npc& boss, World& w, std::string_view name, std::string_view sound, uint64_t until);
   };
 

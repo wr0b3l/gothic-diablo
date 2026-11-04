@@ -30,6 +30,7 @@ class MdlVisual final {
     void                           setObjMatrix(const Tempest::Matrix4x4 &m, bool syncAttach = false);
 
     void                           setHeadRotation(float dx, float dz);
+    void                           setArpgFlap(float deg, const Tempest::Vec3& fwd);
     Tempest::Vec2                  headRotation() const;
     void                           setYTranslationEnable(bool e);
     void                           setVisualBody(World& owner, MeshObjects::Mesh&& body);

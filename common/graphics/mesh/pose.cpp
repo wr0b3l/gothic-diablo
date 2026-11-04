@@ -353,6 +353,10 @@ bool Pose::update(uint64_t tickCount, bool force) {
     needToUpdate = needMkSkeleton;
     }
 
+  if(arpgFlapDirty) {
+    arpgFlapDirty  = false;
+    needMkSkeleton = true;
+    }
   if(needMkSkeleton || force) {
     mkSkeleton(pos);
     return true;
@@ -463,6 +467,8 @@ void Pose::implMkSkeleton(const Matrix4x4 &mt) {
       m.rotateOY(headRotY);
       m.rotateOX(headRotX);
       }
+    if(arpgFlap!=0.f)
+      arpgApplyFlap(i);
     }
   }
 
@@ -475,6 +481,8 @@ void Pose::implMkSkeleton(const Tempest::Matrix4x4 &mt, size_t parent) {
       continue;
     auto mat = hasSamples[i] ? mkMatrix(base[i]) : nodes[i].tr;
     tr[i] = mt*mat;
+    if(arpgFlap!=0.f)
+      arpgApplyFlap(i);
     implMkSkeleton(tr[i],i);
     }
   }
@@ -962,6 +970,39 @@ size_t Pose::findNode(std::string_view b) const {
   if(skeleton!=nullptr)
     return skeleton->findNode(b);
   return size_t(-1);
+  }
+
+void Pose::setArpgFlap(float deg, const Tempest::Vec3& fwd) {
+  if(deg==arpgFlap && fwd==arpgFlapFwd)
+    return;
+  arpgFlap      = deg;
+  arpgFlapFwd   = fwd;
+  arpgFlapDirty = true;
+  }
+
+void Pose::arpgApplyFlap(size_t i) {
+  // Diathic (2026-11-04): the root of a wing (WING in its name, not in its parent's) turns around the body axis at its
+  // own place: the whole wing goes up / down; the side (left / right) from the body's centre, so both go together
+  if(arpgFlap==0.f || skeleton==nullptr)
+    return;
+  auto& nodes = skeleton->nodes;
+  if(nodes[i].name.find("WING")==std::string::npos)
+    return;
+  const size_t parent = nodes[i].parent;
+  if(parent<nodes.size() && nodes[parent].name.find("WING")!=std::string::npos)
+    return;
+  Matrix4x4& m   = tr[i];
+  const Vec3 p   = {m.at(3,0), m.at(3,1), m.at(3,2)};
+  const Vec3 org = {pos.at(3,0), pos.at(3,1), pos.at(3,2)};
+  const Vec3 up  = {0.f, 1.f, 0.f};
+  const Vec3 sd  = Vec3::crossProduct(arpgFlapFwd, up);
+  const float a  = Vec3::dotProduct(p-org, sd)>0.f ? -arpgFlap : arpgFlap;
+  Matrix4x4 r;
+  r.identity();
+  r.translate(p);
+  r.rotate(a, arpgFlapFwd.x, arpgFlapFwd.y, arpgFlapFwd.z);
+  r.translate(-p.x, -p.y, -p.z);
+  m = r*m;
   }
 
 void Pose::setHeadRotation(float dx, float dz) {

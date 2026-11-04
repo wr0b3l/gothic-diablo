@@ -2168,6 +2168,16 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
     arpgClick.point = arpgGround;
     }
 
+  // Diathic (decision 2026-11-04): a dragon in the air: melee does not reach it — no running under it
+  if(arpgClick.kind==ArpgClick::Attack && arpgClick.target.npc!=nullptr) {
+    auto* boss = arpgClick.target.npc->arpgBoss();
+    const auto ws = pl->weaponState();
+    if(boss!=nullptr && boss->flying() && ws!=WeaponState::Bow && ws!=WeaponState::CBow && ws!=WeaponState::Mage) {
+      boss->hintAir(pl->world());
+      arpgClick.kind = ArpgClick::None;
+      return;
+      }
+    }
   if(arpgClick.kind==ArpgClick::Attack && pl->weaponState()==WeaponState::NoWeapon)
     arpgDrawPreferred(*pl); // draw the weapon while running to the enemy
   arpgClick.stuckPos = pl->position();
