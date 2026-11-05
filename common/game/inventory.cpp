@@ -7,6 +7,7 @@
 #include "world/objects/interactive.h"
 #include "world/world.h"
 #include "game/gamescript.h"
+#include "game/arpgweapon.h"
 #include "serialize.h"
 #include "gothic.h"
 
@@ -1033,6 +1034,9 @@ Item *Inventory::bestRangedWeapon(Npc &owner) {
   }
 
 void Inventory::applyWeaponStats(Npc& owner, const Item &weapon, int sgn) {
+  // Diathic: the hero - the weapon put into the hand / taken out of it, not a running sum (ArpgWeapon::syncHeroDamage)
+  if(ArpgWeapon::syncHeroDamage(owner, sgn>0 ? &weapon : nullptr))
+    return;
   auto& hnpc = owner.handle();
   //hnpc.damagetype = sgn>0 ? weapon.handle()->damageType : (1 << GEngineClasses::DAM_INDEX_BLUNT);
   for(size_t i=0; i<zenkit::DamageType::NUM; ++i){

@@ -133,6 +133,12 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Obrażenia bohatera w 4 rozdziale (2026-11-05, gałąź poprawki-obrazenia-akt4)
+- Użytkownik: w 4 rozdziale (przed lodowym smokiem) potwory dostają bardzo mało (golem 7, lodowy wilk 9) mimo ponad 270 obrażeń w menu; inne potwory też za mocne; zapis save_slot_17
+- Przyczyna (z zapisu): obrażenia sieczne bohatera −225 bez broni w ręku (suma bieżąca OpenGothic się rozjechała) — z Szponem Beliara cios liczył się z 14 zamiast 239
+- Zmiana: obrażenia bohatera = broń w ręku, przy wczytaniu zapisu naprawiane (bez pytania — poprawka błędu)
+- Do testu: wczytać save_slot_17, dobyć Szpon Beliara — lodowy golem i lodowy wilk dostają ok. 45–95 za cios (zwykły / pełny); karta postaci bez zmian; zmiana broni w ręku, łuk / kusza, pięści bez broni, zapis i wczytanie z dobytą bronią — obrażenia jak w karcie
+
 ## Broń: właściwości, statystyki, warsztat (2026-11-04, gałąź bronie-kowal)
 - Użytkownik: dokładne statystyki broni; specjalne właściwości niektórych broni (podpalenie, zamrożenie, krwawienie, osłabienie itp.); efekt statusu widoczny na modelu, tylko efekty z Gothica; modyfikacja broni u kowala, na początek kilka receptur
 - Odpowiedź (2026-11-04): modyfikacja w „małym warsztacie przy każdym stanowisku kowalskim”

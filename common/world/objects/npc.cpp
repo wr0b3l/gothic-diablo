@@ -362,6 +362,8 @@ void Npc::load(Serialize &fin, size_t id, std::string_view directory) {
     arpgLeader       = (fl&2)!=0;
     }
   arpgSyncBeastHp();
+  // Diathic: the hero's damage again from the weapon in the hand — repairs saves with a wrong rest (2026-11-05)
+  ArpgWeapon::syncHeroDamage(*this, invent.activeWeapon());
 
   // post-alignment
   updateTransform();
