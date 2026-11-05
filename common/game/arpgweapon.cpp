@@ -7,6 +7,7 @@
 
 #include "game/gamescript.h"
 #include "game/constants.h"
+#include "camera.h"
 #include "ui/arpgmenu.h"
 #include "world/objects/interactive.h"
 #include "world/objects/item.h"
@@ -225,6 +226,16 @@ int32_t ArpgWeapon::damageOf(const Item& it, size_t kind) {
   if((uint32_t(h.damage_type) & (1u<<kind))!=0)
     v += h.damage_total;
   return v;
+  }
+
+bool ArpgWeapon::syncHeroDamage(Npc& owner, const Item* inHand) {
+  // the hero's own damage is 0 (PC_Hero), the fists use the strength; a transformed hero (a monster) stays Gothic's
+  if(!owner.isPlayer() || owner.isMonster() || !Camera::isArpgEnabled())
+    return false;
+  auto& h = owner.handle();
+  for(size_t i=0; i<zenkit::DamageType::NUM; ++i)
+    h.damage[i] = inHand!=nullptr ? damageOf(*inHand, i) : 0;
+  return true;
   }
 
 const char* ArpgWeapon::damageName(size_t kind) {

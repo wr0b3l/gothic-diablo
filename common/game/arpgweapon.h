@@ -49,6 +49,9 @@ namespace ArpgWeapon {
   // the damage of the weapon by kind (Gothic: damage[i] + damage_total for the kinds of damage_type)
   int32_t damageOf(const Item& it, size_t kind);
   const char* damageName(size_t kind);           // UTF-8: "sieczne", "obuchowe", ...
+  // the hero (a human, the ARPG mode): his damage = the weapon in the hand (nullptr: none), not Gothic's running sum
+  // of + / - (a rest of -225 made the swings of chapter 4 weak, 2026-11-05); false: not the hero, Gothic's way
+  bool    syncHeroDamage(Npc& owner, const Item* inHand);
 
   // ---- the workshop (the smith stations) ----
   struct Need {
