@@ -9,8 +9,8 @@ class Npc;
 // 3 charges) and groups with an elite leader. Only in the ARPG view.
 namespace ArpgElite {
   // life and damage of monsters (and the bosses) x ... for each chapter after the first, compounded
-  constexpr float    ChapterMul     = 1.05f;  // life (decision 2026-11-04: was 1.15)
-  constexpr float    ChapterDmgMul  = 1.05f;  // damage (decision 2026-11-04: at most 5% a chapter, was 15%)
+  constexpr float    ChapterMul     = 1.15f;  // life (decision 2026-11-06: restore 15% a chapter)
+  constexpr float    ChapterDmgMul  = 1.15f;  // damage (decision 2026-11-06: restore 15% a chapter)
 
   // groups with an elite leader: monsters of one guild this close to each other (a chain) = one group
   constexpr float    PackRadius     = 1500.f; // cm
