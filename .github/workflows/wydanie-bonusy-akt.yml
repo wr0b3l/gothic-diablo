@@ -1,0 +1,65 @@
+name: Wydanie bonusów potworów dla testerów
+
+# Release this iteration after its master build succeeds. Other merges do not trigger this workflow.
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/wydanie-bonusy-akt.yml']
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: wydanie-bonusy-akt
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Zaczekaj na build tego commita i uruchom wydanie dla testerów
+        shell: bash
+        run: |
+          set -euo pipefail
+          offset=$(gh api -H 'Accept: application/vnd.github.raw' \
+            "repos/$GH_REPO/contents/.github/workflows/build.yml?ref=$RELEASE_SHA" \
+            | sed -n 's/^  BUILD_OFFSET: *\([0-9][0-9]*\).*/\1/p')
+          [[ "$offset" =~ ^[0-9]+$ ]] || { echo '::error::Brak numeracji buildów'; exit 1; }
+
+          build=''
+          previous=''
+          for attempt in $(seq 1 120); do
+            run=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$RELEASE_SHA&event=push&per_page=30" \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/build.yml")] | sort_by(.run_number) | last')
+            state=$(jq -r '.status // "oczekiwanie na start"' <<< "$run")
+            if [ "$state" != "$previous" ]; then echo "Build: $state"; previous="$state"; fi
+            if [ "$state" = completed ]; then
+              conclusion=$(jq -r .conclusion <<< "$run")
+              [ "$conclusion" = success ] || { echo "::error::Build: $conclusion"; exit 1; }
+              build=$(( $(jq -r .run_number <<< "$run") + offset ))
+              break
+            fi
+            sleep 15
+          done
+          [ -n "$build" ] || { echo '::error::Przekroczono czas oczekiwania na build'; exit 1; }
+
+          target=$(gh api "repos/$GH_REPO/releases/tags/build-$build" --jq .target_commitish)
+          [ "$target" = "$RELEASE_SHA" ] || { echo '::error::Build pochodzi z innego commita'; exit 1; }
+          gh workflow run testerzy.yml --ref master -f "build=$build" -f 'notatki='
+
+          for attempt in $(seq 1 40); do
+            if gh api "repos/$GH_REPO/releases/tags/tester-$build" --silent >/dev/null 2>&1; then
+              echo "tester-$build wydany" >> "$GITHUB_STEP_SUMMARY"
+              echo "https://github.com/$GH_REPO/releases/download/testerzy/Diathic-testerzy.zip" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::Nie potwierdzono wydania dla testerów'
+          exit 1

@@ -133,6 +133,13 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Przywrócenie bonusów potworów za rozdziały (2026-11-06, gałąź przywrocenie-bonusow-akt)
+- Użytkownik: w tej samej iteracji co krwawienie, bryła lodu i szybkość strzału przywrócić bonusy zdrowia i obrażeń potworów za akt.
+- Przywrócone wcześniejsze wartości: zdrowie i obrażenia ×1,15 za każdy rozdział po pierwszym, składane (rozdział 4 ≈ ×1,52, rozdział 6 ≈ ×2,01); zastępują mnożniki ×1,05 z 2026-11-04.
+- Zakres jak dotąd: potwory, zwierzęta, orkowie i bossowie w trybie ARPG; istniejące mnożniki bazowe i elit pozostają częścią obliczenia.
+- Wartości: `ArpgElite::ChapterMul`, `ArpgElite::ChapterDmgMul` w `common/game/arpgelite.h`.
+- Do testu: wczytać zapis z późniejszego rozdziału, porównać zdrowie i obrażenia potworów; zapisać i wczytać ponownie — bonus nie powinien naliczać się drugi raz; przejść do następnego rozdziału i sprawdzić dalszy wzrost.
+
 ## Obrażenia bohatera w 4 rozdziale (2026-11-05, gałąź poprawki-obrazenia-akt4)
 - Użytkownik: w 4 rozdziale (przed lodowym smokiem) potwory dostają bardzo mało (golem 7, lodowy wilk 9) mimo ponad 270 obrażeń w menu; inne potwory też za mocne; zapis save_slot_17
 - Przyczyna (z zapisu): obrażenia sieczne bohatera −225 bez broni w ręku (suma bieżąca OpenGothic się rozjechała) — z Szponem Beliara cios liczył się z 14 zamiast 239
