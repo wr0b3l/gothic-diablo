@@ -1,6 +1,6 @@
 name: Wydanie iteracji dla testerów
 
-# Release this iteration after its master build succeeds. Other merges do not trigger this workflow.
+# Release Irdorath iteration 2026-11-07 after its master build succeeds. Other merges do not trigger this workflow.
 on:
   push:
     branches: [master]
