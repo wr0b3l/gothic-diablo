@@ -64,6 +64,8 @@ namespace ArpgBossCfg {
   constexpr float    IceHit        = 0.25f;
   constexpr uint64_t ChillMs       = 3000;
   constexpr float    IceFanDeg     = 20.f;   // phases 2 and 3: three lines
+  constexpr float    IceCubeR      = 180.f;  // Finkregh's alternate attack: a dodgeable ice block
+  constexpr float    IceCubeHit    = 0.15f;
   // the undead dragon and Raven (phase 3): a wave running out in a ring
   constexpr float    WaveStartR    = 300.f;
   constexpr float    WaveMaxR      = 1800.f;
@@ -110,7 +112,7 @@ class ArpgBoss final {
   public:
     enum Kind : uint8_t { Swamp, Rock, Fire, Ice, Undead, Raven };
     enum Shape : uint8_t { Circle, Cone, Line, Ring };
-    enum Look : uint8_t { Plain, Poison, Flame, Frost, Dark, Bolt };
+    enum Look : uint8_t { Plain, Poison, Flame, Frost, Dark, Bolt, Cube };
 
     // a shape on the ground: a red warning until `fire`, then the hit; puddles and patches stay until `end`;
     // a ring runs out from `pos` (radius r -> r2) between `fire` and `end`

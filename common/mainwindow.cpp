@@ -2982,6 +2982,7 @@ void MainWindow::paintArpgBossZones(Painter& p, const Matrix4x4& vp) {
       switch(z.look) {
         case ArpgBoss::Poison: cr = 0.45f; cg = 0.95f; cb = 0.15f; break;
         case ArpgBoss::Frost:  cr = 0.55f; cg = 0.8f;  cb = 1.f;   break;
+        case ArpgBoss::Cube:   cr = 0.35f; cg = 0.75f; cb = 1.f;   break;
         case ArpgBoss::Dark:   cr = 0.75f; cg = 0.25f; cb = 1.f;   break;
         case ArpgBoss::Bolt:   cr = 0.8f;  cg = 0.4f;  cb = 1.f;   break;
         case ArpgBoss::Flame:

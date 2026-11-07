@@ -16,8 +16,8 @@ const std::vector<Tree>& ArpgSkills::trees() {
     {"Cios", "LPM", "Zwykły atak bronią białą lub strzał z łuku", "ITMW_1H_SLD_SWORD",
       {
         {"Ostrze",       {{"Ostra klinga",5,"+4% obrażeń ciosu za punkt","ITMW_SCHWERT1"},
-                          {"Słaby punkt",3,"+5% szansy na pełne obrażenia (krytyk Gothica)","ITMW_1H_VLK_DAGGER"},
-                          {"Głębokie rany",3,"Trafienie: krwawienie 5% obrażeń na sekundę przez 3 s, za punkt","ITAT_CLAW"}}},
+                          {"Głębokie rany",3,"Trafienie: krwawienie 5% obrażeń na sekundę przez 8 s, za punkt","ITAT_CLAW"},
+                          {"Słaby punkt",3,"+1 osobne krwawienie na wrogu za punkt (odstęp 2 s)","ITMW_1H_VLK_DAGGER"}}},
         {"Rytm",         {{"Płynne ruchy",5,"+7% szybkości ataku za punkt","ITMW_RAPIER"},
                           {"Wyczucie chwili",2,"Okno combo dłuższe o 25% za punkt","ITMI_SEXTANT"},
                           {"Czwarty cios",1,"Seria kończy się dodatkowym ciosem x1,5","ITMW_MEISTERDEGEN"}}},
@@ -609,7 +609,7 @@ const ArpgPerks& ArpgProgress::perks() const {
     };
   ArpgPerks p;
   p.meleeDmg    = 0.04f*r("Cios","Ostra klinga");
-  p.critAdd     = int(5.f*r("Cios","Słaby punkt"));
+  p.bleedStacks = int(r("Cios","Słaby punkt"));
   p.bleed       = 0.05f*r("Cios","Głębokie rany");
   p.atkSpeed    = 0.07f*r("Cios","Płynne ruchy"); // Diathic: from the standard speed of Gothic (no base bonus)
   p.comboWindow = 0.25f*r("Cios","Wyczucie chwili");

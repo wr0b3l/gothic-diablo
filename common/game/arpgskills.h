@@ -70,8 +70,9 @@ namespace ArpgSkills {
 struct ArpgPerks {
   // Cios
   float meleeDmg    = 0;     // Ostra klinga: +damage of a normal hit (0.04 = +4%)
-  int   critAdd     = 0;     // Słaby punkt: +% chance of Gothic's full damage
-  float bleed       = 0;     // Głębokie rany: part of the hit as bleeding per second, 3 s
+  int   critAdd     = 0;     // reserved: +% chance of Gothic's full damage
+  int   bleedStacks = 0;     // Słaby punkt: extra simultaneous bleeds, up to 3
+  float bleed       = 0;     // Głębokie rany: part of the hit as bleeding per second, 8 s
   float atkSpeed    = 0;     // Płynne ruchy: faster swings (0.07 = +7%)
   float comboWindow = 0;     // Wyczucie chwili: longer combo window (0.25 = +25%)
   bool  fourthHit   = false; // Czwarty cios: from the 4th hit of a series x1.5

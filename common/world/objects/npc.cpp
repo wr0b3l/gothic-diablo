@@ -2611,7 +2611,40 @@ void Npc::arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from
   if(id>=ArpgStatus::Count || isDead())
     return;
   const uint64_t now = owner.tickCount();
+  if(id==ArpgStatus::Bleed) {
+    if(now<arpgBleedNext || value<=0.f)
+      return;
+    const auto* perks = from!=nullptr ? from->arpgPerks() : nullptr;
+    const int maxStacks = 1+std::clamp(perks!=nullptr ? perks->bleedStacks : 0, 0, 3);
+    ArpgStatusState* slot = nullptr;
+    if(arpgSt[id].until<=now)
+      slot = &arpgSt[id];
+    for(int i=1; i<maxStacks && slot==nullptr; ++i)
+      if(arpgBleedExtra[i-1].until<=now)
+        slot = &arpgBleedExtra[i-1];
+    if(slot==nullptr) {
+      slot = &arpgSt[id];
+      for(int i=1; i<maxStacks; ++i)
+        if(arpgBleedExtra[i-1].until<slot->until)
+          slot = &arpgBleedExtra[i-1];
+      }
+    const bool active = slot->until>now;
+    slot->value = active ? std::max(slot->value, value) : value;
+    slot->until = now+ms;
+    slot->next  = now+1000;
+    slot->from  = from;
+    arpgBleedNext = now+ArpgStatus::BleedGapMs;
+    arpgStatusFx(id, true);
+    return;
+    }
   auto&          st  = arpgSt[id];
+  if(id==ArpgStatus::IceCube) {
+    if(!isPlayer() || st.until>now)
+      return; // a second hit cannot extend one imprisonment beyond five seconds
+    ms = std::min(ms, ArpgStatus::IceCubeMs);
+    visual.interrupt();
+    setAnim(AnimationSolver::Idle);
+    }
   if(id==ArpgStatus::Freeze) {
     // Diathic: Zamrożenie (weapons): not the bosses (dragons, the Raven), not the hero; then a while without it
     if(isPlayer() || arpgBossSt!=nullptr || arpgIsDragon() || arpgIsBossInst() || now<arpgFreezeFree)
@@ -2724,11 +2757,65 @@ bool Npc::arpgDirectHit(Npc& from, int32_t dmg) {
   }
 
 bool Npc::arpgHasStatus(ArpgStatus::Id id) const {
-  return id<ArpgStatus::Count && arpgSt[id].until>owner.tickCount();
+  if(id>=ArpgStatus::Count)
+    return false;
+  const uint64_t now = owner.tickCount();
+  if(arpgSt[id].until>now)
+    return true;
+  if(id==ArpgStatus::Bleed)
+    for(const auto& st:arpgBleedExtra)
+      if(st.until>now)
+        return true;
+  return false;
+  }
+
+void Npc::arpgIceStartBolt(uint64_t now, const Tempest::Vec3& aim) {
+  arpgIceAim  = aim;
+  arpgIceFire = now+700;
+  arpgIceNext = now+5500;
+  }
+
+bool Npc::arpgIceTakeBolt(uint64_t now, Tempest::Vec3& aim) {
+  if(arpgIceFire==0 || now<arpgIceFire)
+    return false;
+  if(now>arpgIceFire+1000) {
+    arpgIceFire = 0; // do not land a stale projectile after leaving and re-entering the area
+    return false;
+    }
+  aim = arpgIceAim;
+  arpgIceFire = 0;
+  return true;
   }
 
 void Npc::arpgTickStatus() {
   const uint64_t now = owner.tickCount();
+  auto tickDot = [&](ArpgStatusState& st) {
+    if(st.until==0)
+      return;
+    if(isDead()) {
+      st.until = now;
+      return;
+      }
+    if(st.from==nullptr)
+      return;
+    while(st.next<=now && st.next<=st.until) {
+      st.next += 1000;
+      const int32_t v = std::max<int32_t>(1, int32_t(std::lround(st.value)));
+      if(isDown())
+        break;
+      const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
+      lastHit      = st.from;
+      currentOther = st.from;
+      changeAttribute(ATR_HITPOINTS, -v, true);
+      const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
+      if(lost>0)
+        owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, 0);
+      if(isDead())
+        owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSMURDER);
+      else if(isUnconscious())
+        owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSDEFEAT);
+      }
+    };
   for(uint8_t i=0; i<ArpgStatus::Count; ++i) {
     auto& st = arpgSt[i];
     if(st.until==0)
@@ -2736,31 +2823,21 @@ void Npc::arpgTickStatus() {
     if(isDead()) {
       st.until = now;
       }
-    else if(ArpgStatus::info(ArpgStatus::Id(i)).dot && st.from!=nullptr) {
-      // damage every second
-      while(st.next<=now && st.next<=st.until) {
-        st.next += 1000;
-        const int32_t v = std::max<int32_t>(1, int32_t(std::lround(st.value)));
-        if(isDown())
-          break;
-        const int32_t hp0 = hnpc->attribute[ATR_HITPOINTS];
-        lastHit      = st.from;
-        currentOther = st.from;
-        changeAttribute(ATR_HITPOINTS, -v, true);
-        const int32_t lost = hp0-hnpc->attribute[ATR_HITPOINTS];
-        if(lost>0)
-          owner.arpgPopup(position()+Tempest::Vec3(0,180.f,0), lost, 0);
-        if(isDead())
-          owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSMURDER);
-        else if(isUnconscious())
-          owner.sendPassivePerc(*this,*st.from,*this,PERC_ASSESSDEFEAT);
-        }
-      }
+    else if(ArpgStatus::info(ArpgStatus::Id(i)).dot)
+      tickDot(st);
     if(st.until<=now) {
       st = ArpgStatusState();
-      arpgStatusFx(ArpgStatus::Id(i), false);
+      if(i!=ArpgStatus::Bleed)
+        arpgStatusFx(ArpgStatus::Id(i), false);
       }
     }
+  for(auto& st:arpgBleedExtra) {
+    tickDot(st);
+    if(st.until!=0 && st.until<=now)
+      st = ArpgStatusState();
+    }
+  if(!arpgHasStatus(ArpgStatus::Bleed))
+    arpgStatusFx(ArpgStatus::Bleed, false);
   }
 
 void Npc::commitDamage() {
@@ -3316,7 +3393,7 @@ void Npc::takeDamage(Npc& other, const Bullet* b, const CollideMask bMask, int32
         if(hk->leech>0.f && !other.isDead())
           other.changeAttribute(ATR_HITPOINTS, std::max<int32_t>(1, int32_t(std::lround(float(lost)*hk->leech))), false);
         if(hk->bleed>0.f && b==nullptr && !isDown())
-          arpgApplyStatus(ArpgStatus::Bleed, 3000, float(lost)*hk->bleed, &other);              // Głębokie rany
+          arpgApplyStatus(ArpgStatus::Bleed, ArpgStatus::SkillBleedMs, float(lost)*hk->bleed, &other); // Głębokie rany
         if(hk->innosWrath && arpgSpecialHit && !isDown())
           arpgApplyStatus(ArpgStatus::Burn, 4000, std::max(4.f, float(lost)*0.1f), &other);    // Gniew Innosa
         if(arpgSpecialHit && isDown())
@@ -3637,6 +3714,11 @@ void Npc::tick(uint64_t dt) {
     arpgTickRed();
     }
   arpgTickStatus();
+  if(isPlayer() && Camera::isArpgEnabled() && std::string_view(aiState.hint)=="ZS_MAGICFREEZE" &&
+     owner.tickCount()>=aiState.sTime+ArpgStatus::IceCubeMs) {
+    clearState(false); // invokes Gothic's freeze cleanup even when the AI queue is busy
+    aiPush(AiQueue::aiStandup());
+    }
   arpgTickRegen(dt);
   if(arpgSpinUntil!=0) {
     // Wir: one turn in 0.3 s
@@ -5415,6 +5497,16 @@ bool Npc::shootBow(Interactive* focOverride) {
   if(!hasAmmunition())
     return false;
 
+  // Cap the actual fire rate. Animation warping alone could remove the pause between shots.
+  bool arpgHero = false;
+  if(isPlayer() && Camera::isArpgEnabled()) {
+    auto cam = Gothic::inst().camera();
+    arpgHero = (cam!=nullptr && cam->isArpgActive());
+    }
+  const uint64_t shotAt = owner.tickCount();
+  if(arpgHero && shotAt<arpgNextShot)
+    return false;
+
   if(!setAnim(Anim::Attack))
     return false;
 
@@ -5423,13 +5515,13 @@ bool Npc::shootBow(Interactive* focOverride) {
     return false;
 
   // gothic-diablo: hero's arrows in the ARPG view: hit chance as in Gothic, damage x0.5 (charged shot: always hits, x3)
-  bool arpgHero = false;
-  if(isPlayer() && Camera::isArpgEnabled()) {
-    auto cam = Gothic::inst().camera();
-    arpgHero = (cam!=nullptr && cam->isArpgActive());
-    }
-
   auto& b = owner.shootBullet(*itm,*this,currentTarget,focOverride);
+  if(arpgHero) {
+    const auto* pk = arpgPerks();
+    const float speed = pk!=nullptr ? pk->shotSpeed : 0.f;
+    const uint64_t base = active->isCrossbow() ? ArpgStatus::CrossbowShotMs : ArpgStatus::BowShotMs;
+    arpgNextShot = shotAt+uint64_t(float(base)/(1.f+speed));
+    }
 
   // Diathic: Kołczan: sometimes the arrow is not used up
   const auto* qk = arpgHero ? arpgPerks() : nullptr;
