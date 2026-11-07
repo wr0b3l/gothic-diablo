@@ -78,7 +78,8 @@ bool ArpgBoss::detect(World& w, const Npc& npc, Kind& out) {
   static const struct { const char* name; Kind kind; } bosses[] = {
     {"DRAGON_SWAMP",         Swamp },  // Pandrodor
     {"DRAGON_ROCK",          Rock  },  // Pedrakhan
-    {"DRAGON_FIRE",          Fire  },  // Feomathar (not Dragon_Fire_Island: Feodaron is immortal)
+    {"DRAGON_FIRE",          Fire  },  // Feomathar
+    {"DRAGON_FIRE_ISLAND",   Fire  },  // Feodaron on Irdorath; the story's immunity stays in Gothic's scripts
     {"DRAGON_ICE",           Ice   },  // Finkregh
     {"DRAGON_UNDEAD",        Undead},  // Irdorath
     {"BDT_1090_ADDON_RAVEN", Raven },  // Kruk

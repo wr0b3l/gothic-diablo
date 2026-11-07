@@ -111,6 +111,7 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 ## Bossowie — smoki i Kruk (2026-10-31, gałąź bossowie)
 - Użytkownik: „zróbmy mechaniki bossów do smoków i Kruka”; zakres: wszystko naraz (część wspólna + 5 smoków + Kruk w jednym PR)
 - Oryginał (skrypty 2.6 PL): smoki GIL_DRAGON (Dragon_Swamp Pandrodor, Dragon_Rock Pedrakhan, Dragon_Fire Feomathar, Dragon_Ice Finkregh, Dragon_Undead; Dragon_Fire_Island Feodaron nieśmiertelny — bez zmian), 1000 życia, ochrona 170, rozmowa przed walką (Oko Innosa), z daleka (> FIGHT_DIST_DRAGON_MAGIC) ItRu_InstantFireball, ożywieniec ItRu_Deathball (B_SelectSpell), regeneracja +1 życia co 2 przebiegi ZS_MM_Attack_Loop; Kruk BDT_1090_Addon_Raven: 500 życia, FAI_HUMAN_MASTER, ItMw_BeliarWeapon_Raven, świątynia Adanosa (ADW_ADANOSTEMPEL_RAVEN_11), po jego śmierci (RavenIsDead) kamienni strażnicy w walce giną
+- Korekta 2026-11-07 (Irdorath): Feodaron dostaje mechaniki ognistego bossa ARPG po rozpoczęciu walki; fabularna odporność i skrypty dialogowe pozostają w Gothicu. Dwa oryginalne cele wielkiego mostu można namierzyć z bliskiego brzegu strzałem Shift + LPM po lewej i prawej stronie mostu. Bezimienne drzwi są wskazywalne, a próba użycia z dobytą bronią najpierw ją chowa.
 - Zasady: tylko tryb ARPG; rozmowy, fabuła, B_DragonKillCounter i nagrody bez zmian; rozpoznanie bossa po nazwie instancji skryptu; kod w arpgboss.cpp / .h, liczby w jednym miejscu
 - Wspólne:
   - pasek bossa u góry ekranu: imię, życie, znaczniki faz
