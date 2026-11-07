@@ -194,6 +194,11 @@ void Camera::setMode(const Camera::Mode m) {
   if(camMod==m)
     return;
 
+  if(arpgFpsAim && m!=FirstPerson) {
+    arpgFpsAim = false;
+    fpEnable = arpgFpsPrevEnable;
+    }
+
   auto isRegular = [](const Camera::Mode m){
     return m==Normal || m==Inventory || m==Melee || m==Ranged || m==Magic;
     };
@@ -707,6 +712,10 @@ void Camera::tick(uint64_t dt) {
     return;
 
   if(isCutscene()) {
+    arpgV = ArpgView(); // no stale ARPG fog or cut-away geometry during a camera cut
+    arpg.indoor = false;
+    arpg.indoorHold = arpg.indoorBlend = arpg.seeThrough = arpg.nearCut = arpg.insideHold = 0;
+    arpg.losInit = false;
     return; // handle pass thru water ?
     }
 
@@ -1125,6 +1134,23 @@ bool Camera::isArpgActive() const {
   return false;
   }
 
+bool Camera::toggleArpgFpsAim() {
+  if(arpgFpsAim) {
+    arpgFpsAim = false;
+    setMode(arpgFpsReturn);
+    fpEnable = arpgFpsPrevEnable;
+    return true;
+    }
+  if(!isArpgActive())
+    return false;
+  arpgFpsReturn = camMod;
+  arpgFpsPrevEnable = fpEnable;
+  arpgFpsAim = true;
+  fpEnable = true;
+  setMode(FirstPerson);
+  return true;
+  }
+
 void Camera::arpgRotate(float deltaDeg) {
   arpg.yawDest += deltaDeg;
   }
@@ -1384,6 +1410,12 @@ bool Camera::arpgDialogLight(Vec3& pos, float& range) const {
 
 void Camera::updateArpgView(float dtF) {
   arpgV = ArpgView();
+  if(isArpgDialogShot()) {
+    arpg.indoor = false;
+    arpg.indoorHold = arpg.indoorBlend = arpg.seeThrough = arpg.nearCut = arpg.insideHold = 0;
+    arpg.losInit = false;
+    return; // director shots show the whole scene without ARPG fog or wall cut-away
+    }
   const bool dlgView = (camMod==Dialog && isArpgEnabled() && camMarvinMod==M_Normal && arpgDlg.keepView);
   if(!isArpgActive() && !dlgView) {
     arpg.insideHold  = 0;
