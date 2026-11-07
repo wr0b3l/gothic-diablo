@@ -280,6 +280,7 @@ class PlayerControl final {
       bool                       replan      = false;  // Diathic: stuck - plan again from here
       bool                       gridFailed  = false;  // Diathic: no way on the grid to this destination (not again)
       int                        swings      = 0;
+      bool                       bridgeAim   = false;  // Shift shot at an Irdorath bridge target
       bool                       swingCheck  = false;  // a swing was started: does its animation really play?
       float                      actTimer    = 0;      // s, waiting in range for the action to succeed
       };
@@ -301,6 +302,8 @@ class PlayerControl final {
     Focus          arpgPickRaw;            // what is under the cursor (arpgHover is the locked target while locked)
     Tempest::Vec3  arpgGround      = {};
     bool           arpgGroundValid = false;
+    const World*   arpgBridgeWorld = nullptr;
+    bool           arpgBridgeHinted = false;
     // Diathic: lean in a run only in a sharp turn (Gothic leans by the camera's lag behind the hero)
     static constexpr float ArpgLeanFollow  = 3.f;   // 1/s: the delayed heading catches up with the hero's
     static constexpr float ArpgLeanMinTurn = 25.f;  // deg between the two: below = no lean

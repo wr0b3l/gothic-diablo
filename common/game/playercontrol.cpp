@@ -820,6 +820,17 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
     arpgKeepOut(*pl, dtF);
     if(w!=nullptr) {
+      if(arpgBridgeWorld!=w) {
+        arpgBridgeWorld = w;
+        arpgBridgeHinted = false;
+        }
+      if(!arpgBridgeHinted && w->name()=="dragonisland.zen") {
+        const auto p = pl->position();
+        if(p.x>-25000.f && p.x<-22000.f && p.y>1700.f && p.y<2700.f && p.z>13500.f && p.z<15500.f) {
+          Gothic::inst().onPrint("Most: Shift + LPM z łukiem lub kuszą po lewej i prawej stronie, by trafić tarcze");
+          arpgBridgeHinted = true;
+          }
+        }
       ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
       ArpgIce::tick(*w, *pl);    // Diathic: ice golems cast aimed ice bolts more often
       ArpgElite::tick(*w, *pl);  // Diathic: groups with an elite leader, its experience
@@ -1912,7 +1923,7 @@ bool PlayerControl::arpgUsableMob(const Interactive& m) {
   // dug up with a pickaxe — in Gothic you stand on the cross and press the action key),
   // and unnamed switches and levers (Adanos' temple: they trigger doors and traps)
   // (Diathic: the smith stations - the workshop)
-  return !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty() || m.arpgIsSwitch() ||
+  return m.isDoor() || !m.focusName().empty() || !m.arpgUseItem().empty() || !m.arpgStateFunc().empty() || m.arpgIsSwitch() ||
          ArpgWeapon::stationOf(m)!=ArpgWeapon::NoStation;
   }
 
@@ -2130,6 +2141,7 @@ void PlayerControl::arpgMouseDown(const Focus& f) {
     const Npc* lk = arpgLockTarget();
     const Npc* at = lk!=nullptr ? lk : ((f.npc!=nullptr && !f.npc->isDown() && f.npc!=pl) ? f.npc : nullptr);
     arpgClick.kind  = ArpgClick::Strike;
+    arpgClick.bridgeAim = f.npc==nullptr && arpgLockTarget()==nullptr;
     arpgClick.point = at!=nullptr ? at->position()
                                   : (arpgGroundValid ? arpgGround
                                                      : pl->position() + Tempest::Vec3(std::cos(pl->rotationRad())*200.f, 0, std::sin(pl->rotationRad())*200.f));
@@ -2571,6 +2583,12 @@ PlayerControl::ArpgStep PlayerControl::arpgClickTick(Npc& pl, float& rot, int& r
         }
       break;
     case ArpgClick::Use:
+      if(pl.weaponState()!=WeaponState::NoWeapon) {
+        wctrl[WeaponClose] = true; // using a door or lever also works after a fight
+        return ArpgStop;           // keep the order until the weapon is put away
+        }
+      if(pl.isAiBusy())
+        return ArpgStop;
       interact(*c.target.interactive);
       break;
     case ArpgClick::Loot:
@@ -3194,6 +3212,27 @@ bool PlayerControl::arpgShoot(Npc& pl, float& rot, bool allowRot, float faceAng,
     wctrl[WeaponMele] = true;
     return false;
     }
+  Interactive* bridgeTarget = nullptr;
+  if(tg==nullptr && c.bridgeAim) {
+    auto* w = Gothic::inst().world();
+    const auto p = pl.position();
+    const auto aim = c.point;
+    // Irdorath: the two tiny targets across the chasm cannot reliably be picked in the isometric camera.
+    // Shift+click on the left/right side of the bridge aims at the original Gothic targets.
+    if(w!=nullptr && w->name()=="dragonisland.zen" &&
+       p.x>-25000.f && p.x<-22000.f && p.y>1700.f && p.y<2700.f && p.z>13000.f && p.z<15500.f &&
+       aim.x>-25000.f && aim.x<-22000.f && aim.z>12000.f && aim.z<15500.f) {
+      const auto name = aim.x<-23610.f ? "MOBNAME_SWITCH_BIGBRIDGE_02" : "MOBNAME_SWITCH_BIGBRIDGE_01";
+      w->forEachInteractiveNear(p, 5000.f, [&](Interactive& m) {
+        if(m.focusName()==name)
+          bridgeTarget = &m;
+        });
+      if(bridgeTarget!=nullptr) {
+        const auto d = bridgeTarget->position()-pl.mapWeaponBone();
+        faceAng = std::atan2(d.z,d.x)*180.f/float(M_PI);
+        }
+      }
+    }
   if(allowRot) {
     rot = faceAng; // the aim follows the target
     pl.setDirection(rot);
@@ -3202,8 +3241,11 @@ bool PlayerControl::arpgShoot(Npc& pl, float& rot, bool allowRot, float faceAng,
   const bool want = (c.held || c.swings==0);
   if(want) {
     const auto bs = pl.bodyStateMasked();
-    if((bs==BS_AIMNEAR || bs==BS_AIMFAR) && pl.shootBow())
-      c.swings++; else
+    if((bs==BS_AIMNEAR || bs==BS_AIMFAR) && pl.shootBow(bridgeTarget)) {
+      c.swings++;
+      if(bridgeTarget!=nullptr)
+        c.held = false; // one target per click; the other side needs a second shot
+      } else
       pl.aimBow();
     return true;
     }
