@@ -147,6 +147,8 @@ class Camera final {
     // gothic-diablo: isometric ARPG camera
     static bool        isArpgEnabled();
     bool               isArpgActive() const;
+    bool               isArpgFpsAim() const { return arpgFpsAim; }
+    bool               toggleArpgFpsAim();
     float              arpgYaw() const { return arpg.yaw; }
     void               arpgRotate(float deltaDeg);
     // gothic-diablo: equipment / character window: the camera goes round to the front of the hero, close to him
@@ -275,6 +277,9 @@ class Camera final {
     bool                  dbg           = false;
     bool                  tgEnable      = true;
     bool                  fpEnable      = false;
+    bool                  arpgFpsAim    = false;
+    bool                  arpgFpsPrevEnable = false;
+    Mode                  arpgFpsReturn = Ranged;
     bool                  lbEnable      = false;
     bool                  inertiaTarget = true;
     Mode                  camMod        = Normal;

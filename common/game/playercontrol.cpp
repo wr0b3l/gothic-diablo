@@ -333,8 +333,15 @@ void PlayerControl::onKeyPressed(KeyCodec::Action a, Tempest::KeyEvent::KeyType 
     }
 
   if(a==Action::FirstPerson) {
-    if(auto c = Gothic::inst().camera())
+    if(auto c = Gothic::inst().camera()) {
+      auto pl = Gothic::inst().player();
+      if(c->isArpgFpsAim() || (c->isArpgActive() && pl!=nullptr &&
+          (pl->weaponState()==WeaponState::Bow || pl->weaponState()==WeaponState::CBow))) {
+        c->toggleArpgFpsAim();
+        return;
+        }
       c->setFirstPerson(!c->isFirstPerson());
+      }
     return;
     }
 
