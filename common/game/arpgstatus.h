@@ -13,6 +13,7 @@ namespace ArpgStatus {
     Chill,    // Zmrożenie: the hero only walks (Finkregh's breath)
     Freeze,   // Zamrożenie (weapons, 2026-11-04): people and creatures stand still, no attack (not the bosses)
     Weaken,   // Osłabienie (weapons, 2026-11-04): its hits deal less (WeakenCut)
+    IceCube,  // Bryła lodu from an enemy: holds the hero for at most five seconds
     Count
     };
 
@@ -35,12 +36,18 @@ namespace ArpgStatus {
       {"Zmrożenie",   false, nullptr,                            "ICEGOLEM_GLITTER", "BIP01"},
       {"Zamrożenie",  false, "spellFX_IceSpell_SENDPERCEPTION",  nullptr,            nullptr},
       {"Osłabienie",  false, "spellFX_INCOVATION_VIOLET",        nullptr,            nullptr},
+      {"Bryła lodu",  false, "spellFX_IceSpell_SENDPERCEPTION",  nullptr,            nullptr},
       };
     return infos[id<Count ? id : 0];
     }
 
   constexpr int32_t  FxSlot        = 0x7A5000; // MdlVisual effect slots of the statuses: FxSlot + Id
   constexpr uint64_t FreezeImmuneMs= 6000;     // Zamrożenie: no new one this long after the last one ended
+  constexpr uint64_t BleedGapMs    = 2000;     // at most one new bleed on a target every two seconds
+  constexpr uint64_t SkillBleedMs  = 8000;     // long enough for four stacks applied two seconds apart
+  constexpr uint64_t IceCubeMs     = 5000;     // enemy ice cube: maximum lock time
+  constexpr uint64_t BowShotMs     = 800;      // minimum time between the hero's normal bow shots
+  constexpr uint64_t CrossbowShotMs= 1100;     // crossbow reload is slower
   constexpr float    WeakenCut     = 0.25f;    // Osłabienie: its hits -25%
 
   // Diathic (decision 2026-11-04): the hero heals over time after eating and drinking, on top of Gothic's healing:

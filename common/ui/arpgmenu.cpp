@@ -1703,7 +1703,8 @@ void ArpgMenu::paintStats(Painter& p, const Fonts& f, const Rect& cl, const Rect
     auto add = [&](const char* k, std::string v) { perkRows.emplace_back(k, std::move(v)); };
     if(pk.meleeDmg>0)      add("Obrażenia ciosu", pc(pk.meleeDmg));
     if(pk.critAdd>0)       add("Szansa na pełne obrażenia", "+"+std::to_string(pk.critAdd)+"%");
-    if(pk.bleed>0)         add("Krwawienie (3 s)", num(pk.bleed*100.f,0)+"% ciosu / s");
+    if(pk.bleed>0)         add("Krwawienie (8 s)", num(pk.bleed*100.f,0)+"% ciosu / s");
+    if(pk.bleedStacks>0)   add("Dodatkowe krwawienia", std::to_string(pk.bleedStacks));
     if(pk.comboWindow>0)   add("Dłuższe okno serii", pc(pk.comboWindow));
     if(pk.fourthHit)       add("Czwarty cios serii", "x1,5");
     if(pk.arc>120.f)       add("Szerokość zamachu", num(pk.arc,0)+"°");

@@ -200,6 +200,9 @@ class Npc final {
     // Diathic: negative statuses (game/arpgstatus.h); value: damage per second for damage over time
     void       arpgApplyStatus(ArpgStatus::Id id, uint64_t ms, float value, Npc* from);
     bool       arpgHasStatus(ArpgStatus::Id id) const;
+    bool       arpgIceBoltReady(uint64_t now) const { return arpgIceFire==0 && now>=arpgIceNext; }
+    void       arpgIceStartBolt(uint64_t now, const Tempest::Vec3& aim);
+    bool       arpgIceTakeBolt(uint64_t now, Tempest::Vec3& aim);
     // Diathic: bosses (ArpgBoss: the dragons, Raven) and their minions
     ArpgBoss*  arpgBoss() const { return arpgBossSt.get(); }
     bool       arpgBossChecked() const { return arpgBossSeen; }
@@ -623,6 +626,7 @@ class Npc final {
     bool      arpgHitSpecial     = false; // set while the special swing deals damage
     float     arpgSpecialMul     = 1.f;
     float     arpgShotMul        = 1.f;
+    uint64_t  arpgNextShot       = 0; // ARPG hero: next allowed bow or crossbow projectile
     uint64_t  arpgNoFallDamage   = 0;  // gothic-diablo: pushed by the hero: landing until this tick does no damage
     uint64_t  arpgInvulnUntil    = 0;  // gothic-diablo: dodge roll of the hero: no damage until this tick
     // gothic-diablo: skill trees (Npc::arpgPerks)
@@ -645,6 +649,11 @@ class Npc final {
       Npc*     from  = nullptr;
       };
     ArpgStatusState arpgSt[ArpgStatus::Count];
+    ArpgStatusState arpgBleedExtra[3]; // Slaby punkt: three independent damage ticks beyond the first bleed
+    uint64_t  arpgBleedNext  = 0;     // earliest time another bleed may be applied to this NPC
+    uint64_t  arpgIceNext    = 0;     // ice golem: next bolt after the previous cast
+    uint64_t  arpgIceFire    = 0;     // ice golem: impact time of a bolt in flight
+    Tempest::Vec3 arpgIceAim = {};   // ice golem: the ground position targeted at cast time
     uint32_t  arpgStFx        = 0;     // Diathic: statuses with their effect on the model now (bits of ArpgStatus::Id)
     uint64_t  arpgFreezeFree  = 0;     // Diathic: no new Zamrożenie before (ArpgStatus::FreezeImmuneMs)
     void      arpgStatusFx(ArpgStatus::Id id, bool on);

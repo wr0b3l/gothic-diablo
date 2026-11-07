@@ -529,6 +529,17 @@ void ArpgBoss::attack(Npc& boss, Npc& hero, World& w, uint64_t now) {
       break;
       }
     case Ice: {
+      if(attacks%2==1) {
+        announce(boss, w, "Bryła lodu", "MFX_Icewave_Cast", z.fire);
+        Zone c = z;
+        c.shape = Circle;
+        c.look  = Cube;
+        c.pos   = hp;
+        c.r     = IceCubeR;
+        c.hit   = IceCubeHit;
+        zn.push_back(c);
+        break;
+        }
       // the ice breath: a line towards the hero; phases 2, 3: a fan of three
       announce(boss, w, "Lodowy podmuch", "DRG_Attack", z.fire);
       const int n = (ph==1) ? 1 : 3;
@@ -612,6 +623,7 @@ void ArpgBoss::strike(Npc& boss, Npc& hero, World& w, const Zone& z) {
     case Poison: hero.arpgApplyStatus(ArpgStatus::Poison, PoisonMs, float(mx)*PoisonDps, &boss); break;
     case Flame:  hero.arpgApplyStatus(ArpgStatus::Burn,   BurnMs,   float(mx)*BurnDps,   &boss); break;
     case Frost:  hero.arpgApplyStatus(ArpgStatus::Chill,  ChillMs,  0.f,                 &boss); break;
+    case Cube:   hero.arpgApplyStatus(ArpgStatus::IceCube, ArpgStatus::IceCubeMs, 0.f,   &boss); break;
     case Plain:
     case Dark:
     case Bolt:
@@ -644,6 +656,7 @@ void ArpgBoss::resolve(Npc& boss, Npc& hero, World& w, uint64_t now) {
           case Poison: snd = "MFX_Geyser_Fountain"; break;
           case Flame:  snd = "MFX_Firestorm_Cast";  break;
           case Frost:  snd = "MFX_Icewave_Cast";    break;
+          case Cube:   snd = "MFX_Icewave_Cast";    break;
           case Dark:   snd = "MFX_Massdeath_Cast";  break;
           case Bolt:   snd = "MFX_BeliarWeap_A4";   break;
           case Plain:  snd = "GOL_StepBoom";        break;
@@ -653,7 +666,8 @@ void ArpgBoss::resolve(Npc& boss, Npc& hero, World& w, uint64_t now) {
       switch(z.shape) {
         case Circle:
           ArpgBosses::effect(w, z.look==Poison ? "spellFX_Waterfist_COLLIDEFX" :
-                                (z.look==Flame ? "spellFX_InstantFireball_COLLIDE" : "spellFX_Concussionbolt_COLLIDE"), z.pos);
+                                (z.look==Flame ? "spellFX_InstantFireball_COLLIDE" :
+                                 (z.look==Cube ? "spellFX_IceSpell_SENDPERCEPTION" : "spellFX_Concussionbolt_COLLIDE")), z.pos);
           break;
         case Cone:
           along("spellFX_InstantFireball_COLLIDE", 250.f);

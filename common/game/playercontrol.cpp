@@ -1,6 +1,7 @@
 #include "playercontrol.h"
 #include "game/arpgboss.h"
 #include "game/arpgelite.h"
+#include "game/arpgice.h"
 #include "game/arpgteleport.h"
 #include "game/arpgweapon.h"
 
@@ -820,9 +821,14 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgKeepOut(*pl, dtF);
     if(w!=nullptr) {
       ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
+      ArpgIce::tick(*w, *pl);    // Diathic: ice golems cast aimed ice bolts more often
       ArpgElite::tick(*w, *pl);  // Diathic: groups with an elite leader, its experience
       }
     arpgTickChill(*pl);
+    if(pl->arpgHasStatus(ArpgStatus::IceCube)) {
+      clearInput();
+      return true; // the hero cannot move, attack or cast until the ice breaks
+      }
     }
   else
     arpgSetLock(nullptr);
@@ -1197,7 +1203,7 @@ void PlayerControl::implMove(uint64_t dt) {
         arpgChargeFull = !arpgChargeHeld && arpgChargeT>=full && arpgChargeT<=full+win;
         arpgChargeLate = !arpgChargeFull && arpgChargeT>full+win && heroPerks().sureHand; // Pewna ręka
         arpgCharge     = ChargeFire;
-        arpgChargeWait = 0.6f;
+        arpgChargeWait = 1.5f; // enough time to finish the bow/crossbow reload after a normal shot
         }
       if(arpgCharge==ChargeFire) {
         arpgChargeWait -= dtF;
