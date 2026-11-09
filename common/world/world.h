@@ -112,6 +112,16 @@ class World final {
       };
     void                 arpgPopup(const Tempest::Vec3& pos, int32_t value, uint8_t kind, uint64_t delay = 0);
     std::vector<ArpgPopup>& arpgPopups() { return arpgPopupList; }
+    // Diathic: Irdorath bridge buttons (ArpgBridge): objects outside the saved vob tree, the triggers, the state
+    struct ArpgBridgeSt {
+      bool             init     = false;
+      bool             hinted   = false;
+      AbstractTrigger* touch[2] = {};
+      };
+    ArpgBridgeSt&        arpgBridge() { return arpgBridgeSt; }
+    void                 arpgAddVob(std::unique_ptr<Vob>&& v) { wobj.arpgAddVob(std::move(v)); }
+    size_t               arpgTriggerCount() const { return wobj.arpgTriggerCount(); }
+    AbstractTrigger&     arpgTrigger(size_t i) { return wobj.arpgTrigger(i); }
 
     LightGroup::Light    addLight(const zenkit::VLight& vob);
     LightGroup::Light    addLight(std::string_view preset);
@@ -237,6 +247,7 @@ class World final {
     WorldObjects                          wobj;
     std::unique_ptr<Npc>                  lvlInspector;
     std::vector<ArpgPopup>                arpgPopupList;
+    ArpgBridgeSt                          arpgBridgeSt;
 
     auto         roomAt(const zenkit::BspNode &node) -> std::string_view;
     auto         portalAt(std::string_view tag) -> BspSector*;

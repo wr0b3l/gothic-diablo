@@ -134,6 +134,14 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
   - ludzie z AIV_EnemyOverride (Kruk, Dexter, rozbójnicy na drogach, Poszukiwacze, Alvares, Engardo) nie są wrogami, dopóki nie walczą z bohaterem: LPM = rozmowa, Ctrl + LPM = atak
   - Do testu: 5 przycisków w przedsionku świątyni (kursor, etykieta, LPM, pułapka / przejście); Kruk: LPM → rozmowa z wyborami, po niej walka i pasek bossa; dźwignie u Rhademesa; Dexter / rozbójnicy przy drodze — rozmowa przed walką
 
+## Most na Irdorath i całe smoki (2026-11-09, gałąź irdorath-przyciski-smoki)
+- Użytkownik: poprawki PR #34 (strzał w tarcze mostu) i PR #27–#28 (smok bez cięcia w kuli) dalej nieskuteczne.
+- Most: po przycisku na ścianie po każdej stronie przed mostem — działa bez strzelania w tarcze; zaakceptowany plan: przycisk = trafienie tarczy po swojej stronie, oba = most opada (jak w Gothicu).
+- Smoki: przestać całkowicie ucinać modele smoków — cały smok widoczny. Zaakceptowany plan: znacznik na siatkach smoka (bez cięcia i bez odrzucania przez renderer). Skały i ściany zasłaniające smoka — bez zmian (nie pytane dalej).
+- Cofnięta zmiana w `CodeMaster` z PR #34 (bez wpływu na wynik zagadki).
+- Do testu: Irdorath przed wielkim mostem (konsola Marvina albo zapis z rozdziału 6): przyciski widać na ścianach po obu stronach, etykieta „Przycisk mostu”, LPM → bohater naciska, po obu most opada; jeden przycisk dwa razy — most nie opada; przycisk + strzał w drugą tarczę — opada; zły obrót przycisku albo przycisk w powietrzu / w ścianie → linie „Diathic: most” z log.txt; smoki (`insert Dragon_Fire` / `Dragon_Ice` / `Dragon_Rock` / `Dragon_Swamp` / `Dragon_Undead`): przy krawędzi ekranu, w locie, za ścianą jaskini, z bliska — żadnych brakujących części; tryb klasyczny bez zmian.
+- Wartości: `ArpgBridge` (common/game/arpgbridge.cpp: `ButtonHeight`, `WallMax`, `IntoBank`, `FaceFlip`, `Models`).
+
 ## Przywrócenie bonusów potworów za rozdziały (2026-11-06, gałąź przywrocenie-bonusow-akt)
 - Użytkownik: w tej samej iteracji co krwawienie, bryła lodu i szybkość strzału przywrócić bonusy zdrowia i obrażeń potworów za akt.
 - Przywrócone wcześniejsze wartości: zdrowie i obrażenia ×1,15 za każdy rozdział po pierwszym, składane (rozdział 4 ≈ ×1,52, rozdział 6 ≈ ×2,01); zastępują mnożniki ×1,05 z 2026-11-04.

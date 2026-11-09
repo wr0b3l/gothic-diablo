@@ -66,6 +66,7 @@ class MdlVisual final {
     void                           stopEffect  (int32_t slot);
     void                           setNpcEffect(World& owner, Npc& npc, std::string_view s, zenkit::NpcFlag flags);
     void                           setFatness  (float f);
+    void                           arpgSetKeep (bool keep); // Diathic: a dragon - every mesh never cut / culled
     void                           emitBlockEffect(Npc& dst, Npc& src);
 
     bool                           setToFightMode(const WeaponState ws);

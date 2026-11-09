@@ -179,7 +179,12 @@ void runCluster(const uint clusterId) {
   if(cluster.sphere.w<=0.f)
     return; // disabled or deleted
 
-  if(!frustrumTest(cluster.sphere))
+  // Diathic (2026-11-09): a dragon is never culled in the ARPG view - its pose (the neck up, the wings out, the flight)
+  // goes far outside the bind-pose box the tests use, so parts of it vanished at the screen edge and behind walls
+  const bool arpgKeep = scene.arpgPlayer.w>0.0 && cluster.instanceId!=0xFFFFFFFF &&
+                        (bucket[cluster.bucketId_commandId >> 16].flags & BK_ARPG_KEEP)!=0;
+
+  if(!arpgKeep && !frustrumTest(cluster.sphere))
     return;
 
 #if defined(MAIN_VIEW)
@@ -190,7 +195,7 @@ void runCluster(const uint clusterId) {
 #endif
 
 #if defined(LARGE)
-  {
+  if(!arpgKeep) {
     vec2 sz = (aabb.zw - aabb.xy)*textureSize(hiZ, 0);
     // if(sz.x*sz.y<4)
     //   return;
@@ -200,7 +205,7 @@ void runCluster(const uint clusterId) {
 #endif
 
 #if defined(HIZ)
-  if(!hiZTest(aabb, depthMin))
+  if(!arpgKeep && !hiZTest(aabb, depthMin))
     return;
 #endif
 

@@ -375,6 +375,14 @@ Agent grafiki (ChatGPT, bez dostępu do dokumentów projektu i skilli): tekstury
 | Finkregh rzuca Bryłę lodu co drugi atak specjalny. Lodowe golemy w walce celują soplami co 5,5 s, z opóźnionym trafieniem w wybrane miejsce. Bryła lodu bossa i stan ZS_MAGICFREEZE z gry kończą się najpóźniej po 5 s. | `ArpgBoss::attack`, `ArpgIce::tick`, `Npc::tick`, `PlayerControl::tick` |
 | Bohater: odstęp między strzałami łuku to 0,8 s, kuszy 1,1 s; Szybki naciąg go skraca. Limit obejmuje rzeczywisty pocisk, również przy przytrzymaniu strzału. | `Npc::shootBow`, `ArpgStatus::BowShotMs`, `CrossbowShotMs` |
 
+## Poprawki: most na Irdorath i całe smoki (2026-11-09, gałąź irdorath-przyciski-smoki)
+
+| Co | Gdzie w kodzie |
+|---|---|
+| Wielki most na Irdorath: dwa przyciski na ścianach przed mostem, po stronie każdej z oryginalnych tarcz; naciśnięcie = trafienie strzałą tej tarczy (ten sam wyzwalacz Gothica), po obu most opada mechanizmem gry. Etykieta „Przycisk mostu”, LPM = bohater podchodzi i naciska. Przyciski powstają przy każdym wczytaniu świata (tylko ARPG), poza zapisem gry. Miejsca liczone z tarcz: wzdłuż osi mostu przez przepaść do bliskiego brzegu, 3 m w głąb, w bok do ściany (do 15 m), 1,2 m nad ziemią; model — przełącznik używany już na wyspie (najpierw TOUCHPLATE, potem LEVER), inaczej TOUCHPLATE_STONE.MDS. W log.txt linie „Diathic: most” (tarcze, wyzwalacze, miejsca, model). Podpowiedź na ekranie wskazuje przyciski; strzał w tarcze (też Shift + LPM) działa jak dotąd | `ArpgBridge` (common/game/arpgbridge.cpp), `AbstractTrigger::arpgArrowTrigger` / `arpgTouch`, `World::execTriggerEvent`, `WorldObjects::arpgVobs`, `arpgLabelName` |
+| Smoki nigdy nie są ucinane ani pomijane: siatki każdego smoka (GIL_DRAGON, ciało i doczepione części) mają znacznik BK_ARPG_KEEP — bez cięcia sufitu, prześwitu i koron drzew, bez odrzucania przez frustum, Hi-Z i mały rozmiar na ekranie; zastępuje kulę wokół najbliższego smoka (kula zostaje tylko dla mgły wojny, zasięg 80 m). Tylko w widoku ARPG | `Npc::tick` → `MdlVisual::arpgSetKeep` → `VisualObjects::Item::arpgSetKeep` → `DrawBuckets::arpgSetKeep`; `shader/materials/main.frag` (`arpgHidden`), `shader/materials/visibility_pass.comp` (`runCluster`) |
+| Cofnięta zmiana w `CodeMaster::onTrigger` z PR #34 (plik OpenGothic, działała też w trybie klasycznym): drugie trafienie tej samej tarczy i tak nie otwiera mostu | `common/world/triggers/codemaster.cpp` |
+
 ## Ustalenia techniczne (silnik, skrypty, pliki gry)
 Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tutaj, nie do dokumentów projektu.
 
@@ -414,6 +422,8 @@ Wiedza o Gothicu i OpenGothic zebrana przy pracy. Nowe ustalenia dopisywać tuta
 - Efekty statusów: `MdlVisual::startEffect(..., slot, false)` z własnym numerem slotu zastępuje i zatrzymuje (`stopEffect(slot)`) efekt jednego statusu; cząsteczki bez kluczy albo z nieskończonymi kluczami (`ppsScaleKeys` bez pętli trzyma ostatnią wartość) emitują stale
 
 ### Kamera i zasłanianie
+- Odrzucanie obiektów (`shader/materials/visibility_pass.comp`): siatki animowane testowane kulą klastra (pozycja obiektu + promień `bbox.rConservative` siatki) i pudełkiem siatki w pozie spoczynkowej (`bucket.bbox` × macierz obiektu) — Hi-Z i frustum nie wiedzą o animacji (uniesiona szyja, skrzydła, lot), więc części dużych modeli znikały przy krawędzi ekranu i za ścianą. Znacznik na kubełku (siatka + materiał; `DrawBuckets::Bucket`, flagi BK_* w shader/scene.glsl) czyta i ten shader, i `main.frag` (2026-11-09)
+- Irdorath, wielki most: tarcze MOBNAME_SWITCH_BIGBRIDGE_01 / 02 to oCMOB (bez akcji); strzała dotyka pudełka wyzwalacza obok (`AbstractTrigger::Cb::onCollide`, T_Touch: respondToObject + reactToOnTouch), ten wysyła zdarzenie do CodeMaster, a ten po obu do mechanizmu mostu (2026-11-09)
 - Promienie fizyki (DynamicWorld::ray) odrzucają tylne ściany — widzą tylko zewnętrzną stronę powierzchni; kamera w skale albo za ścianą zwróconą do postaci nie była wykrywana; DynamicWorld::rayBothSides widzi obie strony (normalna od kamery = kamera w skale)
 - W trybie ARPG krajobraz jest rysowany bez odrzucania tylnych ścian (czarne przekroje) — kamera w zboczu dawała czarny ekran; teraz w takim wypadku wewnętrzna strona bliżej niż postać nie jest rysowana (arpgPlayer.w = 1 + odległość)
 - DynamicWorld::sweep to kula opuszczana pionowo (CollisionWorld::raySweep liczy trafienie z wysokości) — do testu ciała na polu siatki ArpgNav; poziomo nie używać

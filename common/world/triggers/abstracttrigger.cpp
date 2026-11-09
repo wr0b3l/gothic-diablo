@@ -211,6 +211,19 @@ const std::vector<Npc*>& AbstractTrigger::intersections() const {
   return boxNpc.intersections();
   }
 
+bool AbstractTrigger::arpgArrowTrigger() const {
+  // as AbstractTrigger::Cb::onCollide: a projectile touching its box sets it off
+  if(vobType==zenkit::VirtualObjectType::zCMover || vobType==zenkit::VirtualObjectType::zCCSCamera ||
+     vobType==zenkit::VirtualObjectType::zCCodeMaster)
+    return false;
+  return respondToObject && reactToOnTouch && bboxSize.quadLength()>0.f;
+  }
+
+void AbstractTrigger::arpgTouch() {
+  TriggerEvent ex(target,vobName,world.tickCount(),TriggerEvent::T_Touch);
+  processEvent(ex);
+  }
+
 void AbstractTrigger::Cb::onCollide(DynamicWorld::BulletBody& b) {
   if(!tg->respondToObject || !tg->reactToOnTouch)
     return;

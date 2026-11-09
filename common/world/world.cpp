@@ -15,6 +15,7 @@
 #include "world/objects/interactive.h"
 #include "world/triggers/abstracttrigger.h"
 #include "world/triggers/cscamera.h"
+#include "game/arpgbridge.h"
 #include "game/globaleffects.h"
 #include "game/serialize.h"
 #include "utils/string_frm.h"
@@ -517,6 +518,9 @@ void World::execTriggerEvent(const TriggerEvent& e) {
     triggerEvent(std::move(e));
     return;
     }
+
+  if(ArpgBridge::onEvent(*this, e)) // Diathic: the Irdorath bridge buttons
+    return;
 
   bool emitted = wobj.execTriggerEvent(e);
   if(!emitted) {

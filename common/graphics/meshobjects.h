@@ -56,6 +56,7 @@ class MeshObjects final {
         void   setPose     (const Tempest::Matrix4x4& obj, const Pose& p);
         void   setAsGhost  (bool g);
         void   setFatness  (float f);
+        void   arpgSetKeep (bool keep); // Diathic: a dragon (VisualObjects::Item::arpgSetKeep)
         void   setWind     (zenkit::AnimationType m, float intensity);
         void   startMMAnim (std::string_view anim, float intensity, uint64_t timeUntil);
 

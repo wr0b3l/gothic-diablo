@@ -60,6 +60,11 @@ class AbstractTrigger : public Vob {
     void                         save(Serialize& fout) const override;
     void                         load(Serialize &fin) override;
 
+    // Diathic: Irdorath bridge buttons (ArpgBridge) - a trigger an arrow sets off, and the same done by a button
+    bool                         arpgArrowTrigger() const;
+    Tempest::Vec3                arpgCenter() const { return position()+bboxOrigin; }
+    void                         arpgTouch();
+
   protected:
     struct Cb : DynamicWorld::BBoxCallback {
       Cb(AbstractTrigger* tg):tg(tg) {}

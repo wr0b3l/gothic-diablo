@@ -5,6 +5,7 @@
 
 #include "game/arpgkeys.h"
 #include "game/arpgboss.h"
+#include "game/arpgbridge.h"
 #include "game/arpgskills.h"
 #include "game/arpgteleport.h"
 #include "game/arpgweapon.h"
@@ -1184,6 +1185,8 @@ static std::string arpgLabelName(const Focus& f) {
     return ArpgMenu::gtxt("Użyj");
   if(f.interactive->isDoor())
     return ArpgMenu::gtxt("Drzwi");
+  if(ArpgBridge::isButton(*f.interactive))
+    return ArpgMenu::gtxt("Przycisk mostu"); // Diathic: Irdorath, the buttons in front of the bridge
   if(f.interactive->arpgIsSwitch())
     return ArpgMenu::gtxt("Przełącznik"); // unnamed switch (Adanos' temple, hidden switches): only under the cursor
   return std::string();

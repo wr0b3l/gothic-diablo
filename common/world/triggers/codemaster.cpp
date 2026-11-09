@@ -25,9 +25,6 @@ void CodeMaster::onTrigger(const TriggerEvent &evt) {
   if(i==keys.size())
     return;
 
-  if(!ordered && keys[i])
-    return; // a second arrow on the same Irdorath target does not replace the other target
-
   if(!ordered || count==i)
     keys[i] = true;
   else if(firstFalseIsFailure) {

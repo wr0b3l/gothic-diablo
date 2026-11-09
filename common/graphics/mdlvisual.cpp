@@ -403,6 +403,15 @@ void MdlVisual::setFatness(float fatness) {
     i.view.setFatness(fatness);
   }
 
+void MdlVisual::arpgSetKeep(bool keep) {
+  // Diathic (2026-11-09): called every tick of a dragon - new meshes (a changed body) get the flag too
+  view.arpgSetKeep(keep);
+  head.view.arpgSetKeep(keep);
+  for(auto& i:attach)
+    i.view.arpgSetKeep(keep);
+  // not the items in its hands and slots: their meshes (buckets) are shared with everyone carrying them
+  }
+
 void MdlVisual::emitBlockEffect(Npc& dest, Npc& source) {
   auto& world = source.world();
 

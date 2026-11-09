@@ -102,6 +102,13 @@ void VisualObjects::Item::startMMAnim(std::string_view anim, float intensity, ui
     owner->startMMAnim(id, anim, intensity, timeUntil);
   }
 
+void VisualObjects::Item::arpgSetKeep(bool keep) {
+  if(owner==nullptr)
+    return;
+  auto& bx = *owner->objects[id].bucketId;
+  owner->bucketsMem.arpgSetKeep(bx, keep);
+  }
+
 const Material& VisualObjects::Item::material() const {
   if(owner==nullptr) {
     static Material m;
