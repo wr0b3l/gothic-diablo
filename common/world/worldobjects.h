@@ -90,6 +90,10 @@ class WorldObjects final {
     bool           triggerOnStart(bool firstTime);
     void           execDelayedEvents();
     bool           execTriggerEvent(const TriggerEvent& e);
+    // Diathic: own objects outside the saved vob tree (Irdorath bridge buttons), the triggers (ArpgBridge)
+    void             arpgAddVob(std::unique_ptr<Vob>&& v);
+    size_t           arpgTriggerCount() const { return triggers.size(); }
+    AbstractTrigger& arpgTrigger(size_t i) { return *triggers[i]; }
     void           enableTicks (AbstractTrigger& t);
     void           disableTicks(AbstractTrigger& t);
     void           enableCollizionZone (CollisionZone& z);
@@ -167,6 +171,7 @@ class WorldObjects final {
 
     std::vector<CollisionZone*>        collisionZn;
     std::vector<std::unique_ptr<Vob>>  rootVobs;
+    std::vector<std::unique_ptr<Vob>>  arpgVobs; // Diathic: not saved, made again on every load (ArpgBridge)
 
     SpaceIndex<Interactive>            interactiveObj;
     SpaceIndex<Item>                   items;

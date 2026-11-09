@@ -1,5 +1,6 @@
 #include "playercontrol.h"
 #include "game/arpgboss.h"
+#include "game/arpgbridge.h"
 #include "game/arpgelite.h"
 #include "game/arpgice.h"
 #include "game/arpgteleport.h"
@@ -827,17 +828,7 @@ bool PlayerControl::tickMove(uint64_t dt) {
     arpgTickSlots(*pl); // Diathic: the skills on the keys 3-0 (games from before them)
     arpgKeepOut(*pl, dtF);
     if(w!=nullptr) {
-      if(arpgBridgeWorld!=w) {
-        arpgBridgeWorld = w;
-        arpgBridgeHinted = false;
-        }
-      if(!arpgBridgeHinted && w->name()=="dragonisland.zen") {
-        const auto p = pl->position();
-        if(p.x>-25000.f && p.x<-22000.f && p.y>1700.f && p.y<2700.f && p.z>13500.f && p.z<15500.f) {
-          Gothic::inst().onPrint("Most: Shift + LPM z łukiem lub kuszą po lewej i prawej stronie, by trafić tarcze");
-          arpgBridgeHinted = true;
-          }
-        }
+      ArpgBridge::tick(*w, *pl); // Diathic: Irdorath, the buttons in front of the bridge and the hint
       ArpgBosses::tick(*w, *pl); // Diathic: the dragons and Raven: phases, attacks with a warning, minions
       ArpgIce::tick(*w, *pl);    // Diathic: ice golems cast aimed ice bolts more often
       ArpgElite::tick(*w, *pl);  // Diathic: groups with an elite leader, its experience

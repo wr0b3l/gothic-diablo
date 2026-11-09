@@ -513,6 +513,10 @@ void WorldObjects::detectItem(const float x, const float y, const float z,
     }
   }
 
+void WorldObjects::arpgAddVob(std::unique_ptr<Vob>&& v) {
+  arpgVobs.emplace_back(std::move(v));
+  }
+
 void WorldObjects::addTrigger(AbstractTrigger* tg) {
   triggers.emplace_back(tg);
   }

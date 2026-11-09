@@ -115,6 +115,13 @@ void DrawBuckets::updateBindlessArrays() {
   desc.morph   = device.descriptors(morph);
   }
 
+void DrawBuckets::arpgSetKeep(Bucket& b, bool keep) {
+  if(b.arpgKeep==keep)
+    return;
+  b.arpgKeep      = keep;
+  bucketsDurtyBit = true;
+  }
+
 bool DrawBuckets::commit(Encoder<CommandBuffer>& cmd, uint8_t fId) {
   if(!bucketsDurtyBit)
     return false;
@@ -146,6 +153,8 @@ bool DrawBuckets::commit(Encoder<CommandBuffer>& cmd, uint8_t fId) {
       bx.flags |= BK_SOLID;
     if(i.mat.alpha==Material::Water)
       bx.flags |= BK_WATER;
+    if(i.arpgKeep)
+      bx.flags |= BK_ARPG_KEEP;
     bucket.push_back(bx);
     }
 

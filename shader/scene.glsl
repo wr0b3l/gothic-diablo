@@ -46,7 +46,7 @@ struct SceneDesc {
   vec4  arpgParams3; // x = indoor 0..1, y/z = lower levels fade start/end (cm below the feet), w = see-through strength 0..1
   vec4  arpgLos[32]; // indoors: line of sight from the hero, 128 directions (angle = 2*pi*i/128, atan(z,x)), cm
   vec4  arpgHi[2];   // creatures that glow a little (enemy under the cursor, target): xyz = center, w = radius (0 = none)
-  vec4  arpgKeep;    // Diathic: a dragon: animated meshes in this sphere are never cut (xyz = center, w = radius, 0 = none)
+  vec4  arpgKeep;    // Diathic: the nearest dragon: no fog of war in this sphere (xyz = center, w = radius, 0 = none)
   };
 
 struct LightSource {
@@ -91,6 +91,7 @@ const uint BK_SOLID = 0x1;
 const uint BK_SKIN  = 0x2;
 const uint BK_MORPH = 0x4;
 const uint BK_WATER = 0x8;
+const uint BK_ARPG_KEEP = 0x10; // Diathic: a dragon's mesh: never cut by the ARPG view, never culled (ARPG view only)
 
 struct Bucket {
   vec4  bbox[2];

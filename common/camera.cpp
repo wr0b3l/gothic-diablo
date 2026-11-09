@@ -1590,10 +1590,11 @@ void Camera::updateArpgView(float dtF) {
     arpgV.los = arpg.los;
   }
 
-  // Diathic (2026-11-03): the nearest dragon is drawn whole (main.frag: no ceiling cut, no see-through circle on it)
+  // Diathic (2026-11-03): the nearest dragon is never in the fog of war (arpg.glsl); cutting and culling of its meshes:
+  // a flag of the meshes since 2026-11-09 (MdlVisual::arpgSetKeep, BK_ARPG_KEEP)
   {
     float best = 0.f;
-    world->detectNpc(feet, 4000.f, [&](Npc& n) {
+    world->detectNpc(feet, 8000.f, [&](Npc& n) {
       if(!n.arpgIsDragon())
         return;
       // 2026-11-04: the sphere from the bones (was from Gothic's box: too small, the neck and the head were cut)

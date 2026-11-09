@@ -16,6 +16,7 @@ class DrawBuckets {
       const StaticMesh* staticMesh = nullptr;
       const AnimMesh*   animMesh   = nullptr;
       Material          mat;
+      bool              arpgKeep   = false; // Diathic: a dragon's mesh - never cut, never culled in the ARPG view
       };
 
     class Id {
@@ -54,6 +55,7 @@ class DrawBuckets {
     auto& morph()    const { return desc.morph;   }
 
     bool commit(Tempest::Encoder<Tempest::CommandBuffer>& cmd, uint8_t fId);
+    void arpgSetKeep(Bucket& b, bool keep); // Diathic: BK_ARPG_KEEP (shader/scene.glsl)
 
   private:
     void updateBindlessArrays();
@@ -63,6 +65,7 @@ class DrawBuckets {
       BK_SKIN  = 0x2,
       BK_MORPH = 0x4,
       BK_WATER = 0x8,
+      BK_ARPG_KEEP = 0x10, // Diathic: shader/scene.glsl
       };
 
     struct BucketGpu final {

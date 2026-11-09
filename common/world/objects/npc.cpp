@@ -3714,6 +3714,8 @@ void Npc::tick(uint64_t dt) {
     arpgTickRed();
     }
   arpgTickStatus();
+  if(arpgIsDragon())
+    visual.arpgSetKeep(Camera::isArpgEnabled()); // Diathic (2026-11-09): a dragon is never cut nor culled - whole on the screen
   if(isPlayer() && Camera::isArpgEnabled() && std::string_view(aiState.hint)=="ZS_MAGICFREEZE" &&
      owner.tickCount()>=aiState.sTime+ArpgStatus::IceCubeMs) {
     clearState(false); // invokes Gothic's freeze cleanup even when the AI queue is busy

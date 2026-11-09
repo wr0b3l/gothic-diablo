@@ -42,6 +42,7 @@ class VisualObjects final {
       void     setFatness  (float f);
       void     setWind     (zenkit::AnimationType m, float intensity);
       void     startMMAnim (std::string_view anim, float intensity, uint64_t timeUntil);
+      void     arpgSetKeep (bool keep); // Diathic: a dragon - never cut, never culled in the ARPG view
 
       const Material&    material() const;
       const Bounds&      bounds()   const;
