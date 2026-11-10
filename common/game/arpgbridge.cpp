@@ -14,6 +14,7 @@
 #include "world/objects/npc.h"
 #include "world/objects/vob.h"
 #include "world/triggers/abstracttrigger.h"
+#include "world/triggers/codemaster.h"
 #include "world/world.h"
 #include "ui/arpgmenu.h"
 #include "gothic.h"
@@ -22,31 +23,25 @@ using namespace Tempest;
 
 namespace {
   constexpr std::string_view WorldName = "dragonisland.zen";
-  // the two original targets across the chasm (PR #34, DRAGONISLAND.ZEN)
-  constexpr std::string_view Target[2] = {"MOBNAME_SWITCH_BIGBRIDGE_01", "MOBNAME_SWITCH_BIGBRIDGE_02"};
-  constexpr std::string_view Prefix    = "DIATHIC_BRIDGE_BUTTON_";
-  constexpr std::string_view PressEvent[2]  = {"DIATHIC_BRIDGE_PRESS_1", "DIATHIC_BRIDGE_PRESS_2"};
+  // the two original targets across the chasm
+  constexpr std::string_view Target[2]     = {"MOBNAME_SWITCH_BIGBRIDGE_01", "MOBNAME_SWITCH_BIGBRIDGE_02"};
+  constexpr std::string_view Prefix        = "DIATHIC_BRIDGE_BUTTON_";
+  constexpr std::string_view PressEvent[2] = {"DIATHIC_BRIDGE_PRESS_1", "DIATHIC_BRIDGE_PRESS_2"};
 
-  // the near bank in front of the bridge (PR #34: the hero there sees the hint); the side to put the buttons on
-  const Vec3 NearBank = {-23500.f, 2200.f, 14500.f};
-  constexpr float AreaMinX = -25000.f, AreaMaxX = -22000.f;
-  constexpr float AreaMinY =   1700.f, AreaMaxY =   2700.f;
-  constexpr float AreaMinZ =  13500.f, AreaMaxZ =  15500.f;
-
-  // the places of the buttons, found from the targets: across the chasm, then sideways to the walls
-  constexpr float TriggerNear  = 600.f;   // cm: the trigger an arrow sets off is this close to its target
-  constexpr float MarchStep    = 100.f;   // cm: steps along the bridge looking for the chasm and the near bank
-  constexpr float MarchMax     = 8000.f;  // cm: the farthest the near bank may be from the targets
-  constexpr float RayDown      = 4000.f;  // cm: how deep the ground is looked for
-  constexpr float ChasmDrop    = 600.f;   // cm: ground this much lower than at the targets (or none) = the chasm
-  constexpr float IntoBank     = 300.f;   // cm from the edge of the chasm onto the near bank
-  constexpr float ButtonHeight = 120.f;   // cm above the ground
-  constexpr float WallMax      = 1500.f;  // cm: the farthest wall from the bridge axis
-  constexpr float WallGap      = 15.f;    // cm in front of the wall
-  constexpr float NoWallSide   = 400.f;   // cm from the axis when no wall is found
-  constexpr bool  FaceFlip     = false;   // the model's front = its local Z away from the wall (flip after the test if wrong)
-  // the model: a switch already used in this world (its animation surely exists), else these
-  constexpr std::string_view Models[] = {"TOUCHPLATE_STONE.MDS", "LEVER_1_OC.MDS"};
+  // 2026-11-10 (the user: "the buttons low enough to aim at them"): the buttons stand on the ground on the left
+  // and the right of the hero, the first time he comes this near to the targets - no guessing of the banks and walls
+  constexpr float SearchRadius = 300000.f; // cm: the targets anywhere on the island
+  constexpr float SpawnDist    = 4500.f;   // cm (horizontal) from the middle of the targets
+  constexpr float SideOffset   = 250.f;    // cm from the hero to each button
+  constexpr float SideMin      = 120.f;    // cm: the nearest a button may be when a wall is close
+  constexpr float WallGap      = 60.f;     // cm in front of a wall in the way
+  constexpr float GroundUp     = 150.f;    // cm: the ground is looked for from this high above the hero
+  constexpr float GroundDown   = 600.f;    // cm: and this deep
+  constexpr float TriggerNear  = 500.f;    // cm: the trigger box an arrow sets off is this close to its target
+  constexpr float MasterNear   = 6000.f;   // cm: the CodeMaster of the bridge is this close to the targets
+  constexpr bool  FaceFlip     = false;    // the model's front = its local Z towards the hero (flip after the test if wrong)
+  // the model: a switch already used on the island (its animation surely exists), floor ones first, else these
+  constexpr std::string_view Models[] = {"LEVER_1_OC.MDS", "TOUCHPLATE_STONE.MDS"};
 
   std::string str(const Vec3& v) {
     return "(" + std::to_string(int(v.x)) + ", " + std::to_string(int(v.y)) + ", " + std::to_string(int(v.z)) + ")";
@@ -55,38 +50,99 @@ namespace {
   Vec3 flat(Vec3 v) {
     v.y = 0;
     const float l = v.length();
-    return l>0.001f ? v/l : Vec3(0,0,1);
+    return l>0.001f ? v/l : Vec3(1,0,0);
     }
 
-  bool groundAt(World& w, const Vec3& at, float y0, float& gy) {
-    const Vec3 from = {at.x, y0+800.f, at.z}; // from above: the rays see only the outer side of the ground
-    const auto r    = w.physic()->ray(from, from-Vec3(0, RayDown, 0));
-    if(!r.hasCol)
-      return false;
-    gy = r.v.y;
-    return true;
+  float boxDist(const Vec3& p, const Vec3& c, const Vec3& h) {
+    const Vec3 d = {std::max(std::abs(p.x-c.x)-h.x, 0.f), std::max(std::abs(p.y-c.y)-h.y, 0.f), std::max(std::abs(p.z-c.z)-h.z, 0.f)};
+    return d.length();
     }
 
-  std::string pickModel(World& w) {
-    std::string any, lever;
-    w.forEachInteractiveNear(NearBank, 60000.f, [&](Interactive& m) {
+  std::string pickModel(World& w, const Vec3& at) {
+    std::string lever, turn, plate, any;
+    w.forEachInteractiveNear(at, SearchRadius, [&](Interactive& m) {
       if(!m.arpgIsSwitch() || m.arpgVisual().empty() || ArpgBridge::isButton(m))
         return;
       const std::string_view sch = m.schemeName();
-      if(sch=="TOUCHPLATE" && any.rfind("TOUCHPLATE",0)!=0)
-        any = m.arpgVisual();
-      else if(sch=="LEVER" && lever.empty())
-        lever = m.arpgVisual();
-      else if(any.empty())
-        any = m.arpgVisual();
+      auto& slot = sch=="LEVER" ? lever : sch=="TURNSWITCH" ? turn : sch=="TOUCHPLATE" ? plate : any;
+      if(slot.empty())
+        slot = m.arpgVisual();
       });
-    if(any.rfind("TOUCHPLATE",0)==0)
-      return any;
-    if(!lever.empty())
-      return lever;
-    if(!any.empty())
-      return any;
+    for(auto* s:{&lever, &turn, &plate, &any})
+      if(!s->empty())
+        return *s;
     return std::string(Models[0]);
+    }
+
+  void init(World& w, const Vec3& from) {
+    auto& st = w.arpgBridge();
+
+    bool has[2] = {};
+    w.forEachInteractiveNear(from, SearchRadius, [&](Interactive& m) {
+      for(int i=0; i<2; ++i)
+        if(m.focusName()==Target[i]) {
+          st.tg[i] = m.position();
+          has[i]   = true;
+          }
+      });
+    if(!has[0] || !has[1]) {
+      Log::i("Diathic: most - nie znaleziono tarcz (01: ", has[0] ? "jest" : "brak", ", 02: ", has[1] ? "jest" : "brak", ")");
+      return;
+      }
+    st.found = true;
+
+    // the trigger an arrow sets off: its box at (or nearest to) the target; the CodeMaster nearest to the targets
+    float best[2] = {TriggerNear, TriggerNear};
+    float bestCm  = MasterNear;
+    const Vec3 mid = (st.tg[0]+st.tg[1])*0.5f;
+    for(size_t i=0; i<w.arpgTriggerCount(); ++i) {
+      auto& t = w.arpgTrigger(i);
+      if(auto* cm = dynamic_cast<CodeMaster*>(&t)) {
+        const float d = (t.position()-mid).length();
+        if(cm->arpgSlaves().size()>=2 && d<bestCm) {
+          bestCm    = d;
+          st.master = &t;
+          }
+        continue;
+        }
+      if(!t.arpgArrowTrigger())
+        continue;
+      for(int k=0; k<2; ++k) {
+        const float d = boxDist(st.tg[k], t.arpgCenter(), t.arpgHalfSize());
+        if(d<best[k]) {
+          best[k]     = d;
+          st.touch[k] = &t;
+          }
+        }
+      }
+    if(st.touch[0]!=nullptr && st.touch[0]==st.touch[1])
+      st.touch[1] = nullptr; // one box by both targets: the second button goes by the CodeMaster
+
+    for(int k=0; k<2; ++k)
+      Log::i("Diathic: most - tarcza ", Target[k], " ", str(st.tg[k]), ", wyzwalacz: ",
+             st.touch[k]!=nullptr ? std::string(st.touch[k]->name()) + " (" + std::to_string(int(best[k])) + " cm)" : std::string("brak"));
+    if(auto* cm = dynamic_cast<CodeMaster*>(st.master)) {
+      std::string sl;
+      for(auto& s:cm->arpgSlaves())
+        sl += (sl.empty() ? "" : ", ") + s;
+      Log::i("Diathic: most - CodeMaster ", cm->name(), " ", str(cm->position()), ", klucze: ", sl);
+      } else {
+      Log::i("Diathic: most - brak CodeMaster w ", int(MasterNear/100.f), " m od tarcz");
+      }
+    }
+
+  Vec3 placeAt(World& w, const Vec3& hero, const Vec3& dir) {
+    // sideways from the hero, not into a wall, on the ground
+    const Vec3 chest = hero + Vec3(0, 100.f, 0);
+    float off = SideOffset;
+    const auto r = w.physic()->ray(chest, chest+dir*SideOffset);
+    if(r.hasCol)
+      off = std::max((r.v-chest).length()-WallGap, SideMin);
+    Vec3 p = hero + dir*off;
+    const Vec3 top = {p.x, hero.y+GroundUp, p.z};
+    const auto g   = w.physic()->ray(top, top-Vec3(0, GroundUp+GroundDown, 0));
+    p.y = g.hasCol ? g.v.y : hero.y;
+    return p;
     }
 
   void makeButton(World& w, int side, const Vec3& pos, const Vec3& face, const std::string& model) {
@@ -97,8 +153,8 @@ namespace {
     v.rotation.columns[0] = zenkit::Vec3(f.z, 0.f, -f.x); // right = up x forward
     v.rotation.columns[1] = zenkit::Vec3(0.f, 1.f, 0.f);
     v.rotation.columns[2] = zenkit::Vec3(f.x, 0.f, f.z);
-    v.bbox.min    = zenkit::Vec3(pos.x-50.f, pos.y-60.f, pos.z-50.f);
-    v.bbox.max    = zenkit::Vec3(pos.x+50.f, pos.y+60.f, pos.z+50.f);
+    v.bbox.min    = zenkit::Vec3(pos.x-50.f, pos.y,       pos.z-50.f);
+    v.bbox.max    = zenkit::Vec3(pos.x+50.f, pos.y+150.f, pos.z+50.f);
     v.show_visual = true;
     v.cd_static   = false;
     v.cd_dynamic  = true;
@@ -119,93 +175,21 @@ namespace {
     w.arpgAddVob(std::move(p));
     }
 
-  void init(World& w) {
+  void spawn(World& w, const Vec3& hero) {
     auto& st = w.arpgBridge();
+    st.spawned = true;
 
-    // the targets
-    Vec3 tg[2] = {};
-    bool has[2] = {};
-    w.forEachInteractiveNear(NearBank, 10000.f, [&](Interactive& m) {
-      for(int i=0; i<2; ++i)
-        if(m.focusName()==Target[i]) {
-          tg[i]  = m.position();
-          has[i] = true;
-          }
-      });
-    if(!has[0] || !has[1]) {
-      Log::i("Diathic: most - nie znaleziono tarcz (", has[0] ? "jest" : "brak", " 01, ", has[1] ? "jest" : "brak", " 02)");
-      return;
-      }
-
-    // the triggers the arrows set off: the nearest to each target
-    float best[2] = {TriggerNear, TriggerNear};
-    for(size_t i=0; i<w.arpgTriggerCount(); ++i) {
-      auto& t = w.arpgTrigger(i);
-      if(!t.arpgArrowTrigger())
-        continue;
-      for(int k=0; k<2; ++k) {
-        const float d = (t.arpgCenter()-tg[k]).length();
-        if(d<best[k]) {
-          best[k]     = d;
-          st.touch[k] = &t;
-          }
-        }
-      }
-    for(int k=0; k<2; ++k)
-      Log::i("Diathic: most - tarcza ", Target[k], " ", str(tg[k]), ", wyzwalacz: ",
-             st.touch[k]!=nullptr ? std::string(st.touch[k]->name()) : std::string("brak"),
-             st.touch[k]!=nullptr ? " (" + std::to_string(int(best[k])) + " cm)" : std::string());
-
-    // the bridge axis: across the line of the targets, towards the near bank
-    const Vec3 mid  = (tg[0]+tg[1])*0.5f;
-    const Vec3 side = flat(tg[1]-tg[0]);
-    Vec3       fwd  = Vec3(-side.z, 0, side.x);
-    if(Vec3::dotProduct(NearBank-mid, fwd)<0.f)
-      fwd = fwd*-1.f;
-
-    // along it: the far bank, the chasm, the near bank
-    float y0 = NearBank.y;
-    float g  = 0;
-    if(groundAt(w, mid, mid.y, g))
-      y0 = g;
-    const float floorY = std::min(y0, NearBank.y) - ChasmDrop; // lower than both banks = the chasm
-    bool  chasm = false, found = false;
-    Vec3  edge;
-    float edgeY = y0;
-    for(float t=MarchStep; t<=MarchMax; t+=MarchStep) {
-      const Vec3 at    = mid + fwd*t;
-      const bool solid = groundAt(w, at, std::max(y0, NearBank.y), g) && g>floorY;
-      if(!solid) {
-        chasm = true;
-        continue;
-        }
-      if(chasm) {
-        edge  = at;
-        edgeY = g;
-        found = true;
-        break;
-        }
-      }
-    if(!found) {
-      Log::i("Diathic: most - nie znaleziono przepaści ani bliskiego brzegu od ", str(mid));
-      return;
-      }
-
-    Vec3 base = edge + fwd*IntoBank;
-    if(groundAt(w, base, edgeY, g))
-      edgeY = g;
-    base.y = edgeY + ButtonHeight;
-
-    const std::string model = pickModel(w);
+    const Vec3 mid  = (st.tg[0]+st.tg[1])*0.5f;
+    const Vec3 side = flat(st.tg[1]-st.tg[0]);
+    const std::string model = pickModel(w, mid);
     for(int k=0; k<2; ++k) {
       // on the side of target k
-      const Vec3 dir = Vec3::dotProduct(tg[k]-mid, side)>=0.f ? side : side*-1.f;
-      const auto r   = w.physic()->ray(base, base+dir*WallMax);
-      const Vec3 pos = r.hasCol ? r.v - dir*WallGap : base + dir*NoWallSide;
-      makeButton(w, k, pos, dir*-1.f, model);
-      Log::i("Diathic: most - przycisk ", k+1, " ", str(pos), r.hasCol ? " na scianie" : " bez sciany",
-             ", model ", model);
+      const Vec3 dir = Vec3::dotProduct(st.tg[k]-mid, side)>=0.f ? side : side*-1.f;
+      const Vec3 pos = placeAt(w, hero, dir);
+      makeButton(w, k, pos, flat(hero-pos), model);
+      Log::i("Diathic: most - przycisk ", k+1, " ", str(pos), " (bohater ", str(hero), "), model ", model);
       }
+    Gothic::inst().onPrint(ArpgMenu::gtxt("Most: obok Ciebie stoją dwa przyciski, po lewej i prawej - naciśnij oba"));
     }
   }
 
@@ -215,15 +199,15 @@ void ArpgBridge::tick(World& w, Npc& hero) {
   auto& st = w.arpgBridge();
   if(!st.init) {
     st.init = true;
-    init(w);
+    init(w, hero.position());
     }
-  if(!st.hinted) {
-    const Vec3 p = hero.position();
-    if(p.x>AreaMinX && p.x<AreaMaxX && p.y>AreaMinY && p.y<AreaMaxY && p.z>AreaMinZ && p.z<AreaMaxZ) {
-      Gothic::inst().onPrint(ArpgMenu::gtxt("Most: naciśnij oba przyciski na ścianach przed mostem (albo zestrzel obie tarcze)"));
-      st.hinted = true;
-      }
-    }
+  if(!st.found || st.spawned)
+    return;
+  const Vec3  p   = hero.position();
+  const Vec3  mid = (st.tg[0]+st.tg[1])*0.5f;
+  const float dx  = p.x-mid.x, dz = p.z-mid.z;
+  if(dx*dx+dz*dz<SpawnDist*SpawnDist && !hero.isInAir())
+    spawn(w, p);
   }
 
 bool ArpgBridge::onEvent(World& w, const TriggerEvent& e) {
@@ -232,10 +216,25 @@ bool ArpgBridge::onEvent(World& w, const TriggerEvent& e) {
       continue;
     if(e.type!=TriggerEvent::T_Trigger)
       return true;
-    auto* t = w.arpgBridge().touch[k];
-    Log::i("Diathic: most - przycisk ", k+1, t!=nullptr ? " -> wyzwalacz tarczy" : " bez wyzwalacza");
-    if(t!=nullptr)
-      t->arpgTouch(); // as an arrow on the target (AbstractTrigger::Cb::onCollide)
+    auto& st = w.arpgBridge();
+    if(st.touch[k]!=nullptr) {
+      Log::i("Diathic: most - przycisk ", k+1, " -> wyzwalacz ", st.touch[k]->name());
+      st.touch[k]->arpgTouch(); // as an arrow on the target (AbstractTrigger::Cb::onCollide)
+      return true;
+      }
+    auto* cm = dynamic_cast<CodeMaster*>(st.master);
+    if(cm!=nullptr && size_t(k)<cm->arpgSlaves().size()) {
+      // a key not taken by the other button's trigger
+      const auto& sl  = cm->arpgSlaves();
+      std::string key = sl[size_t(k)];
+      const int other = 1-k;
+      if(st.touch[other]!=nullptr && st.touch[other]->name()==key)
+        key = sl[size_t(other)];
+      Log::i("Diathic: most - przycisk ", k+1, " -> CodeMaster ", cm->name(), " klucz ", key);
+      w.triggerEvent(TriggerEvent(std::string(cm->name()), key, TriggerEvent::T_Trigger));
+      return true;
+      }
+    Log::i("Diathic: most - przycisk ", k+1, " bez wyzwalacza i CodeMaster");
     return true;
     }
   return false;

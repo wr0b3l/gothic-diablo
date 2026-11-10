@@ -140,7 +140,9 @@ Archiwum z dokumentów projektu claude.ai (02-plan, 03-faza6, 04-faza9), przenie
 - Smoki: przestać całkowicie ucinać modele smoków — cały smok widoczny. Zaakceptowany plan: znacznik na siatkach smoka (bez cięcia i bez odrzucania przez renderer). Skały i ściany zasłaniające smoka — bez zmian (nie pytane dalej).
 - Cofnięta zmiana w `CodeMaster` z PR #34 (bez wpływu na wynik zagadki).
 - Do testu: Irdorath przed wielkim mostem (konsola Marvina albo zapis z rozdziału 6): przyciski widać na ścianach po obu stronach, etykieta „Przycisk mostu”, LPM → bohater naciska, po obu most opada; jeden przycisk dwa razy — most nie opada; przycisk + strzał w drugą tarczę — opada; zły obrót przycisku albo przycisk w powietrzu / w ścianie → linie „Diathic: most” z log.txt; smoki (`insert Dragon_Fire` / `Dragon_Ice` / `Dragon_Rock` / `Dragon_Swamp` / `Dragon_Undead`): przy krawędzi ekranu, w locie, za ścianą jaskini, z bliska — żadnych brakujących części; tryb klasyczny bez zmian.
-- Wartości: `ArpgBridge` (common/game/arpgbridge.cpp: `ButtonHeight`, `WallMax`, `IntoBank`, `FaceFlip`, `Models`).
+- Korekta 2026-11-10 (tester-3743, użytkownik): przycisków nie było, postać nie widzi tarcz po drugiej stronie — „daj przyciski na tyle nisko, abyśmy mogli w nie wycelować”. Teraz: przyciski na ziemi po lewej i prawej bohatera (2,5 m), stawiane, gdy pierwszy raz podejdzie na 45 m do tarcz; tarcze szukane na całej wyspie (współrzędne z PR #34 nie są już potrzebne); bez wyzwalacza przy tarczy przycisk wysyła klucz CodeMaster mostu wprost.
+- Do testu (korekta): podejście do mostu → napis „Most: obok Ciebie stoją dwa przyciski…”, przyciski widoczne po obu stronach bohatera, LPM na każdym → most opada; gdy nic: linie „Diathic: most” z log.txt (folder launchera, gra\dane).
+- Wartości: `ArpgBridge` (common/game/arpgbridge.cpp: `SpawnDist`, `SideOffset`, `TriggerNear`, `MasterNear`, `FaceFlip`, `Models`).
 
 ## Przywrócenie bonusów potworów za rozdziały (2026-11-06, gałąź przywrocenie-bonusow-akt)
 - Użytkownik: w tej samej iteracji co krwawienie, bryła lodu i szybkość strzału przywrócić bonusy zdrowia i obrażeń potworów za akt.
