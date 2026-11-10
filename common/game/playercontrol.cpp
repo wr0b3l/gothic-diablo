@@ -3213,18 +3213,10 @@ bool PlayerControl::arpgShoot(Npc& pl, float& rot, bool allowRot, float faceAng,
   Interactive* bridgeTarget = nullptr;
   if(tg==nullptr && c.bridgeAim) {
     auto* w = Gothic::inst().world();
-    const auto p = pl.position();
-    const auto aim = c.point;
     // Irdorath: the two tiny targets across the chasm cannot reliably be picked in the isometric camera.
-    // Shift+click on the left/right side of the bridge aims at the original Gothic targets.
-    if(w!=nullptr && w->name()=="dragonisland.zen" &&
-       p.x>-25000.f && p.x<-22000.f && p.y>1700.f && p.y<2700.f && p.z>13000.f && p.z<15500.f &&
-       aim.x>-25000.f && aim.x<-22000.f && aim.z>12000.f && aim.z<15500.f) {
-      const auto name = aim.x<-23610.f ? "MOBNAME_SWITCH_BIGBRIDGE_02" : "MOBNAME_SWITCH_BIGBRIDGE_01";
-      w->forEachInteractiveNear(p, 5000.f, [&](Interactive& m) {
-        if(m.focusName()==name)
-          bridgeTarget = &m;
-        });
+    // Shift+click on the left/right side of the bridge aims at the original Gothic targets (ArpgBridge::aimTarget).
+    if(w!=nullptr) {
+      bridgeTarget = ArpgBridge::aimTarget(*w, pl.position(), c.point);
       if(bridgeTarget!=nullptr) {
         const auto d = bridgeTarget->position()-pl.mapWeaponBone();
         faceAng = std::atan2(d.z,d.x)*180.f/float(M_PI);
