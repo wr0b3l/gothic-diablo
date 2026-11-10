@@ -114,9 +114,12 @@ class World final {
     std::vector<ArpgPopup>& arpgPopups() { return arpgPopupList; }
     // Diathic: Irdorath bridge buttons (ArpgBridge): objects outside the saved vob tree, the triggers, the state
     struct ArpgBridgeSt {
-      bool             init     = false;
-      bool             hinted   = false;
-      AbstractTrigger* touch[2] = {};
+      bool             init     = false;   // the targets looked for (once per world)
+      bool             found    = false;   // both targets found
+      bool             spawned  = false;   // the buttons made (by the hero, the first time he is near)
+      Tempest::Vec3    tg[2]    = {};      // the targets
+      AbstractTrigger* touch[2] = {};      // the triggers the arrows on them set off
+      AbstractTrigger* master   = nullptr; // the CodeMaster (when no trigger is found by a target)
       };
     ArpgBridgeSt&        arpgBridge() { return arpgBridgeSt; }
     void                 arpgAddVob(std::unique_ptr<Vob>&& v) { wobj.arpgAddVob(std::move(v)); }

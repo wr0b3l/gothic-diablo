@@ -63,6 +63,7 @@ class AbstractTrigger : public Vob {
     // Diathic: Irdorath bridge buttons (ArpgBridge) - a trigger an arrow sets off, and the same done by a button
     bool                         arpgArrowTrigger() const;
     Tempest::Vec3                arpgCenter() const { return position()+bboxOrigin; }
+    Tempest::Vec3                arpgHalfSize() const { return bboxSize; }
     void                         arpgTouch();
 
   protected:
