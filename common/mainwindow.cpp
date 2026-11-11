@@ -1186,7 +1186,7 @@ static std::string arpgLabelName(const Focus& f) {
   if(f.interactive->isDoor())
     return ArpgMenu::gtxt("Drzwi");
   if(ArpgBridge::isButton(*f.interactive))
-    return ArpgMenu::gtxt("Przycisk mostu"); // Diathic: Irdorath, the buttons in front of the bridge
+    return ArpgMenu::gtxt("Dźwignia mostu"); // Diathic: Irdorath, the levers on the near bank (ArpgBridge)
   if(f.interactive->arpgIsSwitch())
     return ArpgMenu::gtxt("Przełącznik"); // unnamed switch (Adanos' temple, hidden switches): only under the cursor
   return std::string();

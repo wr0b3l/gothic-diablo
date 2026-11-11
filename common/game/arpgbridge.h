@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Tempest/Point>
+
 class World;
 class Npc;
 class Interactive;
@@ -14,4 +16,6 @@ namespace ArpgBridge {
   void tick(World& w, Npc& hero);                // PlayerControl::tickMove: the targets once per world, the buttons
   bool onEvent(World& w, const TriggerEvent& e); // World::execTriggerEvent: a button pressed (true = handled)
   bool isButton(const Interactive& m);           // the label "Przycisk mostu"
+  // Shift + LPM with a bow on the near bank: the target on the side of the click (nullptr = not here)
+  Interactive* aimTarget(World& w, const Tempest::Vec3& hero, const Tempest::Vec3& aim);
   }

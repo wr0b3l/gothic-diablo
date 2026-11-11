@@ -116,8 +116,10 @@ class World final {
     struct ArpgBridgeSt {
       bool             init     = false;   // the targets looked for (once per world)
       bool             found    = false;   // both targets found
-      bool             spawned  = false;   // the buttons made (by the hero, the first time he is near)
+      bool             hinted   = false;   // the hint shown
       Tempest::Vec3    tg[2]    = {};      // the targets
+      Interactive*     target[2] = {};     // the targets (aim of Shift + LPM)
+      Interactive*     button[2] = {};     // the levers on the near bank
       AbstractTrigger* touch[2] = {};      // the triggers the arrows on them set off
       AbstractTrigger* master   = nullptr; // the CodeMaster (when no trigger is found by a target)
       };
